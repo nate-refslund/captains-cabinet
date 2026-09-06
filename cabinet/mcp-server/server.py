@@ -183,6 +183,23 @@ def _envelope_enforce(site: str, stream: str, fields: dict) -> "tuple[bool, list
     return (False, [])
 
 
+def _flat_fields(fields: dict) -> list:
+    """Flatten an XADD field dict into redis-cli argv order (k1 v1 k2 v2 ...).
+
+    The A6 probe / A12 gate and the XADD that follows them MUST see the same
+    field set: a probe that judges a different envelope than the one written is
+    a sensor pointed at the wrong artifact. Deriving the argv from the single
+    dict makes that structural instead of a convention two edits can break
+    (it also stops the two `int(time.time())` calls from disagreeing by a
+    second). Values are str()-ed because redis-cli argv is text.
+    """
+    argv: list = []
+    for key, value in fields.items():
+        argv.append(key)
+        argv.append(str(value))
+    return argv
+
+
 # ---------------------------------------------------------------
 # Config readers (PyYAML not available; regex-based stdlib substitutes)
 # ---------------------------------------------------------------
@@ -499,7 +516,11 @@ def tool_send_message(params: dict) -> dict:
     stream `cabinet:inbox:<to_cabinet>` — the target Cabinet's consumer
     reads it the same way officers read Redis Channel triggers.
 
-    Input schema: {to_cabinet, from_agent, content, [reply_to]}
+    Input schema: {to_cabinet, from_agent, content, [reply_to],
+                   [kind], [context_slug]}
+    `kind`/`context_slug` are relay-carried handoff metadata: on the
+    self-delivery path they ride into the local trigger so the receiving
+    officer can tell a handoff request from a chat message.
     Output: {status, message_id}
     Enforcement: peers.yml consented_by_captain must be true AND 'send_message'
     must be in the target's allowed_tools; this is pre-tool-use hook territory
@@ -556,6 +577,15 @@ def tool_send_message(params: dict) -> dict:
             )
         if roster and target_role != "cos" and target_role not in roster:
             return {"status": "refused", "reason": "unknown_target_role", "to_role": target_role}
+        # Handoff metadata carried in by the relay. A request_handoff row queues
+        # kind='handoff_request' + context_slug beside its content; the relay
+        # forwards them as send_message arguments. Without them the receiving
+        # officer sees a handoff request as an ordinary chat message and cannot
+        # tell the two apart. Both are peer-supplied VALUES, exactly like
+        # content and from_agent — never key parts, so they cannot reach the
+        # stream NAME (that remains target_role, validated above).
+        kind = str(params.get("kind") or "")
+        in_context_slug = str(params.get("context_slug") or "")
         # A6 report-only probe — beside, never around, the XADD (fail-open).
         _sd_fields = {
             "source": "cross-cabinet",
@@ -565,6 +595,10 @@ def tool_send_message(params: dict) -> dict:
             "reply_to": str(reply_to or ""),
             "ts": str(int(time.time())),
         }
+        if kind:
+            _sd_fields["kind"] = kind
+        if in_context_slug:
+            _sd_fields["context_slug"] = in_context_slug
         _envelope_report(
             "server.send_message.self_delivery",
             f"cabinet:triggers:{target_role}",
@@ -585,12 +619,7 @@ def tool_send_message(params: dict) -> dict:
                 [
                     "redis-cli", "-h", REDIS_HOST, "-p", REDIS_PORT,
                     "XADD", f"cabinet:triggers:{target_role}", "*",
-                    "source", "cross-cabinet",
-                    "from_cabinet", from_cabinet,
-                    "from_agent", from_agent,
-                    "content", content,
-                    "reply_to", str(reply_to or ""),
-                    "ts", str(int(time.time())),
+                    *_flat_fields(_sd_fields),
                 ],
                 capture_output=True, text=True, timeout=5,
             )
@@ -638,11 +667,7 @@ def tool_send_message(params: dict) -> dict:
             [
                 "redis-cli", "-h", REDIS_HOST, "-p", REDIS_PORT,
                 "XADD", f"cabinet:inbox:{to_cabinet}", "*",
-                "from_cabinet", this_cabinet_id(),
-                "from_agent", from_agent,
-                "content", content,
-                "reply_to", str(reply_to or ""),
-                "ts", str(int(time.time())),
+                *_flat_fields(_po_fields),
             ],
             capture_output=True, text=True, timeout=5,
         )
@@ -662,6 +687,13 @@ def tool_request_handoff(params: dict) -> dict:
     mechanic as send_message but with a structured reason + expectation
     that the peer's CoS routes it to the right coach.
 
+    Queue row (cabinet:inbox:<peer>): from_cabinet, from_agent,
+    kind='handoff_request', context_slug, reason, content, ts. `content` is
+    rendered from reason + context_slug and is NOT optional — the relay
+    delivers every inbox row by re-calling send_message on the peer, and that
+    handler refuses an empty content, so a contentless handoff row is an
+    undeliverable one.
+
     Input: {to_cabinet, context_slug, reason, [from_agent]}
     Output: {status, handoff_id}
     """
@@ -679,6 +711,13 @@ def tool_request_handoff(params: dict) -> dict:
     if "request_handoff" not in peer.get("allowed_tools", []):
         return {"status": "refused", "reason": "request_handoff_not_in_peer_allowed_tools"}
 
+    # A handoff row travels to the peer through cabinet-mcp-relay.py, which
+    # re-calls send_message on the destination — and that handler REFUSES an
+    # empty `content`. A row queued with only kind/context_slug/reason could
+    # therefore NEVER be delivered: it was posted, rejected, and left in the
+    # inbox forever. Render a content line from the structured fields (which
+    # stay alongside it, so the receiver still knows this is a handoff).
+    content = f"[handoff request] context '{context_slug}': {reason}"
     # A6 report-only probe — beside, never around, the XADD (fail-open).
     _ho_fields = {
         "from_cabinet": this_cabinet_id(),
@@ -686,6 +725,7 @@ def tool_request_handoff(params: dict) -> dict:
         "kind": "handoff_request",
         "context_slug": context_slug,
         "reason": reason,
+        "content": content,
         "ts": str(int(time.time())),
     }
     _envelope_report(
@@ -708,12 +748,7 @@ def tool_request_handoff(params: dict) -> dict:
             [
                 "redis-cli", "-h", REDIS_HOST, "-p", REDIS_PORT,
                 "XADD", f"cabinet:inbox:{to_cabinet}", "*",
-                "from_cabinet", this_cabinet_id(),
-                "from_agent", from_agent,
-                "kind", "handoff_request",
-                "context_slug", context_slug,
-                "reason", reason,
-                "ts", str(int(time.time())),
+                *_flat_fields(_ho_fields),
             ],
             capture_output=True, text=True, timeout=5,
         )
@@ -1049,6 +1084,12 @@ TOOLS: list[dict[str, Any]] = [
                 "from_agent": {"type": "string"},
                 "content": {"type": "string"},
                 "reply_to": {"type": "string"},
+                # Handoff metadata the relay forwards from a queued
+                # request_handoff row; declared so a peer that validates this
+                # schema does not reject a legitimate relayed handoff.
+                "kind": {"type": "string"},
+                "context_slug": {"type": "string"},
+                "reason": {"type": "string"},
             },
             "required": ["to_cabinet", "from_agent", "content"],
             "additionalProperties": False,
@@ -1061,7 +1102,9 @@ TOOLS: list[dict[str, Any]] = [
         "description": (
             "Ask a peer Cabinet to take ownership of a context. Typical use: Work "
             "Cabinet hands a personal-state conversation to Personal Cabinet. Same "
-            "queue mechanic as send_message; queued with kind='handoff_request'. "
+            "queue mechanic as send_message; queued with kind='handoff_request' "
+            "plus a content line rendered from reason + context_slug (the relay "
+            "delivers inbox rows via send_message, which refuses empty content). "
             "Peer consent + allowed_tools enforcement applies."
         ),
         "inputSchema": {

@@ -188,7 +188,8 @@ def test_legit_envelope_with_flat_siblings_passes(monkeypatch):
     {"from_cabinet": "work", "from_agent": "cos", "content": "hi",
      "reply_to": "", "ts": "1"},                                   # site-1/2 shape
     {"from_cabinet": "work", "from_agent": "cos", "kind": "handoff_request",
-     "context_slug": "x", "reason": "y", "ts": "1"},               # site-3 shape: 'kind'
+     "context_slug": "x", "reason": "y",
+     "content": "[handoff request] context 'x': y", "ts": "1"},    # site-3 shape: 'kind'
                                                                    # sibling is NOT an envelope
     {},                                                            # empty
 ])
