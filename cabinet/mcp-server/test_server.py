@@ -1083,6 +1083,141 @@ def test_request_handoff_errors_on_error_reply() -> None:
     ok("request_handoff: '(error' reply → status error")
 
 
+# ---------------------------------------------------------------
+# producer -> relay -> receiver: a handoff must be DELIVERABLE end to end
+# ---------------------------------------------------------------
+# The three surfaces were each internally consistent and jointly broken:
+# request_handoff queued kind/context_slug/reason with NO content; the relay
+# delivers every inbox row by re-calling send_message with
+# content=fields.get("content", ""); and send_message refuses an empty content.
+# A handoff request could therefore never arrive. Unit tests on each surface
+# all passed — the seam between them had no sensor. This one drives the real
+# producer, the real relay payload builder and the real receiver in sequence.
+
+
+def _load_relay():
+    """Import cabinet/scripts/cabinet-mcp-relay.py (hyphenated filename → by path)."""
+    import importlib.util
+
+    relay_path = SERVER.resolve().parents[2] / "cabinet" / "scripts" / "cabinet-mcp-relay.py"
+    spec = importlib.util.spec_from_file_location("cabinet_mcp_relay", relay_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _xadd_fields(argv: list) -> dict:
+    """Field dict actually written by a spied redis-cli XADD argv."""
+    star = argv.index("*")
+    pairs = argv[star + 1:]
+    assert len(pairs) % 2 == 0, f"XADD argv must be field/value pairs; got {pairs}"
+    return dict(zip(pairs[0::2], pairs[1::2]))
+
+
+def _producer_handoff_row() -> dict:
+    """The exact inbox row tool_request_handoff writes — read off its XADD."""
+    result, calls = _call_request_handoff("1700" + "000000-0")
+    assert result.get("status") == "queued", f"producer did not queue: {result}"
+    assert len(calls) == 1, f"expected exactly one XADD; got {calls}"
+    return _xadd_fields(calls[0][0][0])
+
+
+def _call_send_message_raw(arguments: dict, roster=("cos", "acme-ceo")) -> "tuple[dict, list]":
+    """Drive tool_send_message with the relay's own arguments dict, redis spied."""
+    sys.path.insert(0, str(SERVER.parent))
+    import server as srv
+
+    spy = _RunSpy()
+    orig_subprocess = srv.subprocess
+    orig_roster = srv.read_hired_agents
+    orig_env = os.environ.get("CABINET_ENVELOPE_REPORT")
+    srv.subprocess = types.SimpleNamespace(
+        run=spy.run, TimeoutExpired=subprocess.TimeoutExpired
+    )
+    srv.read_hired_agents = lambda: list(roster)
+    os.environ["CABINET_ENVELOPE_REPORT"] = "0"  # keep the A6 probe out of the test
+    try:
+        result = srv.tool_send_message(dict(arguments))
+    finally:
+        srv.subprocess = orig_subprocess
+        srv.read_hired_agents = orig_roster
+        if orig_env is None:
+            os.environ.pop("CABINET_ENVELOPE_REPORT", None)
+        else:
+            os.environ["CABINET_ENVELOPE_REPORT"] = orig_env
+    return result, spy.calls
+
+
+def test_handoff_row_reaches_the_receiver_through_the_relay() -> None:
+    """Producer row → relay payload → receiver: status must not be error, and
+    kind/context_slug must survive into the local trigger the receiver writes."""
+    sys.path.insert(0, str(SERVER.parent))
+    import server as srv
+
+    relay = _load_relay()
+    row = _producer_handoff_row()
+    assert row.get("kind") == "handoff_request", f"producer row lost its kind: {row}"
+    assert row.get("context_slug") == "personal-context", f"got {row}"
+    assert row.get("content"), (
+        "producer row carries no content — the relay delivers it as send_message, "
+        f"which refuses empty content, so it could never be delivered: {row}"
+    )
+    ok("handoff e2e: producer row carries content + kind + context_slug")
+
+    # The relay posts to the peer with to_cabinet=<peer id>; on the receiving
+    # side that value equals its own this_cabinet_id() (the self-delivery path).
+    receiver_id = srv.this_cabinet_id()
+    payload = relay.build_send_payload(receiver_id, "1700" + "000000-1", row)
+    args = payload["params"]["arguments"]
+    assert args["to_cabinet"] == receiver_id, f"got {args}"
+    assert args["content"] == row["content"], f"relay dropped/altered content: {args}"
+    assert args.get("kind") == "handoff_request", f"relay dropped kind: {args}"
+    assert args.get("context_slug") == row["context_slug"], f"relay dropped context_slug: {args}"
+    assert args.get("reason") == row["reason"], f"relay dropped reason: {args}"
+    ok("handoff e2e: relay forwards content + kind + context_slug + reason")
+
+    result, calls = _call_send_message_raw(args)
+    assert result.get("status") != "error", f"receiver refused the relayed handoff: {result}"
+    assert result.get("status") == "delivered", f"expected delivered; got {result}"
+    assert len(calls) == 1, f"expected exactly one trigger XADD; got {calls}"
+    ok("handoff e2e: receiver accepts the relayed handoff (status delivered)")
+
+    trigger = _xadd_fields(calls[0][0][0])
+    assert trigger.get("content") == row["content"], f"trigger lost content: {trigger}"
+    assert trigger.get("kind") == "handoff_request", f"trigger lost kind: {trigger}"
+    assert trigger.get("context_slug") == row["context_slug"], f"trigger lost context_slug: {trigger}"
+    ok("handoff e2e: kind + context_slug survive into cabinet:triggers:<role>")
+
+
+def test_plain_message_row_carries_no_handoff_fields() -> None:
+    """Degenerate end: an ordinary send_message row has no kind/context_slug, so
+    neither the relay payload nor the delivered trigger may invent them —
+    otherwise 'is this a handoff?' is true of every message and distinguishes
+    nothing."""
+    relay = _load_relay()
+    sys.path.insert(0, str(SERVER.parent))
+    import server as srv
+
+    row = {"from_cabinet": "work", "from_agent": "cos", "content": "just a message",
+           "reply_to": "", "ts": "1"}
+    args = relay.build_send_payload(srv.this_cabinet_id(), "1700" + "000000-2", row)["params"]["arguments"]
+    assert "kind" not in args and "context_slug" not in args, f"relay invented handoff fields: {args}"
+    ok("handoff e2e: plain message row → no handoff fields in the relay payload")
+
+    result, calls = _call_send_message_raw(args)
+    assert result.get("status") == "delivered", f"plain message must still deliver; got {result}"
+    trigger = _xadd_fields(calls[0][0][0])
+    assert "kind" not in trigger and "context_slug" not in trigger, f"trigger invented fields: {trigger}"
+    assert trigger.get("content") == "just a message", f"got {trigger}"
+    ok("handoff e2e: plain message trigger unchanged (no kind/context_slug)")
+
+
+def run_handoff_delivery_tests() -> None:
+    print("\n-- handoff delivery: producer -> relay -> receiver --")
+    test_handoff_row_reaches_the_receiver_through_the_relay()
+    test_plain_message_row_carries_no_handoff_fields()
+
+
 def run_request_handoff_tests() -> None:
     print("\n-- request_handoff XADD result validation (comms-attention-6) --")
     test_request_handoff_queued_on_valid_id()
@@ -1107,6 +1242,7 @@ if __name__ == "__main__":
     run_cost_tests()
     run_request_handoff_tests()
     run_self_delivery_tests()
+    run_handoff_delivery_tests()
 
     print(f"\n{'='*50}")
     print(f"Results: {PASS} passed, {FAIL} failed")
