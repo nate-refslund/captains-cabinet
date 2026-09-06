@@ -12,16 +12,32 @@
 #   capacity              — work | personal
 #   trust_level           — low | medium | high (affects default allowed_tools)
 #   consented_by_captain  — BOOLEAN; must be true before any call to this peer succeeds
-#   allowed_tools         — list of Cabinet MCP tool names this peer may be CALLED WITH
+#   allowed_tools         — list of Cabinet MCP tool names. This is the bound in BOTH
+#                           directions for this peer: the tools WE may call on IT, and
+#                           — over the authenticated HTTP transport — the only tools IT
+#                           may call on US. A tool that is unlisted (or does not exist)
+#                           is refused: status=refused reason=tool_not_allowed_for_peer.
+#                           No list at all = this peer may call nothing. Fail-closed.
 #   peer_version          — OPTIONAL; peer's server.py SERVER_VERSION so CP4+ can guard
 #                           capability negotiation when peers drift
 #   shared_secret_ref     — OPTIONAL; name of the env var holding a shared secret.
 #                           Required before Phase 3 HTTP transport. Never put secret
 #                           inline — this is a reference only.
+#                           The secret is also this peer's IDENTITY on the HTTP
+#                           transport: the server resolves a bearer token to the peer
+#                           that owns it, and that resolved id — never a field in the
+#                           request body — decides which tools the caller may run and
+#                           whose name its messages carry. So give every peer its OWN
+#                           value: two peers sharing one secret are indistinguishable
+#                           and BOTH are refused (401). A request whose from_cabinet /
+#                           _relay_origin_cabinet names anyone other than the
+#                           authenticated peer is refused (reason=sender_mismatch).
 #   notes                 — optional, for humans
 #
 # Enforcement: load-preset.sh validates schema at boot (Phase 2 CP3).
-# pre-tool-use.sh enforces per-call in section 10 (Phase 2 CP4).
+# pre-tool-use.sh enforces per-call on the OUTBOUND side, section 10 (Phase 2 CP4).
+# cabinet/mcp-server/server.py enforces the RECEIVING side per call: bearer token
+# -> peer id -> that peer's allowed_tools, plus the sender-identity check above.
 #
 # To stand up a live peer: set consented_by_captain=true AND verify the
 # peer's own peers.yml lists this Cabinet back.

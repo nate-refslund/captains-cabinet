@@ -9,6 +9,10 @@ Covers:
   - http transport: 401 when bearer token is wrong
   - http transport: GET /health returns structured JSON
   - http transport: identical response shape between stdio and http
+  - bearer auth binds an IDENTITY: each peer's token resolves to ITS peer id,
+    a shared token resolves to nobody, and the resolved id gates tool
+    permission (peers.yml allowed_tools) and overrides any sender identity
+    claimed in the request body
 
 Run:
     python3 /opt/founders-cabinet/cabinet/mcp-server/test_server.py
@@ -192,9 +196,23 @@ def _start_http_server_inprocess() -> None:
     # valid-bearer POSTs get 200 while missing/wrong-bearer POSTs get 401.
     # (Was: PEERS_YML patched to a nonexistent path to exercise the old
     # "open mode" — which the fail-closed transport now correctly denies.)
+    # allowed_tools is REQUIRED here: the receiver now refuses any tool an
+    # authenticated peer is not listed for, so a fixture without the list would
+    # be a peer that may call nothing. This harness peer is the fully-trusted
+    # one, so it lists the whole surface; the narrow-permission case has its own
+    # fixture in the identity-binding section below.
     peers_path = Path("/tmp/peers-harness-fw005.yml")
     peers_path.write_text(
-        "peers:\n  harness-peer:\n    shared_secret_ref: CABINET_MCP_HARNESS_SECRET\n"
+        "peers:\n"
+        "  harness-peer:\n"
+        "    shared_secret_ref: CABINET_MCP_HARNESS_SECRET\n"
+        "    allowed_tools:\n"
+        "      - identify\n"
+        "      - presence\n"
+        "      - availability\n"
+        "      - send_message\n"
+        "      - request_handoff\n"
+        "      - cost_summary\n"
     )
     os.environ["CABINET_MCP_HARNESS_SECRET"] = TEST_SECRET
     srv.PEERS_YML = peers_path
@@ -408,6 +426,95 @@ def test_bearer_verify_with_secrets_enforcement() -> None:
     finally:
         srv.PEERS_YML = old
         os.environ.pop("CABINET_TEST_SECRET_XYZ", None)
+        tmp.unlink(missing_ok=True)
+
+
+def test_bearer_authenticates_to_a_peer_id() -> None:
+    """SENSOR (identity binding): a bearer token must name WHICH peer is calling.
+
+    Two peers with DIFFERENT secrets: each token resolves to its own id; a
+    wrong token resolves to nobody; no-secrets-configured still denies
+    (fail-closed, unchanged); and two peers sharing ONE secret resolve to
+    nobody rather than to a guess — an ambiguous token cannot bind an identity.
+
+    Pre-change this whole property is absent: auth returned a bool, so a token
+    issued to peer A admitted a caller that could then act as peer B."""
+    sys.path.insert(0, str(SERVER.parent))
+    import server as srv
+
+    resolve = getattr(srv, "authenticate_bearer", None)
+    if resolve is None:
+        fail("bearer: auth resolves the caller to a peer id",
+             "server.authenticate_bearer is missing — auth can admit a caller "
+             "but cannot name it, so no per-peer rule can be enforced")
+        return
+
+    tmp = Path("/tmp/peers-identity-unit-test.yml")
+    old = srv.PEERS_YML
+    try:
+        tmp.write_text(
+            "peers:\n"
+            "  peer-alpha:\n"
+            "    shared_secret_ref: CABINET_TEST_SECRET_ALPHA\n"
+            "    allowed_tools:\n"
+            "      - identify\n"
+            "  peer-beta:\n"
+            "    shared_secret_ref: CABINET_TEST_SECRET_BETA\n"
+            "    allowed_tools:\n"
+            "      - identify\n"
+        )
+        os.environ["CABINET_TEST_SECRET_ALPHA"] = "alpha-secret-value"
+        os.environ["CABINET_TEST_SECRET_BETA"] = "beta-secret-value"
+        srv.PEERS_YML = tmp
+
+        got_alpha = resolve("Bearer alpha-secret-value")
+        got_beta = resolve("Bearer beta-secret-value")
+        got_wrong = resolve("Bearer neither-of-them")
+        got_none = resolve(None)
+        got_prefix = resolve("Token alpha-secret-value")
+
+        if got_alpha == "peer-alpha":
+            ok("bearer: peer-alpha's token resolves to peer-alpha")
+        else:
+            fail("bearer: peer-alpha's token resolves to peer-alpha", f"got {got_alpha!r}")
+        if got_beta == "peer-beta":
+            ok("bearer: peer-beta's token resolves to peer-beta")
+        else:
+            fail("bearer: peer-beta's token resolves to peer-beta", f"got {got_beta!r}")
+        if got_wrong is None and got_none is None and got_prefix is None:
+            ok("bearer: wrong / missing / non-Bearer token resolves to nobody")
+        else:
+            fail("bearer: wrong / missing / non-Bearer token resolves to nobody",
+                 f"wrong={got_wrong!r} none={got_none!r} prefix={got_prefix!r}")
+
+        # Degenerate end: NO secrets configured at all must still deny.
+        srv.PEERS_YML = Path("/nonexistent/peers.yml")
+        if resolve("Bearer alpha-secret-value") is None and resolve(None) is None:
+            ok("bearer: no secrets configured → resolves to nobody (fail-closed)")
+        else:
+            fail("bearer: no secrets configured → resolves to nobody (fail-closed)",
+                 "an unconfigured transport authenticated a caller")
+
+        # Ambiguous: two peers, ONE secret value → identity is unknowable.
+        shared = Path("/tmp/peers-identity-ambiguous-test.yml")
+        shared.write_text(
+            "peers:\n"
+            "  peer-alpha:\n"
+            "    shared_secret_ref: CABINET_TEST_SECRET_ALPHA\n"
+            "  peer-beta:\n"
+            "    shared_secret_ref: CABINET_TEST_SECRET_ALPHA\n"
+        )
+        srv.PEERS_YML = shared
+        if resolve("Bearer alpha-secret-value") is None:
+            ok("bearer: one secret shared by two peers → resolves to nobody (no guessing)")
+        else:
+            fail("bearer: one secret shared by two peers → resolves to nobody (no guessing)",
+                 "an ambiguous token bound an identity")
+        shared.unlink(missing_ok=True)
+    finally:
+        srv.PEERS_YML = old
+        os.environ.pop("CABINET_TEST_SECRET_ALPHA", None)
+        os.environ.pop("CABINET_TEST_SECRET_BETA", None)
         tmp.unlink(missing_ok=True)
 
 
@@ -867,6 +974,7 @@ def run_unit_tests() -> None:
     print("\n-- bearer auth unit tests --")
     test_bearer_verify_no_secrets()
     test_bearer_verify_with_secrets_enforcement()
+    test_bearer_authenticates_to_a_peer_id()
     print("\n-- http bind hardening unit tests --")
     test_http_bind_loopback_default()
     print("\n-- capacity lookup unit tests --")
@@ -1100,6 +1208,343 @@ def run_self_delivery_tests() -> None:
     test_self_delivery_roster_failure_falls_back_to_slug_not_open()
 
 
+# ---------------------------------------------------------------
+# Peer identity binding over HTTP (authentication names the caller)
+# ---------------------------------------------------------------
+# These drive the REAL transport end to end: a bearer token goes over the
+# socket, the server resolves it to a peer id, and that id — never a field in
+# the request body — decides which tools the caller may run and whose name its
+# messages carry. Redis is spied, so a "delivered" verdict is checked against
+# the XADD that would have been issued, not against the return value alone.
+
+_IDENTITY_PEERS_YML = Path("/tmp/peers-identity-binding-test.yml")
+PEER_WORK_SECRET = "identity-test-secret-work-peer"
+PEER_QUIET_SECRET = "identity-test-secret-quiet-peer"
+
+# work-peer may send_message; quiet-peer may only identify. Neither may
+# cost_summary — an authenticated peer is not a peer that may call anything.
+_IDENTITY_PEERS_TEXT = (
+    "peers:\n"
+    "  work-peer:\n"
+    "    consented_by_captain: true\n"
+    "    shared_secret_ref: CABINET_TEST_SECRET_WORKPEER\n"
+    "    allowed_tools:\n"
+    "      - identify\n"
+    "      - send_message\n"
+    "  quiet-peer:\n"
+    "    consented_by_captain: true\n"
+    "    shared_secret_ref: CABINET_TEST_SECRET_QUIETPEER\n"
+    "    allowed_tools:\n"
+    "      - identify\n"
+)
+
+
+def _tool_payload(body: dict) -> dict:
+    """Unwrap a tools/call response to the handler payload. A JSON-RPC error
+    (or any other shape) is returned as-is so a sensor can say what it got."""
+    content = (body.get("result") or {}).get("content") or []
+    if content:
+        try:
+            return json.loads(content[0]["text"])
+        except (ValueError, KeyError, TypeError):
+            return {"_unparsed": content}
+    return body
+
+
+def _xadd_field(argv: list, field: str) -> str:
+    """Value written for `field` in a spied redis-cli XADD argv, or ''. """
+    for i, tok in enumerate(argv):
+        if tok == field and i + 1 < len(argv):
+            return str(argv[i + 1])
+    return ""
+
+
+def _identity_call(
+    arguments: dict, secret: str, tool: str = "send_message", roster=("cos",)
+) -> "tuple[int, dict, list]":
+    """POST tools/call over the in-process HTTP transport, authenticated with
+    `secret`, against the two-peer fixture above. Redis + roster are patched on
+    the server module (same process as the listening thread), and every patch
+    is restored. Returns (http_status, payload, spied_redis_calls)."""
+    _ensure_http_server()
+    sys.path.insert(0, str(SERVER.parent))
+    import server as srv
+
+    spy = _RunSpy()
+    old_peers = srv.PEERS_YML
+    old_sub = srv.subprocess
+    old_roster = srv.read_hired_agents
+    _IDENTITY_PEERS_YML.write_text(_IDENTITY_PEERS_TEXT)
+    os.environ["CABINET_TEST_SECRET_WORKPEER"] = PEER_WORK_SECRET
+    os.environ["CABINET_TEST_SECRET_QUIETPEER"] = PEER_QUIET_SECRET
+    srv.PEERS_YML = _IDENTITY_PEERS_YML
+    srv.subprocess = types.SimpleNamespace(
+        run=spy.run, TimeoutExpired=subprocess.TimeoutExpired
+    )
+    srv.read_hired_agents = lambda: list(roster)
+    try:
+        code, body = _http_post(
+            "/mcp",
+            rpc("tools/call", {"name": tool, "arguments": arguments}),
+            auth="Bearer " + secret,
+        )
+    finally:
+        srv.PEERS_YML = old_peers
+        srv.subprocess = old_sub
+        srv.read_hired_agents = old_roster
+        os.environ.pop("CABINET_TEST_SECRET_WORKPEER", None)
+        os.environ.pop("CABINET_TEST_SECRET_QUIETPEER", None)
+        _IDENTITY_PEERS_YML.unlink(missing_ok=True)
+    return code, _tool_payload(body), spy.calls
+
+
+def _self_id() -> str:
+    sys.path.insert(0, str(SERVER.parent))
+    import server as srv
+    return srv.this_cabinet_id()
+
+
+def test_identity_refuses_forged_sender() -> None:
+    """SENSOR: authenticated as work-peer, body claims from_cabinet=quiet-peer.
+
+    from_cabinet is a label in the request body, not authentication. The
+    receiver must refuse (sender_mismatch) and write NOTHING — otherwise any
+    peer with a valid token can drop a trigger into an officer's stream wearing
+    another Cabinet's name, and the officer acts on it."""
+    code, payload, calls = _identity_call(
+        {
+            "to_cabinet": _self_id(),
+            "from_agent": "peer-agent",
+            "content": "forged origin",
+            "from_cabinet": "quiet-peer",
+        },
+        PEER_WORK_SECRET,
+    )
+    if code == 200 and payload.get("status") == "refused" and payload.get("reason") == "sender_mismatch":
+        ok("identity: forged from_cabinet refused (sender_mismatch)")
+    else:
+        fail("identity: forged from_cabinet refused (sender_mismatch)", f"code={code} payload={payload}")
+    if calls == []:
+        ok("identity: forged from_cabinet → no redis XADD")
+    else:
+        fail("identity: forged from_cabinet → no redis XADD", f"got {calls}")
+
+
+def test_identity_refuses_forged_relay_origin() -> None:
+    """SENSOR: the relay's own field (_relay_origin_cabinet) is a claim too."""
+    code, payload, calls = _identity_call(
+        {
+            "to_cabinet": _self_id(),
+            "from_agent": "peer-agent",
+            "content": "forged relay origin",
+            "_relay_origin_cabinet": "quiet-peer",
+        },
+        PEER_WORK_SECRET,
+    )
+    if payload.get("status") == "refused" and payload.get("reason") == "sender_mismatch":
+        ok("identity: forged _relay_origin_cabinet refused (sender_mismatch)")
+    else:
+        fail("identity: forged _relay_origin_cabinet refused (sender_mismatch)", f"code={code} payload={payload}")
+    if calls == []:
+        ok("identity: forged _relay_origin_cabinet → no redis XADD")
+    else:
+        fail("identity: forged _relay_origin_cabinet → no redis XADD", f"got {calls}")
+
+
+def test_identity_accepts_matching_claim() -> None:
+    """SENSOR (the other direction — the fix must not break the legitimate
+    relay): a claim that MATCHES the authenticated peer is delivered, and the
+    origin recorded on the bus is that peer."""
+    code, payload, calls = _identity_call(
+        {
+            "to_cabinet": _self_id(),
+            "from_agent": "peer-agent",
+            "content": "honest origin",
+            "_relay_origin_cabinet": "work-peer",
+        },
+        PEER_WORK_SECRET,
+    )
+    if payload.get("status") == "delivered":
+        ok("identity: matching claim delivered")
+    else:
+        fail("identity: matching claim delivered", f"code={code} payload={payload}")
+        return
+    if len(calls) == 1 and _xadd_field(calls[0][0][0], "from_cabinet") == "work-peer":
+        ok("identity: matching claim → XADD from_cabinet=work-peer")
+    else:
+        fail("identity: matching claim → XADD from_cabinet=work-peer", f"got {calls}")
+
+
+def test_identity_fills_absent_claim_from_auth() -> None:
+    """SENSOR: no origin claimed at all → the AUTHENTICATED id is recorded.
+    Pre-change this wrote the literal 'unknown', so the bus could not say who
+    sent an inbound message even when the transport knew."""
+    code, payload, calls = _identity_call(
+        {
+            "to_cabinet": _self_id(),
+            "from_agent": "peer-agent",
+            "content": "no origin claimed",
+        },
+        PEER_WORK_SECRET,
+    )
+    if payload.get("status") == "delivered":
+        ok("identity: absent claim delivered")
+    else:
+        fail("identity: absent claim delivered", f"code={code} payload={payload}")
+        return
+    origin = _xadd_field(calls[0][0][0], "from_cabinet") if calls else ""
+    if origin == "work-peer":
+        ok("identity: absent claim → XADD from_cabinet=work-peer (not 'unknown')")
+    else:
+        fail("identity: absent claim → XADD from_cabinet=work-peer (not 'unknown')",
+             f"got from_cabinet={origin!r} calls={calls}")
+
+
+def test_identity_refuses_tool_not_in_peer_allowed_tools() -> None:
+    """SENSOR: allowed_tools bounds what a peer may call ON US, not just what
+    we may call on IT. work-peer is not listed for cost_summary; quiet-peer is
+    not listed for send_message. An authenticated peer is not an unlimited one."""
+    code, payload, calls = _identity_call({}, PEER_WORK_SECRET, tool="cost_summary")
+    if payload.get("status") == "refused" and payload.get("reason") == "tool_not_allowed_for_peer":
+        ok("identity: unlisted tool (cost_summary) refused for work-peer")
+    else:
+        fail("identity: unlisted tool (cost_summary) refused for work-peer", f"code={code} payload={payload}")
+    if calls == []:
+        ok("identity: unlisted tool → handler never ran (no redis call)")
+    else:
+        fail("identity: unlisted tool → handler never ran (no redis call)", f"got {calls}")
+
+    code2, payload2, calls2 = _identity_call(
+        {"to_cabinet": _self_id(), "from_agent": "a", "content": "c"},
+        PEER_QUIET_SECRET,
+    )
+    if payload2.get("status") == "refused" and payload2.get("reason") == "tool_not_allowed_for_peer":
+        ok("identity: send_message refused for quiet-peer (identify-only)")
+    else:
+        fail("identity: send_message refused for quiet-peer (identify-only)", f"code={code2} payload={payload2}")
+    if calls2 == []:
+        ok("identity: quiet-peer send_message → no redis XADD")
+    else:
+        fail("identity: quiet-peer send_message → no redis XADD", f"got {calls2}")
+
+
+def test_identity_refuses_unknown_tool_name() -> None:
+    """SENSOR (degenerate end): a tool name that does not exist is unlisted by
+    construction and must be refused the same way — no probing the surface."""
+    code, payload, _calls = _identity_call({}, PEER_WORK_SECRET, tool="definitely_not_a_tool")
+    if payload.get("status") == "refused" and payload.get("reason") == "tool_not_allowed_for_peer":
+        ok("identity: unknown tool name refused for an authenticated peer")
+    else:
+        fail("identity: unknown tool name refused for an authenticated peer", f"code={code} payload={payload}")
+
+
+def test_identity_allows_listed_tool() -> None:
+    """SENSOR (the arm that keeps the check honest): a tool that IS listed for
+    the peer still runs. A permission gate that refuses everything would pass
+    every refusal test above."""
+    code, payload, _calls = _identity_call({}, PEER_QUIET_SECRET, tool="identify")
+    if code == 200 and payload.get("cabinet_id"):
+        ok("identity: listed tool (identify) still runs for quiet-peer")
+    else:
+        fail("identity: listed tool (identify) still runs for quiet-peer", f"code={code} payload={payload}")
+
+
+def test_identity_param_cannot_be_supplied_by_caller() -> None:
+    """SENSOR: an HTTP caller passing the reserved _authenticated_peer argument
+    must not elevate. Arm 1: it is stripped, so the ORIGIN recorded is still the
+    real authenticated peer. Arm 2: it cannot be used to make a forged
+    from_cabinet 'match' — that is still sender_mismatch."""
+    code, payload, calls = _identity_call(
+        {
+            "to_cabinet": _self_id(),
+            "from_agent": "peer-agent",
+            "content": "trying to self-declare",
+            "_authenticated_peer": "quiet-peer",
+        },
+        PEER_WORK_SECRET,
+    )
+    if payload.get("status") == "delivered":
+        origin = _xadd_field(calls[0][0][0], "from_cabinet") if calls else ""
+        if origin == "work-peer":
+            ok("identity: caller-supplied _authenticated_peer ignored (origin stays work-peer)")
+        else:
+            fail("identity: caller-supplied _authenticated_peer ignored (origin stays work-peer)",
+                 f"got from_cabinet={origin!r}")
+    else:
+        fail("identity: caller-supplied _authenticated_peer ignored (origin stays work-peer)",
+             f"code={code} payload={payload}")
+
+    code2, payload2, calls2 = _identity_call(
+        {
+            "to_cabinet": _self_id(),
+            "from_agent": "peer-agent",
+            "content": "trying to self-declare and forge",
+            "_authenticated_peer": "quiet-peer",
+            "from_cabinet": "quiet-peer",
+        },
+        PEER_WORK_SECRET,
+    )
+    if payload2.get("status") == "refused" and payload2.get("reason") == "sender_mismatch":
+        ok("identity: _authenticated_peer cannot bless a forged from_cabinet")
+    else:
+        fail("identity: _authenticated_peer cannot bless a forged from_cabinet",
+             f"code={code2} payload={payload2}")
+    if calls2 == []:
+        ok("identity: forged pair → no redis XADD")
+    else:
+        fail("identity: forged pair → no redis XADD", f"got {calls2}")
+
+
+def test_identity_stdio_unchanged() -> None:
+    """SENSOR (no-regression): stdio has no bearer and therefore no peer id, so
+    none of the rules above apply there — a local caller's from_cabinet is still
+    honoured. The fix must tighten the authenticated transport ONLY."""
+    sys.path.insert(0, str(SERVER.parent))
+    import server as srv
+    spy = _RunSpy()
+    old_sub, old_roster = srv.subprocess, srv.read_hired_agents
+    srv.subprocess = types.SimpleNamespace(run=spy.run, TimeoutExpired=subprocess.TimeoutExpired)
+    srv.read_hired_agents = lambda: ["cos"]
+    try:
+        result = srv.handle({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "send_message", "arguments": {
+                "to_cabinet": srv.this_cabinet_id(),
+                "from_agent": "local",
+                "content": "local call",
+                "from_cabinet": "some-local-label",
+            }},
+        })
+    finally:
+        srv.subprocess = old_sub
+        srv.read_hired_agents = old_roster
+    payload = _tool_payload(result or {})
+    if payload.get("status") == "delivered":
+        ok("identity: stdio (unauthenticated) send_message still delivered")
+    else:
+        fail("identity: stdio (unauthenticated) send_message still delivered", f"got {payload}")
+        return
+    origin = _xadd_field(spy.calls[0][0][0], "from_cabinet") if spy.calls else ""
+    if origin == "some-local-label":
+        ok("identity: stdio keeps the claimed from_cabinet (behaviour unchanged)")
+    else:
+        fail("identity: stdio keeps the claimed from_cabinet (behaviour unchanged)",
+             f"got from_cabinet={origin!r}")
+
+
+def run_identity_binding_tests() -> None:
+    print("\n-- peer identity binding over HTTP --")
+    test_identity_refuses_forged_sender()
+    test_identity_refuses_forged_relay_origin()
+    test_identity_accepts_matching_claim()
+    test_identity_fills_absent_claim_from_auth()
+    test_identity_refuses_tool_not_in_peer_allowed_tools()
+    test_identity_refuses_unknown_tool_name()
+    test_identity_allows_listed_tool()
+    test_identity_param_cannot_be_supplied_by_caller()
+    test_identity_stdio_unchanged()
+
+
 if __name__ == "__main__":
     run_stdio_tests()
     run_http_tests()
@@ -1107,6 +1552,7 @@ if __name__ == "__main__":
     run_cost_tests()
     run_request_handoff_tests()
     run_self_delivery_tests()
+    run_identity_binding_tests()
 
     print(f"\n{'='*50}")
     print(f"Results: {PASS} passed, {FAIL} failed")

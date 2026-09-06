@@ -168,6 +168,8 @@ Before declaring Personal Cabinet live:
 
 - **Personal Cabinet won't boot.** Check `bash load-preset.sh` output for schema errors. `CABINET_MODE=multi` with invalid peers.yml aborts — that's intentional. Fix peers.yml and retry.
 - **Trust policy blocks legitimate calls.** Confirm `consented_by_captain: true` AND the tool name is in `allowed_tools`. The hook's error message names exactly what's wrong.
+- **A peer's call is refused with `tool_not_allowed_for_peer`.** Over the HTTP transport the receiving Cabinet resolves the bearer token to the peer it belongs to and allows only the tools listed for THAT peer in its own `peers.yml`. `allowed_tools` binds both directions, so each side must list every tool it expects the other to call — a peer entry with no list may call nothing.
+- **A relayed message is refused with `sender_mismatch`.** The `from_cabinet` field in a request body is a label, not authentication: the receiver uses the peer id the bearer token proved, and refuses a body that names a different origin. Usual cause is a peer id that differs between the two `peers.yml` files, or two peers sharing one `shared_secret_ref` value (which authenticates nobody — each peer needs its own secret).
 - **split-cabinet moved too many / too few rows.** Re-run dry-run with the migrated state to confirm. If you need to undo: `split-cabinet.sh --target-cabinet main --capacity <cap> --apply` restamps them back.
 
 ## Rollback
