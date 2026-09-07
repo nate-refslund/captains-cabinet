@@ -17,6 +17,12 @@
 #
 # --dry-run (alias for CABINET_MAC_DRY_RUN=1): print the assembled claude
 # command + native-agent/lane facts and exit 0 — NO tmux, NO redis, NO boot.
+#
+# CABINET_MAC_TEST_ASSEMBLY=1 (test hook, no flag): --dry-run PLUS the runtime
+# constitution assembly that --dry-run skips, so cabinet/scripts/test-mac-dry-run.sh
+# can reach the assembly failure branch — which REFUSES the boot (exit 78,
+# like every other assembly failure here) rather than starting an officer on a
+# constitution nothing can vouch for.
 # Unknown args are REJECTED (exit 64): this script's real path kills and
 # replaces the officer's live tmux session, so a mistyped flag must never
 # silently fall through to the real boot (hatch-rehearsal finding 2026-07-07:
@@ -48,6 +54,19 @@ for _arg in "$@"; do
 done
 if [ -z "$OFFICER" ]; then
   usage; exit 64
+fi
+
+# CABINET_MAC_TEST_ASSEMBLY=1 — a dry render that deliberately does NOT skip the
+# runtime-constitution assembly block (the ONE thing CABINET_MAC_DRY_RUN=1 skips
+# wholesale). It exists because that block's failure branch was otherwise
+# untestable: no test could reach it, and it shipped fail-OPEN — booting an
+# officer on an unverified constitution — with nothing able to see that.
+# Everything downstream of the assembly behaves exactly like --dry-run: no tmux,
+# no redis, no claude, no writes to the live per-officer caches. Point
+# CABINET_RUNTIME_DIR at a scratch dir (load-preset.sh honours it) so a test run
+# cannot clobber the live /tmp/cabinet-runtime bundle.
+if [ "${CABINET_MAC_TEST_ASSEMBLY:-0}" = "1" ]; then
+  CABINET_MAC_DRY_RUN=1
 fi
 REPO_ROOT="${CABINET_SOURCE_REPO:-${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}}"
 export CABINET_SOURCE_REPO="$REPO_ROOT"
@@ -160,17 +179,53 @@ fi
 # Dry-run skip: in CABINET_MAC_DRY_RUN=1 the fake repo has no load-preset / check-deps;
 # we only need to materialise CLAUDE_CMD so tests can grep it. Side-effecting calls
 # are skipped — the dry-run gate exits 0 long before tmux/redis/boot logic anyway.
-if [ "${CABINET_MAC_DRY_RUN:-0}" != "1" ]; then
+# CABINET_MAC_TEST_ASSEMBLY=1 opts back IN to this block (with load-preset stubbed
+# and CABINET_RUNTIME_DIR redirected) so the fail-closed branch below is reachable
+# by a test; without it the branch has no sensor at all.
+if [ "${CABINET_MAC_DRY_RUN:-0}" != "1" ] || [ "${CABINET_MAC_TEST_ASSEMBLY:-0}" = "1" ]; then
   # `|| LOAD_PRESET_RC=...` so `set -euo pipefail` does not exit at THIS pipeline
   # before the rc handler runs: pipefail makes a failed load-preset non-zero, and
   # bare (no `||`) that aborts the whole boot here — the PIPESTATUS capture and
-  # the "don't abort" branch below were dead code. The `||` RHS is an assignment,
+  # the rc branch below were dead code. The `||` RHS is an assignment,
   # so PIPESTATUS still reflects the failed pipeline (load-preset's rc, not tail's).
   LOAD_PRESET_RC=0
   bash cabinet/scripts/load-preset.sh 2>&1 | tail -3 >&2 || LOAD_PRESET_RC="${PIPESTATUS[0]}"
   if [ "$LOAD_PRESET_RC" -ne 0 ]; then
-    echo "[ERROR] start-officer-mac.sh: load-preset.sh exited $LOAD_PRESET_RC — runtime constitution may be incomplete" >&2
-    # Don't abort — let officer try to boot anyway, but logged for debug
+    # FAIL CLOSED (2026-09-06). This branch used to log and CONTINUE ("let officer
+    # try to boot anyway"), which started a worker whose constitution + safety
+    # boundaries were of unknown provenance — while every sibling assembly failure
+    # in this script already refuses (egress reconciliation, security paths,
+    # sandbox, broker, launcher). An officer running on instructions nobody can
+    # vouch for is strictly worse than an officer that is down: launchd KeepAlive
+    # retries, and a down officer is visible.
+    #
+    # NOT "keep the last verified bundle": that path was considered and rejected
+    # because nothing here can prove the retained files are the RIGHT ones.
+    # $CABINET_RUNTIME_DIR (default /tmp/cabinet-runtime) holds constitution.md and
+    # safety-boundaries.md with no manifest, no framework/preset revision stamp and
+    # no completion marker; load-preset.sh mv's them into place mid-run and keeps
+    # going (schemas, .claude/agents population), so both files can be present and
+    # current while assembly failed AFTER them, or present and STALE — from an
+    # earlier commit or a DIFFERENT preset — when it failed BEFORE them. The only
+    # in-band signal is the "# Preset Addendum: <slug>" heading, which says nothing
+    # about the framework base, the safety file or the agent set. And the directory
+    # is a predictable path under /tmp, so "the files look right" is not a property
+    # this script can safely trust. Presence is not completeness (the sensor-vs-
+    # control failure class), so the honest answer is to refuse.
+    cat >&2 <<PRESETERR
+[ERROR] start-officer-mac.sh: load-preset.sh exited $LOAD_PRESET_RC — the runtime
+[ERROR]   constitution + safety bundle in ${CABINET_RUNTIME_DIR:-/tmp/cabinet-runtime} is
+[ERROR]   incomplete or stale, and cannot be proven complete for this officer.
+[ERROR]   REFUSING to boot '$OFFICER' — a worker running on unverified instructions is
+[ERROR]   worse than one that is down.
+[ERROR]   Recovery:
+[ERROR]     1. bash $REPO_ROOT/cabinet/scripts/load-preset.sh   (shows the real error)
+[ERROR]     2. check the active preset named in $REPO_ROOT/instance/config/active-preset
+[ERROR]        resolves to a populated $REPO_ROOT/presets/<slug>/ with a preset.yml
+[ERROR]     3. see docs/how-your-cabinet-is-governed.md ("The constitution and presets")
+[ERROR]   launchd KeepAlive will retry; the officer stays down until assembly passes.
+PRESETERR
+    exit 78
   fi
 
   # Dep audit — non-blocking, logs any missing tools to stderr
