@@ -11,6 +11,9 @@
 # Usage:
 #   record-capability-gap.sh --need "<one line: what I couldn't do>" \
 #       [--kind procedure|tool|integration] \
+#         (the three ACTIONABLE kinds — this script is the officer's lane.
+#          skill|authority|information are recorded by the cabinet itself and
+#          are surface-only: never proposed, never auto-applied.)
 #       [--evidence "<what I tried / why I'm stuck>"] \
 #       [--touches secrets,spending,...]    # hard-ceiling categories, if known
 #
@@ -29,7 +32,7 @@ while [ $# -gt 0 ]; do
     --kind) KIND="$2"; shift 2 ;;
     --evidence) EVIDENCE="$2"; shift 2 ;;
     --touches) TOUCHES="$2"; shift 2 ;;
-    -h|--help) sed -n '1,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '1,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "record-capability-gap: unknown arg: $1" >&2; exit 64 ;;
   esac
 done

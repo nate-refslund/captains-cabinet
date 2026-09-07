@@ -28,8 +28,10 @@ function relTime(iso: string): string {
   }
 }
 
-// kind → color: procedure=blue, tool=amber, integration=purple.
-const KIND_STYLES: Record<GapKind, string> = {
+// kind → color: procedure=blue, tool=amber, integration=purple. PARTIAL on
+// purpose — a kind with no entry falls through to the neutral badge below and
+// renders by name, so adding a kind to the ledger needs no change here.
+const KIND_STYLES: Partial<Record<GapKind, string>> = {
   procedure: 'bg-blue-900/30 text-blue-400 border-blue-800',
   tool: 'bg-amber-900/30 text-amber-400 border-amber-800',
   integration: 'bg-purple-900/30 text-purple-400 border-purple-800',
