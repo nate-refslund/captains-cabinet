@@ -277,7 +277,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--pause-before-complete", action="store_true",
                    help="block on the proceed sentinel between claim and completion")
     p.add_argument("--proceed-file", default=None)
-    p.add_argument("--pause-timeout", type=float, default=60.0)
+    # <= 30 s by contract (§4 Interface: "every wait a bounded inline poll
+    # (<= 30 s)"). The drill's own polls inside this window are 10 s to the
+    # claim and 15 s to the first renewal, so 30 s is the whole waiting budget
+    # of the stage and not a number anyone has to reach.
+    p.add_argument("--pause-timeout", type=float, default=30.0)
     p.add_argument("--renew-every", type=float, default=1.0,
                    help="renewal tick while paused (the officer's wake cadence, scaled)")
     p.add_argument("--state-dir", default=None, help="where claimed.<holder> is written")

@@ -64,11 +64,38 @@
 #   bash cabinet/scripts/drills/one-responsibility.sh [--root DIR] [--tree DIR]
 #        [--skip-update] [--with-rebuild] [--keep-scratch] [--json]
 #
-# Foreground only. Every wait is a bounded inline poll; no watcher, no daemon,
-# no background job survives the run (macOS has no timeout(1), so waits are
-# python sleeps and the trap kills every pid the drill started).
+# STAGE VERDICTS ARE FAIL-CLOSED (lib/verdict.sh). Every stage's assertions
+# run as a python block that prints one json {code, problems} verdict and then
+# a sentinel line, with its stderr kept OUT of the file the verdict is read
+# from; read_verdict turns a crashed block, a missing sentinel, an unparseable
+# verdict, a pass that names problems or a failure that names none into a
+# FAILURE of that stage. The shape it replaces — PROBLEMS="$(python …)" then
+# [ -z "$PROBLEMS" ] || fail — scored an assertion that could not RUN as a
+# pass; six stages and three event counts were built that way in this drill's
+# first cut and an independent reviewer proved two of them green on a tree
+# whose defect they exist to catch. "Not measured" and "measured clean" are
+# different facts.
+#
+# Foreground only. Every wait is a bounded inline poll (<= 30 s); no watcher,
+# no daemon, no background job survives the run (macOS has no timeout(1), so
+# waits are python sleeps, every background leg is started in its own process
+# group, and the trap kills the GROUP — the hook legs are pipelines whose
+# children are nobody's recorded pid).
+#
+# RESIDUAL, written down rather than left to be re-derived: contract §4 P4
+# ends "(task-002 repeats the race with lease 2 s.)". Amendment A2.3 spends
+# task-002 on the locked-hook stage instead ("the drill's hook stage claims
+# task-002 THROUGH the hook") and the amendment supersedes the parenthetical,
+# so the second, shorter-lease race is NOT run here. What that costs: the
+# expiry race is proved at one lease length, not two. What would close it: a
+# third seeded node carrying the same race at lease 2 s.
 
 set -u
+# Job control in a script: each background leg becomes its own process group,
+# so the trap can kill the GROUP rather than the one pid it recorded. Measured:
+# without this, `bash -c "printf … | python …" &` leaves the python behind when
+# its parent is killed.
+set -m 2>/dev/null || true
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
@@ -152,9 +179,11 @@ fail() {  # fail <code> <stage> <reason...>
 }
 
 kill_workers() {
+  # The group first (set -m put each background leg in its own), then the pid:
+  # a pipeline's children are not in $WORKER_PIDS and would outlive a pid kill.
   local pid
   for pid in $WORKER_PIDS; do
-    kill -KILL "$pid" 2>/dev/null || true
+    kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
   done
   WORKER_PIDS=""
 }
@@ -211,6 +240,9 @@ command -v "$PY" >/dev/null 2>&1 || { echo "one-responsibility: no $PY on PATH (
 command -v jq >/dev/null 2>&1 || { echo "one-responsibility: jq is absent — the locked hook needs it" >&2; exit 64; }
 [ -f "$LIB_DIR/worker.py" ] || { echo "one-responsibility: missing $LIB_DIR/worker.py" >&2; exit 64; }
 [ -f "$LIB_DIR/stub_dashboard.py" ] || { echo "one-responsibility: missing $LIB_DIR/stub_dashboard.py" >&2; exit 64; }
+[ -f "$LIB_DIR/verdict.sh" ] || { echo "one-responsibility: missing $LIB_DIR/verdict.sh — without it every stage verdict would fail OPEN" >&2; exit 64; }
+# shellcheck source=cabinet/scripts/drills/lib/verdict.sh
+. "$LIB_DIR/verdict.sh"
 
 SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/one-responsibility.XXXXXX")" || exit 64
 STAGES_FILE="$SCRATCH/stages.jsonl"
@@ -413,7 +445,10 @@ if [ "$RATIFY_RC" -ne 0 ]; then
   fail 10 P1 "the tap did not ratify $OID (exit $RATIFY_RC): $(tr '\n' ' ' < "$SCRATCH/p1-ratify.err" | cut -c1-400)"
 fi
 
-ROOTDIR="$ROOT" OID="$OID" "$PY" - <<'PY' > "$SCRATCH/p1-assert.out" 2>&1
+# stderr goes to its OWN file: folded into the file the verdict is read from,
+# one library warning would make the payload unparseable and the stage would
+# print a claim that is false in every clause.
+ROOTDIR="$ROOT" OID="$OID" "$PY" - > "$SCRATCH/p1-assert.out" 2> "$SCRATCH/p1-assert.err" <<'PY'
 import json, os, sys, hashlib, yaml
 from pathlib import Path
 root = Path(os.environ["ROOTDIR"]); sys.path.insert(0, str(root))
@@ -452,14 +487,19 @@ digests = {}
 for rel in ("instance/config/outcomes.yml", "instance/config/outcomes-proposed.yml"):
     p = root / rel
     digests[rel] = hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else ""
-print(json.dumps({"problems": problems, "digests": digests}, sort_keys=True))
+print(json.dumps({"code": 0 if not problems else 10, "problems": problems,
+                  "digests": digests}, sort_keys=True))
+print(os.environ["DRILL_VERDICT_SENTINEL"])
 PY
-P1_RC=$?
-[ "$P1_RC" -eq 0 ] || fail 10 P1 "the tap's assertions could not run: $(tr '\n' ' ' < "$SCRATCH/p1-assert.out" | cut -c1-400)"
-P1_PROBLEMS="$("$PY" -c 'import json,sys; print("; ".join(json.load(open(sys.argv[1]))["problems"]))' "$SCRATCH/p1-assert.out")"
-[ -z "$P1_PROBLEMS" ] || fail 10 P1 "$P1_PROBLEMS"
-"$PY" -c 'import json,sys; json.dump(json.load(open(sys.argv[1]))["digests"], open(sys.argv[2],"w"))' \
-  "$SCRATCH/p1-assert.out" "$SCRATCH/p1-digests.json"
+read_verdict P1 10 $? "$SCRATCH/p1-assert.out" "$SCRATCH/p1-assert.err"
+printf '%s' "$V_JSON" | "$PY" -c '
+import json, sys
+digests = json.load(sys.stdin).get("digests")
+if not isinstance(digests, dict) or not digests:
+    raise SystemExit(1)
+json.dump(digests, open(sys.argv[1], "w"))
+' "$SCRATCH/p1-digests.json" \
+  || fail 10 P1 "the tap recorded no file digests, so P5 could not tell whether carrying the work rewrote the Captain's own declaration"
 pass_stage P1 "$OID ratified through the terminal door by $PRINCIPAL, one event, actor operator"
 
 # ---------------------------------------------------------------------------
@@ -478,7 +518,8 @@ done
 wait
 WORKER_PIDS=""
 
-P2_VERDICT="$(ROOTDIR="$ROOT" P2DIR="$SCRATCH/p2" OID="$OID" TID="$T1" "$PY" - <<'PY'
+ROOTDIR="$ROOT" P2DIR="$SCRATCH/p2" OID="$OID" TID="$T1" "$PY" - \
+  > "$SCRATCH/p2-assert.out" 2> "$SCRATCH/p2-assert.err" <<'PY'
 import json, os, sys
 from pathlib import Path
 root = Path(os.environ["ROOTDIR"]); sys.path.insert(0, str(root))
@@ -501,7 +542,8 @@ problems = []
 if unimportable == len(results):
     print(json.dumps({"code": 21, "problems": [
         "the pull path could not be imported by any of the 8 holders: %s"
-        % (results[0].get("error") or "")]}, sort_keys=True))
+        % (results[0].get("error") or "<no reason given>")]}, sort_keys=True))
+    print(os.environ["DRILL_VERDICT_SENTINEL"])
     raise SystemExit(0)
 if len(winners) != 1 or len(started) != 1:
     problems.append("8 holders pulled at once: %d got the item, %d work_item_started "
@@ -524,13 +566,11 @@ out = {"code": 0 if not problems else 20, "problems": problems,
        "winner": (winners[0].get("holder") if len(winners) == 1 else None),
        "claim_id": ((started[0].get("payload") or {}).get("claim_id") if len(started) == 1 else None)}
 print(json.dumps(out, sort_keys=True))
+print(os.environ["DRILL_VERDICT_SENTINEL"])
 PY
-)"
-P2_CODE="$(printf '%s' "$P2_VERDICT" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["code"])')"
-if [ "$P2_CODE" != "0" ]; then
-  fail "$P2_CODE" P2 "$(printf '%s' "$P2_VERDICT" | "$PY" -c 'import json,sys; print("; ".join(json.load(sys.stdin)["problems"]))')"
-fi
-WINNER="$(printf '%s' "$P2_VERDICT" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["winner"])')"
+read_verdict P2 20 $? "$SCRATCH/p2-assert.out" "$SCRATCH/p2-assert.err"
+vfield P2 20 winner
+WINNER="$V_FIELD"
 pass_stage P2 "8 holders, 1 claim on $T1, holder $WINNER"
 
 # ---------------------------------------------------------------------------
@@ -539,7 +579,8 @@ pass_stage P2 "8 holders, 1 claim on $T1, holder $WINNER"
 # yields a gap instead of work. One role on the roster: it is that role's.
 # Two: it is a gap, named, not silence.
 # ---------------------------------------------------------------------------
-P2B_VERDICT="$(ROOTDIR="$ROOT" DRILL_SLUG="$SLUG" "$PY" - <<'PY'
+ROOTDIR="$ROOT" DRILL_SLUG="$SLUG" "$PY" - \
+  > "$SCRATCH/p2b-assert.out" 2> "$SCRATCH/p2b-assert.err" <<'PY'
 import json, os, sys
 from pathlib import Path
 root = Path(os.environ["ROOTDIR"]); sys.path.insert(0, str(root))
@@ -549,7 +590,10 @@ try:
     from framework.missions.compiler import compile_outcome
     from framework.missions.gaps import observe_holder_gaps
 except ImportError as exc:
-    print(json.dumps({"code": 21, "problems": ["P2b needs a module that is absent: %s" % exc]}))
+    print(json.dumps({"code": 21,
+                      "problems": ["P2b needs a module that is absent: %s" % exc]},
+                     sort_keys=True))
+    print(os.environ["DRILL_VERDICT_SENTINEL"])
     raise SystemExit(0)
 outcome = {"id": "resp-002", "name": "An unowned responsibility",
            "status": "active",
@@ -576,12 +620,9 @@ no_match = [g for g in project_gaps() if "no_match" in json.dumps(g, default=str
 if len(no_match) != 1:
     problems.append("%d no_match gaps recorded, expected exactly 1" % len(no_match))
 print(json.dumps({"code": 0 if not problems else 20, "problems": problems}, sort_keys=True))
+print(os.environ["DRILL_VERDICT_SENTINEL"])
 PY
-)"
-P2B_CODE="$(printf '%s' "$P2B_VERDICT" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["code"])')"
-if [ "$P2B_CODE" != "0" ]; then
-  fail "$P2B_CODE" P2b "$(printf '%s' "$P2B_VERDICT" | "$PY" -c 'import json,sys; print("; ".join(json.load(sys.stdin)["problems"]))')"
-fi
+read_verdict P2b 20 $? "$SCRATCH/p2b-assert.out" "$SCRATCH/p2b-assert.err"
 pass_stage P2b "unowned node assigned on a one-role roster; exactly one no_match gap on two"
 
 # ---------------------------------------------------------------------------
@@ -593,7 +634,7 @@ pass_stage P2b "unowned node assigned on a one-role roster; exactly one no_match
 rm -f "$STATE/proceed" "$STATE/claimed.$SLUG@w1" "$STATE/renewed.$SLUG@w1"
 "$PY" "$LIB_DIR/worker.py" --root "$ROOT" --slug "$SLUG" --holder "$SLUG@w1" \
   --lease "$LEASE_S" --renew-every 1 --mode work --pause-before-complete \
-  --state-dir "$STATE" --pause-timeout 40 > "$SCRATCH/p3-w1.json" 2>"$SCRATCH/p3-w1.err" &
+  --state-dir "$STATE" --pause-timeout 30 > "$SCRATCH/p3-w1.json" 2>"$SCRATCH/p3-w1.err" &
 W1_PID=$!
 WORKER_PIDS="$WORKER_PIDS $W1_PID"
 
@@ -628,9 +669,16 @@ if [ "$RENEWED" != "1" ]; then
   fail 30 P3 "w1 held $T1 for a whole tick and never renewed its claim (lease ${LEASE_S}s, tick 1s); a lease that is not renewed on the tick loses every item that outlives it"
 fi
 
-W1_CLAIM="$("$PY" -c 'import json,sys; print(json.load(open(sys.argv[1])).get("claim_id") or "")' "$STATE/claimed.$SLUG@w1")"
-P3_PROBLEMS="$(ROOTDIR="$ROOT" TID="$T1" HOLDER="$SLUG@w1" SLUGV="$SLUG" "$PY" - <<'PY'
-import os, sys
+W1_CLAIM="$(CLAIMED="$STATE/claimed.$SLUG@w1" "$PY" - 2>/dev/null <<'PY'
+import json, os, sys
+sys.stdout.write(str(json.load(open(os.environ["CLAIMED"])).get("claim_id") or ""))
+PY
+)" || fail 30 P3 "the killed holder's own record of its claim could not be read back"
+[ -n "$W1_CLAIM" ] || fail 30 P3 "the pull path handed w1 the item with no claim token, so P4 cannot tell a NEW claim from the dead holder's old one and the fence has nothing to refuse"
+
+ROOTDIR="$ROOT" TID="$T1" HOLDER="$SLUG@w1" SLUGV="$SLUG" "$PY" - \
+  > "$SCRATCH/p3-assert.out" 2> "$SCRATCH/p3-assert.err" <<'PY'
+import json, os, sys
 from pathlib import Path
 root = Path(os.environ["ROOTDIR"]); sys.path.insert(0, str(root))
 from framework.events.emitter import replay
@@ -664,10 +712,10 @@ else:
     if other and other.get("task_id") == tid:
         problems.append("a second holder was handed %s while the first holder's claim "
                         "is still live" % tid)
-print("; ".join(problems))
+print(json.dumps({"code": 0 if not problems else 30, "problems": problems}, sort_keys=True))
+print(os.environ["DRILL_VERDICT_SENTINEL"])
 PY
-)"
-[ -z "$P3_PROBLEMS" ] || fail 30 P3 "$P3_PROBLEMS"
+read_verdict P3 30 $? "$SCRATCH/p3-assert.out" "$SCRATCH/p3-assert.err"
 pass_stage P3 "w1 killed mid-work; nothing completed; the claim is still w1's"
 
 # ---------------------------------------------------------------------------
@@ -689,8 +737,9 @@ if [ "$P4_RC" -ne 0 ]; then
   fail 30 P4 "the resuming holder w2 exited $P4_RC: $(tr '\n' ' ' < "$SCRATCH/p4-w2.json" | cut -c1-300)$(tr '\n' ' ' < "$SCRATCH/p4-w2.err" | cut -c1-200)"
 fi
 
-P4_PROBLEMS="$(ROOTDIR="$ROOT" TID="$T1" OLDCLAIM="$W1_CLAIM" OLDHOLDER="$SLUG@w1" ARGV="$RESUME_ARGV" "$PY" - <<'PY'
-import os, sys
+ROOTDIR="$ROOT" TID="$T1" OLDCLAIM="$W1_CLAIM" OLDHOLDER="$SLUG@w1" ARGV="$RESUME_ARGV" "$PY" - \
+  > "$SCRATCH/p4-assert.out" 2> "$SCRATCH/p4-assert.err" <<'PY'
+import json, os, sys
 from pathlib import Path
 root = Path(os.environ["ROOTDIR"]); sys.path.insert(0, str(root))
 from framework.events.emitter import replay
@@ -721,20 +770,22 @@ for forbidden in ("--description", "Record the first result", "resp-001-task-001
     if forbidden in argv:
         problems.append("the resuming worker was handed %r on its command line; its only "
                         "input must be the durable state" % forbidden)
-print("; ".join(problems))
+print(json.dumps({"code": 0 if not problems else 30, "problems": problems}, sort_keys=True))
+print(os.environ["DRILL_VERDICT_SENTINEL"])
 PY
-)"
-[ -z "$P4_PROBLEMS" ] || fail 30 P4 "$P4_PROBLEMS"
+read_verdict P4 30 $? "$SCRATCH/p4-assert.out" "$SCRATCH/p4-assert.err"
 
 # The late completion: the killed holder wakes up and tries to close the item
 # with the token it still remembers. It must be refused, and refused silently
 # in the ledger — a refusal that still emits is not a fence.
-EV_BEFORE="$(ls "$EVENTS" 2>/dev/null | wc -l | tr -d ' ')$(cat "$EVENTS"/*.jsonl 2>/dev/null | wc -l | tr -d ' ')"
+ledger_lines P4 30
+EV_BEFORE="$LEDGER_LINES"
 ( cd "$ROOT" && OFFICER_NAME="$SLUG" bash cabinet/scripts/work-graph-complete.sh "$T1" \
     --status "done" --actor "$SLUG" --evidence "late completion by a dead holder" \
     --claim "$W1_CLAIM" ) > "$SCRATCH/p4-late.out" 2>&1
 LATE_RC=$?
-EV_AFTER="$(ls "$EVENTS" 2>/dev/null | wc -l | tr -d ' ')$(cat "$EVENTS"/*.jsonl 2>/dev/null | wc -l | tr -d ' ')"
+ledger_lines P4 30
+EV_AFTER="$LEDGER_LINES"
 if [ "$LATE_RC" -ne 4 ]; then
   fail 30 P4 "a late completion with the dead holder's token exited $LATE_RC, expected 4: $(tr '\n' ' ' < "$SCRATCH/p4-late.out" | cut -c1-300)"
 fi
@@ -772,7 +823,8 @@ wait "$HA" 2>/dev/null || true
 wait "$HB" 2>/dev/null || true
 WORKER_PIDS=""
 
-HOOK_VERDICT="$(ROOTDIR="$ROOT" TID="$T2" AOUT="$SCRATCH/p2h-a.json" BOUT="$SCRATCH/p2h-b.json" "$PY" - <<'PY'
+ROOTDIR="$ROOT" TID="$T2" AOUT="$SCRATCH/p2h-a.json" BOUT="$SCRATCH/p2h-b.json" "$PY" - \
+  > "$SCRATCH/p2h-assert.out" 2> "$SCRATCH/p2h-assert.err" <<'PY'
 import json, os, sys
 from pathlib import Path
 root = Path(os.environ["ROOTDIR"]); sys.path.insert(0, str(root))
@@ -805,14 +857,13 @@ if len(starts) == 1 and not holder:
                     "indistinguishable")
 print(json.dumps({"code": 0 if not problems else 20, "problems": problems,
                   "holder": holder, "claim_id": claim}, sort_keys=True))
+print(os.environ["DRILL_VERDICT_SENTINEL"])
 PY
-)"
-HOOK_CODE="$(printf '%s' "$HOOK_VERDICT" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["code"])')"
-if [ "$HOOK_CODE" != "0" ]; then
-  fail "$HOOK_CODE" P2h "$(printf '%s' "$HOOK_VERDICT" | "$PY" -c 'import json,sys; print("; ".join(json.load(sys.stdin)["problems"]))')"
-fi
-HOOK_HOLDER="$(printf '%s' "$HOOK_VERDICT" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["holder"])')"
-HOOK_CLAIM="$(printf '%s' "$HOOK_VERDICT" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["claim_id"])')"
+read_verdict P2h 20 $? "$SCRATCH/p2h-assert.out" "$SCRATCH/p2h-assert.err"
+vfield P2h 20 holder
+HOOK_HOLDER="$V_FIELD"
+vfield P2h 20 claim_id
+HOOK_CLAIM="$V_FIELD"
 
 # The same session ticks again. Its own live claim is renewed, not re-injected:
 # a hook that re-injects what it already holds re-injects it for the whole life
@@ -820,8 +871,9 @@ HOOK_CLAIM="$(printf '%s' "$HOOK_VERDICT" | "$PY" -c 'import json,sys; print(jso
 rm -f "$SENTINEL"
 CABINET_WORKER_ID="$HOOK_HOLDER" bash -c "printf '{\"session_id\":\"a\"}' | OFFICER_NAME='$SLUG' CABINET_ROOT='$ROOT' bash '$HOOK'" \
   > "$SCRATCH/p2h-again.json" 2>"$SCRATCH/p2h-again.err"
-AGAIN_PROBLEMS="$(ROOTDIR="$ROOT" TID="$T2" CLAIM="$HOOK_CLAIM" AGAIN="$SCRATCH/p2h-again.json" "$PY" - <<'PY'
-import os, sys
+ROOTDIR="$ROOT" TID="$T2" CLAIM="$HOOK_CLAIM" AGAIN="$SCRATCH/p2h-again.json" "$PY" - \
+  > "$SCRATCH/p2h-again-assert.out" 2> "$SCRATCH/p2h-again-assert.err" <<'PY'
+import json, os, sys
 from pathlib import Path
 root = Path(os.environ["ROOTDIR"]); sys.path.insert(0, str(root))
 from framework.events.emitter import replay
@@ -841,10 +893,10 @@ renewed = [e for e in replay(event_types=["work_item_claim_renewed"])
 if not renewed:
     problems.append("the holder's own tick did not renew its claim; a lease that is not "
                     "renewed on the tick loses every item that outlives it")
-print("; ".join(problems))
+print(json.dumps({"code": 0 if not problems else 20, "problems": problems}, sort_keys=True))
+print(os.environ["DRILL_VERDICT_SENTINEL"])
 PY
-)"
-[ -z "$AGAIN_PROBLEMS" ] || fail 20 P2h "$AGAIN_PROBLEMS"
+read_verdict P2h 20 $? "$SCRATCH/p2h-again-assert.out" "$SCRATCH/p2h-again-assert.err"
 
 # Close the item the hook claimed, with the holder and token read back out of
 # the ledger — the drill never invents a claim it did not observe.
@@ -858,7 +910,8 @@ pass_stage P2h "the locked hook claimed $T2 once across two sessions, renewed it
 # P5 — no re-briefing. The Captain ratified once. Nothing since then has asked
 # him anything, rewritten a proposal, or ratified again.
 # ---------------------------------------------------------------------------
-P5_PROBLEMS="$(ROOTDIR="$ROOT" OID="$OID" BEFORE="$SCRATCH/p1-digests.json" "$PY" - <<'PY'
+ROOTDIR="$ROOT" OID="$OID" BEFORE="$SCRATCH/p1-digests.json" "$PY" - \
+  > "$SCRATCH/p5-assert.out" 2> "$SCRATCH/p5-assert.err" <<'PY'
 import hashlib, json, os, sys
 from pathlib import Path
 root = Path(os.environ["ROOTDIR"]); sys.path.insert(0, str(root))
@@ -875,10 +928,10 @@ evs = [e for e in replay(event_types=["captain_outcome_ratified"])
        if (e.get("payload") or {}).get("outcome_id") == os.environ["OID"]]
 if len(evs) != 1:
     problems.append("%d ratifications for the one responsibility, expected 1" % len(evs))
-print("; ".join(problems))
+print(json.dumps({"code": 0 if not problems else 40, "problems": problems}, sort_keys=True))
+print(os.environ["DRILL_VERDICT_SENTINEL"])
 PY
-)"
-[ -z "$P5_PROBLEMS" ] || fail 40 P5 "$P5_PROBLEMS"
+read_verdict P5 40 $? "$SCRATCH/p5-assert.out" "$SCRATCH/p5-assert.err"
 pass_stage P5 "one ratification, no proposal file rewritten, no second ask"
 
 # ---------------------------------------------------------------------------
@@ -890,7 +943,8 @@ pass_stage P5 "one ratification, no proposal file rewritten, no second ask"
 RECEIPTS_RC=$?
 [ "$RECEIPTS_RC" -eq 0 ] || fail 40 P6 "receipts --json exited $RECEIPTS_RC: $(tr '\n' ' ' < "$SCRATCH/p6-receipts.err" | cut -c1-400)"
 
-P6_PROBLEMS="$(ROOTDIR="$ROOT" OID="$OID" T1="$T1" T2="$T2" RECEIPTS="$SCRATCH/p6-receipts.json" "$PY" - <<'PY'
+ROOTDIR="$ROOT" OID="$OID" T1="$T1" T2="$T2" RECEIPTS="$SCRATCH/p6-receipts.json" "$PY" - \
+  > "$SCRATCH/p6-assert.out" 2> "$SCRATCH/p6-assert.err" <<'PY'
 import json, os, sys
 from pathlib import Path
 root = Path(os.environ["ROOTDIR"]); sys.path.insert(0, str(root))
@@ -926,10 +980,10 @@ else:
     for node in mine[0]["work_graph"].nodes.values():
         if node.status.value != "done":
             problems.append("a fresh compile reports %s as %s, not done" % (node.id, node.status.value))
-print("; ".join(problems))
+print(json.dumps({"code": 0 if not problems else 40, "problems": problems}, sort_keys=True))
+print(os.environ["DRILL_VERDICT_SENTINEL"])
 PY
-)"
-[ -z "$P6_PROBLEMS" ] || fail 40 P6 "$P6_PROBLEMS"
+read_verdict P6 40 $? "$SCRATCH/p6-assert.out" "$SCRATCH/p6-assert.err"
 pass_stage P6 "1 ratified, 2 completed with readable evidence, the released row, both nodes done"
 
 # ---------------------------------------------------------------------------
@@ -973,7 +1027,8 @@ else
   PRESERVED_REL="shared/interfaces/captain-rules-index.yaml"
   mkdir -p "$INSTALL/shared/interfaces"
   printf 'drill: one non-empty preserved row\n' > "$INSTALL/$PRESERVED_REL"
-  PRESERVED_BEFORE="$("$PY" -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$INSTALL/$PRESERVED_REL")"
+  sha256_of P7 50 "$INSTALL/$PRESERVED_REL"
+  PRESERVED_BEFORE="$SHA_OUT"
 
   # The stub that answers the health contract. Its stamp is baked at start, so
   # the gate can be made red by simply not restarting it. The identity marker
@@ -1014,18 +1069,12 @@ print(d.get("latest", {}).get("source_sha") or d.get("latest_sha") or "")
       bash "$UPDATER" apply --bundle "$BUNDLE_SHA" --door terminal $REBUILD_ARG ) \
     > "$SCRATCH/p7-gate-red.out" 2>&1
   RED_RC=$?
-  ROLLED="$(ROOTDIR="$ROOT" "$PY" - <<'PY'
-import os, sys
-from pathlib import Path
-sys.path.insert(0, os.environ["ROOTDIR"])
-from framework.events.emitter import replay
-print(len(replay(event_types=["cabinet_update_rolled_back"])))
-PY
-)"
+  event_count P7 50 cabinet_update_rolled_back
+  ROLLED="$EV_COUNT"
   if [ "$RED_RC" -eq 0 ]; then
     fail 50 P7 "an apply whose dashboard never restarted exited 0 — an identity-only probe passes an old process that survived a failed restart"
   fi
-  [ "$ROLLED" != "0" ] || fail 50 P7 "the failed health gate emitted no cabinet_update_rolled_back"
+  [ "$ROLLED" -gt 0 ] || fail 50 P7 "the failed health gate emitted no cabinet_update_rolled_back"
   if grep -q 'the one changed line this bundle ships' "$INSTALL/$MUTATED_REL" 2>/dev/null; then
     fail 50 P7 "the rolled-back install still carries the bundle's change"
   fi
@@ -1037,22 +1086,21 @@ PY
   [ "$APPLY_RC" -eq 0 ] || fail 50 P7 "apply exited $APPLY_RC: $(tr '\n' ' ' < "$SCRATCH/p7-apply.out" | cut -c1-400)"
   grep -q 'the one changed line this bundle ships' "$INSTALL/$MUTATED_REL" \
     || fail 50 P7 "apply reported success but the shipped change is not in the install"
-  PRESERVED_AFTER="$("$PY" -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$INSTALL/$PRESERVED_REL")"
+  sha256_of P7 50 "$INSTALL/$PRESERVED_REL"
+  PRESERVED_AFTER="$SHA_OUT"
   [ "$PRESERVED_BEFORE" = "$PRESERVED_AFTER" ] || fail 50 P7 "apply overwrote a preserved path"
   SNAPS="$(ls "$INSTALL/.updates/snapshots" 2>/dev/null | wc -l | tr -d ' ')"
   [ "$SNAPS" -ge 1 ] || fail 50 P7 "apply kept no snapshot to roll back to"
-  APPLIED="$(ROOTDIR="$ROOT" "$PY" - <<'PY'
-import os, sys
-sys.path.insert(0, os.environ["ROOTDIR"])
-from framework.events.emitter import replay
-print(len(replay(event_types=["cabinet_update_applied"])))
-PY
-)"
-  [ "$APPLIED" != "0" ] || fail 50 P7 "a successful apply emitted no cabinet_update_applied"
+  event_count P7 50 cabinet_update_applied
+  APPLIED="$EV_COUNT"
+  [ "$APPLIED" -gt 0 ] || fail 50 P7 "a successful apply emitted no cabinet_update_applied"
 
   # (c) a bundle that touches the locked set is refused whole, before any write.
-  HOOK_BEFORE="$("$PY" -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$INSTALL/cabinet/scripts/hooks/session-task-inject.sh")"
+  sha256_of P7 50 "$INSTALL/cabinet/scripts/hooks/session-task-inject.sh"
+  HOOK_BEFORE="$SHA_OUT"
   ( cd "$ROOT" && bash "$UPDATER" publish --from "$LOCKMUT" --to "$INSTALL" ) > "$SCRATCH/p7-publish-locked.out" 2>&1
+  LOCK_PUB_RC=$?
+  [ "$LOCK_PUB_RC" -eq 0 ] || fail 50 P7 "publishing the locked-path bundle exited $LOCK_PUB_RC, so the refusal leg would be run against no bundle at all: $(tr '\n' ' ' < "$SCRATCH/p7-publish-locked.out" | cut -c1-400)"
   LOCK_SHA="$(CABINET_ROOT="$INSTALL" bash "$UPDATER" status --json 2>/dev/null | "$PY" -c '
 import json, sys
 try:
@@ -1061,20 +1109,17 @@ except Exception:
     print(""); raise SystemExit(0)
 print(d.get("latest", {}).get("source_sha") or d.get("latest_sha") or "")
 ')"
+  [ -n "$LOCK_SHA" ] || fail 50 P7 "the inbox reports no bundle after the locked-path publish; an apply with an empty bundle id would be refused for the wrong reason and the drill would call it a locked-path refusal"
   ( cd "$INSTALL" && CABINET_ROOT="$INSTALL" bash "$UPDATER" apply --bundle "$LOCK_SHA" --door terminal $REBUILD_ARG ) \
     > "$SCRATCH/p7-locked.out" 2>&1
   LOCK_RC=$?
   [ "$LOCK_RC" -eq 3 ] || fail 50 P7 "a bundle changing a locked path exited $LOCK_RC, expected 3"
-  HOOK_AFTER="$("$PY" -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$INSTALL/cabinet/scripts/hooks/session-task-inject.sh")"
+  sha256_of P7 50 "$INSTALL/cabinet/scripts/hooks/session-task-inject.sh"
+  HOOK_AFTER="$SHA_OUT"
   [ "$HOOK_BEFORE" = "$HOOK_AFTER" ] || fail 50 P7 "a refused bundle still changed a locked path"
-  REFUSED="$(ROOTDIR="$ROOT" "$PY" - <<'PY'
-import os, sys
-sys.path.insert(0, os.environ["ROOTDIR"])
-from framework.events.emitter import replay
-print(len(replay(event_types=["cabinet_update_refused"])))
-PY
-)"
-  [ "$REFUSED" != "0" ] || fail 50 P7 "a refused bundle emitted no cabinet_update_refused"
+  event_count P7 50 cabinet_update_refused
+  REFUSED="$EV_COUNT"
+  [ "$REFUSED" -gt 0 ] || fail 50 P7 "a refused bundle emitted no cabinet_update_refused"
 
   "$PY" "$LIB_DIR/stub_dashboard.py" stop --state-file "$STUB_STATE" >/dev/null 2>&1 || true
   STUB_STATE=""
@@ -1092,6 +1137,8 @@ fi
 # ---------------------------------------------------------------------------
 find "$HOME_DIR" 2>/dev/null | LC_ALL=C sort > "$SCRATCH/home.after"
 ( cd "$REPO_ROOT" && find . -not -path './.git/*' 2>/dev/null | LC_ALL=C sort ) > "$SCRATCH/repo.after"
+[ -s "$SCRATCH/home.before" ] && [ -s "$SCRATCH/repo.before" ] \
+  || fail 64 hermeticity "the before picture of HOME or of the repo was never taken, so 'nothing was written outside the root' cannot be claimed"
 HOME_DIFF="$(diff "$SCRATCH/home.before" "$SCRATCH/home.after" | grep -c '^[<>]' | tr -d ' ')"
 REPO_DIFF="$(diff "$SCRATCH/repo.before" "$SCRATCH/repo.after" | grep -c '^[<>]' | tr -d ' ')"
 if [ "$HOME_DIFF" != "0" ] || [ "$REPO_DIFF" != "0" ]; then
