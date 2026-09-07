@@ -35,7 +35,15 @@
 # exits, and `exit` inside $( ) exits only the subshell — the caller would sail
 # on with an empty variable, which is the very fail-open this file removes.
 # They return their answers in globals instead: V_CODE, V_PROBLEMS, V_JSON,
-# V_FIELD, EV_COUNT, SHA_OUT, LEDGER_LINES.
+# V_FIELD, EV_COUNT, DIR_COUNT, SHA_OUT, LEDGER_LINES.
+#
+# EVERY COUNT IS TAKEN TWICE, AROUND THE LEG THAT IS SUPPOSED TO CHANGE IT.
+# A count of the whole run answers "has this ever happened", which is a
+# different question from "did THIS leg do it" and is satisfied by an earlier
+# leg's row: three of P7's four legs would have been scored by an event another
+# leg emitted. The helpers here refuse a count that could not be TAKEN; the
+# caller's job is to compare two of them, because a count that did not CHANGE
+# is the other half of the same fail-open.
 
 DRILL_VERDICT_SENTINEL='--- one-responsibility stage verdict ends here ---'
 export DRILL_VERDICT_SENTINEL
@@ -45,6 +53,7 @@ V_PROBLEMS=""
 V_JSON=""
 V_FIELD=""
 EV_COUNT=""
+DIR_COUNT=""
 SHA_OUT=""
 LEDGER_LINES=""
 
@@ -130,6 +139,29 @@ PY
 )" || fail "$code" "$stage" "the $etype count could not be taken, so the leg was not measured: $(tr '\n' ' ' < "$SCRATCH/event-count.err" 2>/dev/null | cut -c1-300)"
   case "$EV_COUNT" in
     ''|*[!0-9]*) fail "$code" "$stage" "the $etype count came back as '$EV_COUNT', which is not a number — a count that could not be taken must never read as 'more than none'" ;;
+  esac
+}
+
+dir_count() {  # dir_count <stage> <fail_code> <dir> — entries in <dir> into $DIR_COUNT
+  # An ABSENT directory is 0 (nothing has been written there yet, which is a
+  # true fact about the leg before it runs); a path that exists and cannot be
+  # listed is a FAILURE, because "I could not look" must never read as "there
+  # was nothing there".
+  local stage="$1" code="$2" path="$3"
+  DIR_COUNT="$(TARGET="$path" "$PY" - 2>"$SCRATCH/dir-count.err" <<'PY'
+import os, sys
+from pathlib import Path
+p = Path(os.environ["TARGET"])
+if not p.exists():
+    print(0)
+    raise SystemExit(0)
+if not p.is_dir():
+    raise SystemExit("%s exists and is not a directory" % p)
+print(len(list(p.iterdir())))
+PY
+)" || fail "$code" "$stage" "could not count the entries under $path, so a leg that kept nothing there and a leg nobody could look at would read the same: $(tr '\n' ' ' < "$SCRATCH/dir-count.err" 2>/dev/null | cut -c1-300)"
+  case "$DIR_COUNT" in
+    ''|*[!0-9]*) fail "$code" "$stage" "the entry count for $path came back as '$DIR_COUNT', which is not a number" ;;
   esac
 }
 

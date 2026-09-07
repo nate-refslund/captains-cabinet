@@ -21,19 +21,23 @@
 #   10  P1  the tap: no ratified responsibility
 #   20  P2  the claim: the crowd did not resolve to one holder (includes the
 #           assignment leg P2b and the locked-hook leg P2h — all claim-path)
-#   21      THE MEASUREMENT WAS IMPOSSIBLE: a module the pull path needs could
-#           not be imported where it must be measured. Distinct from 20 on
-#           purpose — an ImportError is not the red the claim invariant names,
-#           and a drill that reported one as the other would be lying about
-#           what it proved.
+#   21      THE MEASUREMENT WAS IMPOSSIBLE: the pull path could not be
+#           imported where it must be measured, or not one holder in the
+#           crowd reached it at all. Distinct from 20 on purpose — an
+#           ImportError is not the red the claim invariant names, and a drill
+#           that reported one as the other would be lying about what it
+#           proved. A PARTIAL failure is 20, not 21: seven dead holders and
+#           one winner is a crowd that did not resolve, and the stage says so
+#           in those words rather than printing "8 holders, 1 claim".
 #   30  P3/P4  kill and resume: the item did not come back, or came back wrong
 #   40  P5/P6  no re-briefing / receipts
 #   50  P7  the update path
 #   64      usage, or this host cannot host the drill at all
 #
 # HERMETIC BY CONSTRUCTION. Everything runs against a scratch hatch under a
-# throwaway root; HOME, CABINET_ROOT, CABINET_EVENT_LOG_DIR and CABINET_ID are
-# pinned and every other CABINET_* plus PYTHONPATH, DATABASE_URL,
+# throwaway root; HOME, CABINET_ROOT, CABINET_EVENT_LOG_DIR, CABINET_ID and the
+# A2.9 claim-lease floor (CABINET_CLAIM_LEASE_FLOOR_SECONDS=1, the only path
+# below the production 60 s minimum) are pinned and every other CABINET_* plus PYTHONPATH, DATABASE_URL,
 # ORG_RUNTIME_DB and REDIS_* are scrubbed (an inherited DATABASE_URL makes the
 # emitter write this run's fixture rows into a real Postgres —
 # framework/events/emitter.py:438). File lists of $HOME and of the repo are
@@ -56,7 +60,12 @@
 #   CABINET_DASH_RESTART_CMD
 #       the command the update path must run to restart the dashboard. The
 #       drill points it at its own stub server so the health gate can be made
-#       to go red on purpose (see P7).
+#       to go red on purpose (see P7). A5.14 renames the update path's two
+#       health-gate command seams to CABINET_UPDATE_TEST_*; P7 REFUSES TO RUN
+#       its gate-red leg unless the installed updater actually reads the name
+#       driven here, because a seam nothing reads would let the dashboard
+#       restart normally and turn the whole rollback arm into a measurement of
+#       a healthy server.
 #   CABINET_DRILL_DASH_PORT
 #       pin the stub server's port instead of picking a free one.
 #
@@ -75,6 +84,19 @@
 # first cut and an independent reviewer proved two of them green on a tree
 # whose defect they exist to catch. "Not measured" and "measured clean" are
 # different facts.
+#
+# SO IS PARTICIPATION, and it is a SECOND channel. A stage's verdict can be
+# read perfectly while the run it describes never happened: eight holders are
+# launched, seven die before they reach the pull path, one claims the item, and
+# a stage that counts only winners and events prints "8 holders, 1 claim" — a
+# sentence whose first clause is false. Every leg this drill starts in the
+# background therefore has its EXIT STATUS collected one pid at a time (`wait`
+# with no argument throws them away), every holder's result must parse and
+# carry no error, and every P7 count is taken twice, around the leg that is
+# supposed to change it, because a count across the whole run is answered by
+# another leg's row. Silence is a legitimate answer from a losing hook tick and
+# from a holder that found nothing, which is exactly why silence can never be
+# the only thing a stage looks at.
 #
 # Foreground only. Every wait is a bounded inline poll (<= 30 s); no watcher,
 # no daemon, no background job survives the run (macOS has no timeout(1), so
@@ -95,6 +117,14 @@ set -u
 # so the trap can kill the GROUP rather than the one pid it recorded. Measured:
 # without this, `bash -c "printf … | python …" &` leaves the python behind when
 # its parent is killed.
+#
+# EXPECTED NOISE, not an error: bash 3.2.57 (macOS) prints
+# "one-responsibility.sh: child setpgid (N to N): Operation not permitted" on
+# some legs when job control is on in a non-interactive shell. Measured on this
+# host: the group kill still works (0 strays with `set -m`, 1 stray without),
+# so the line is cosmetic. It is NOT suppressed, because suppressing it would
+# mean discarding the drill's own stderr, and the whole unit exists to stop
+# stages that hide what they could not do.
 set -m 2>/dev/null || true
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -273,6 +303,12 @@ export HOME="$HOME_DIR"
 export CABINET_ROOT="$ROOT"
 export CABINET_EVENT_LOG_DIR="$EVENTS"
 export SESSION_TASK_INJECT_DEBOUNCE_S=0
+# A2.9. Production keeps MIN_LEASE_SECONDS = 60 and this variable is the ONLY
+# sub-floor path. Without it P3's 3 s lease is clamped to 60, P4's bounded wait
+# for the expiry can never observe one, and the kill/resume stage would red for
+# a reason that has nothing to do with the claim. 1 is the hard minimum the
+# amendment allows.
+export CABINET_CLAIM_LEASE_FLOOR_SECONDS=1
 export PYTHONDONTWRITEBYTECODE=1
 mkdir -p "$EVENTS"
 
@@ -508,43 +544,109 @@ pass_stage P1 "$OID ratified through the terminal door by $PRINCIPAL, one event,
 # never by hook silence: silence has too many causes to be evidence.
 # ---------------------------------------------------------------------------
 mkdir -p "$SCRATCH/p2"
+P2_PIDS=""
 i=1
 while [ "$i" -le 8 ]; do
   "$PY" "$LIB_DIR/worker.py" --root "$ROOT" --slug "$SLUG" \
     --holder "$SLUG@w$i" --mode pull > "$SCRATCH/p2/w$i.json" 2>"$SCRATCH/p2/w$i.err" &
+  P2_PIDS="$P2_PIDS $!"
   WORKER_PIDS="$WORKER_PIDS $!"
   i=$((i + 1))
 done
-wait
+# Every holder's exit status, one line each. A bare `wait` discards them, and a
+# holder that died before it reached the pull path is not a loser — it is a
+# holder that was never in the crowd. Scoring "8 holders, 1 claim" on a crowd
+# of one is the same fail-open as scoring an assertion block that crashed:
+# the channel that carries a stage's VERDICT was closed in the last round, and
+# this is the channel that carries its PARTICIPATION.
+: > "$SCRATCH/p2/rc.txt"
+i=1
+for _pid in $P2_PIDS; do
+  wait "$_pid"; _rc=$?
+  printf 'w%d %d\n' "$i" "$_rc" >> "$SCRATCH/p2/rc.txt"
+  i=$((i + 1))
+done
 WORKER_PIDS=""
 
-ROOTDIR="$ROOT" P2DIR="$SCRATCH/p2" OID="$OID" TID="$T1" "$PY" - \
+ROOTDIR="$ROOT" P2DIR="$SCRATCH/p2" P2RC="$SCRATCH/p2/rc.txt" OID="$OID" TID="$T1" "$PY" - \
   > "$SCRATCH/p2-assert.out" 2> "$SCRATCH/p2-assert.err" <<'PY'
 import json, os, sys
 from pathlib import Path
 root = Path(os.environ["ROOTDIR"]); sys.path.insert(0, str(root))
 from framework.events.emitter import replay
 p2 = Path(os.environ["P2DIR"]); oid, tid = os.environ["OID"], os.environ["TID"]
-results, unimportable = [], 0
+
+# Exit status per holder, written by the drill one `wait` at a time. A holder
+# whose status was never recorded counts as a holder that did not run: "not
+# measured" and "measured clean" are different facts here too.
+rcs = {}
+rc_path = Path(os.environ["P2RC"])
+if rc_path.is_file():
+    for line in rc_path.read_text(encoding="utf-8").splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1].lstrip("-").isdigit():
+            rcs[parts[0]] = int(parts[1])
+
+# PARTICIPATION before verdict. Eight holders racing for one item is the whole
+# claim of this stage; seven holders that died on the way to the pull path make
+# the eighth's success mean nothing, and every one of those seven would
+# otherwise read as a well-behaved loser.
+results, absent = [], []
 for n in range(1, 9):
-    raw = (p2 / ("w%d.json" % n)).read_text(encoding="utf-8").strip() if (p2 / ("w%d.json" % n)).is_file() else ""
+    who = "w%d" % n
+    out_path, err_path = p2 / (who + ".json"), p2 / (who + ".err")
+    raw = out_path.read_text(encoding="utf-8").strip() if out_path.is_file() else ""
     try:
-        results.append(json.loads(raw))
+        parsed = json.loads(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError("the holder printed something that is not a result object")
     except Exception:
-        results.append({"ok": False, "error": "no result from w%d: %r" % (n, raw[:120])})
-for r in results:
-    if r.get("module_error"):
-        unimportable += 1
-winners = [r for r in results if (r.get("task") or {}).get("task_id")]
+        parsed = None
+    tail = ""
+    if err_path.is_file():
+        tail = err_path.read_text(encoding="utf-8", errors="replace").strip()[-160:]
+    if parsed is None:
+        reason = ("printed no readable result (%r%s)"
+                  % (raw[:80], (" stderr: " + tail) if tail else ""))
+    elif parsed.get("module_error"):
+        reason = "could not import %s" % parsed["module_error"]
+    elif parsed.get("error"):
+        reason = "failed: %s" % (str(parsed["error"])[:120],)
+    elif parsed.get("ok") is not True:
+        reason = "reported ok=%r" % (parsed.get("ok"),)
+    elif who not in rcs:
+        reason = "ran with no exit status recorded, so nothing about it was measured"
+    elif rcs[who] != 0:
+        reason = "exited %d" % rcs[who]
+    else:
+        reason = None
+    results.append(parsed)
+    if reason:
+        absent.append("%s %s" % (who, reason))
+
+unimportable = sum(1 for r in results if r and r.get("module_error"))
+winners = [r for r in results if r and (r.get("task") or {}).get("task_id")]
 started = [e for e in replay(event_types=["work_item_started"])
            if (e.get("payload") or {}).get("task_id") == tid]
 problems = []
 if unimportable == len(results):
+    first = next((r for r in results if r), {})
     print(json.dumps({"code": 21, "problems": [
         "the pull path could not be imported by any of the 8 holders: %s"
-        % (results[0].get("error") or "<no reason given>")]}, sort_keys=True))
+        % (first.get("error") or "<no reason given>")]}, sort_keys=True))
     print(os.environ["DRILL_VERDICT_SENTINEL"])
     raise SystemExit(0)
+if len(absent) == len(results):
+    print(json.dumps({"code": 21, "problems": [
+        "not one of the 8 holders reached the pull path, so the claim was never "
+        "measured at all: %s" % "; ".join(absent[:3])]}, sort_keys=True))
+    print(os.environ["DRILL_VERDICT_SENTINEL"])
+    raise SystemExit(0)
+if absent:
+    problems.append("%d of the 8 holders never reached the pull path (%s), so the crowd "
+                    "was not a crowd; one holder that succeeds while the rest die proves "
+                    "nothing about a claim under contention"
+                    % (len(absent), "; ".join(absent[:4])))
 if len(winners) != 1 or len(started) != 1:
     problems.append("8 holders pulled at once: %d got the item, %d work_item_started "
                     "events landed; exactly 1 of each is the claim"
@@ -630,6 +732,18 @@ pass_stage P2b "unowned node assigned on a one-role roster; exactly one no_match
 # completion while a renewal tick is due, at a scaled cadence (tick 1s, lease
 # 3s) so a lease that only renews when nearly spent is visible as a defect
 # rather than as a slow test.
+#
+# KNOWN RACE, named rather than left to be re-derived. The kill lands within
+# ~0.25 s of the first renewal, which leaves roughly LEASE_S minus a tick for a
+# fresh interpreter to start, import the emitter and the claims module, and ask
+# who holds the task. On a loaded host that window can close, the lease expires
+# before the question is asked, and the stage reds on "nothing holds <task>" —
+# a wall-clock artefact of this host, not a defect in the subject. Two things
+# keep that honest: CABINET_DRILL_LEASE_SECONDS raises the window without
+# touching the code, and the assertion below reads the killed holder's own
+# recorded expires_at, so an expiry that beat the assertion is reported AS an
+# expiry that beat the assertion. It still FAILS — a stage that cannot measure
+# what it names has not measured it — but it fails saying the true thing.
 # ---------------------------------------------------------------------------
 rm -f "$STATE/proceed" "$STATE/claimed.$SLUG@w1" "$STATE/renewed.$SLUG@w1"
 "$PY" "$LIB_DIR/worker.py" --root "$ROOT" --slug "$SLUG" --holder "$SLUG@w1" \
@@ -676,9 +790,10 @@ PY
 )" || fail 30 P3 "the killed holder's own record of its claim could not be read back"
 [ -n "$W1_CLAIM" ] || fail 30 P3 "the pull path handed w1 the item with no claim token, so P4 cannot tell a NEW claim from the dead holder's old one and the fence has nothing to refuse"
 
-ROOTDIR="$ROOT" TID="$T1" HOLDER="$SLUG@w1" SLUGV="$SLUG" "$PY" - \
+ROOTDIR="$ROOT" TID="$T1" HOLDER="$SLUG@w1" SLUGV="$SLUG" \
+  CLAIMEDFILE="$STATE/claimed.$SLUG@w1" "$PY" - \
   > "$SCRATCH/p3-assert.out" 2> "$SCRATCH/p3-assert.err" <<'PY'
-import json, os, sys
+import json, os, sys, time
 from pathlib import Path
 root = Path(os.environ["ROOTDIR"]); sys.path.insert(0, str(root))
 from framework.events.emitter import replay
@@ -696,8 +811,31 @@ except ImportError as exc:
 else:
     live = live_claim(tid)
     if not live:
-        problems.append("nothing holds %s after the kill — the lease is the liveness "
-                        "signal and it has not expired yet" % tid)
+        # Distinguish the defect from the host. The killed holder wrote what it
+        # was handed, expires_at included; if that moment has already passed,
+        # the lease outran the assertion and the stage says so instead of
+        # blaming a claim path that may be perfectly correct.
+        expired_first = None
+        try:
+            claimed = json.loads(Path(os.environ["CLAIMEDFILE"]).read_text(encoding="utf-8"))
+            raw = claimed.get("expires_at")
+            if raw is not None:
+                try:
+                    expired_first = float(raw) <= time.time()
+                except (TypeError, ValueError):
+                    from datetime import datetime
+                    stamp = str(raw).replace("Z", "+00:00")
+                    expired_first = datetime.fromisoformat(stamp).timestamp() <= time.time()
+        except Exception:
+            expired_first = None
+        if expired_first:
+            problems.append("nothing holds %s after the kill, and the claim the holder was "
+                            "given had ALREADY expired by the time this ran (expires_at %r) "
+                            "— the lease outran the assertion on this host; raise "
+                            "CABINET_DRILL_LEASE_SECONDS and run it again" % (tid, raw))
+        else:
+            problems.append("nothing holds %s after the kill — the lease is the liveness "
+                            "signal and it has not expired yet" % tid)
     elif live.get("holder") != holder:
         problems.append("%s is held by %r, expected %r" % (tid, live.get("holder"), holder))
 # The next holder tries while the claim is still live, IN THIS PROCESS: a
@@ -730,14 +868,19 @@ LEASE_WAIT="$("$PY" -c "print($LEASE_S + 2)")"
 
 # No card, no prompt, no argument carrying the work: the resume worker's only
 # input is the durable state — the env and the files.
-RESUME_ARGV="--root $ROOT --slug $SLUG --holder $SLUG@w2 --lease 60 --mode work --state-dir $STATE"
-"$PY" "$LIB_DIR/worker.py" $RESUME_ARGV > "$SCRATCH/p4-w2.json" 2>"$SCRATCH/p4-w2.err"
+# An ARRAY, not a string: a --root or --state-dir carrying a space would word
+# split out of a bare expansion and the stage would fail for a reason that has
+# nothing to do with the resume. The forbidden-token scan below reads the same
+# array, one element per line, so the thing scanned is the thing passed.
+RESUME_ARGV=(--root "$ROOT" --slug "$SLUG" --holder "$SLUG@w2" --lease 60 --mode work --state-dir "$STATE")
+"$PY" "$LIB_DIR/worker.py" "${RESUME_ARGV[@]}" > "$SCRATCH/p4-w2.json" 2>"$SCRATCH/p4-w2.err"
 P4_RC=$?
 if [ "$P4_RC" -ne 0 ]; then
   fail 30 P4 "the resuming holder w2 exited $P4_RC: $(tr '\n' ' ' < "$SCRATCH/p4-w2.json" | cut -c1-300)$(tr '\n' ' ' < "$SCRATCH/p4-w2.err" | cut -c1-200)"
 fi
 
-ROOTDIR="$ROOT" TID="$T1" OLDCLAIM="$W1_CLAIM" OLDHOLDER="$SLUG@w1" ARGV="$RESUME_ARGV" "$PY" - \
+ROOTDIR="$ROOT" TID="$T1" OLDCLAIM="$W1_CLAIM" OLDHOLDER="$SLUG@w1" \
+  ARGV="$(printf '%s\n' "${RESUME_ARGV[@]}")" "$PY" - \
   > "$SCRATCH/p4-assert.out" 2> "$SCRATCH/p4-assert.err" <<'PY'
 import json, os, sys
 from pathlib import Path
@@ -765,9 +908,9 @@ done = [e for e in replay(event_types=["work_item_completed"])
         if (e.get("payload") or {}).get("task_id") == tid]
 if len(done) != 1:
     problems.append("%d completions for %s, expected exactly 1" % (len(done), tid))
-argv = os.environ["ARGV"]
+argv = os.environ["ARGV"].splitlines()
 for forbidden in ("--description", "Record the first result", "resp-001-task-001"):
-    if forbidden in argv:
+    if any(forbidden in word for word in argv):
         problems.append("the resuming worker was handed %r on its command line; its only "
                         "input must be the durable state" % forbidden)
 print(json.dumps({"code": 0 if not problems else 30, "problems": problems}, sort_keys=True))
@@ -819,11 +962,16 @@ bash -c "printf '{\"session_id\":\"b\"}' | OFFICER_NAME='$SLUG' CABINET_ROOT='$R
   > "$SCRATCH/p2h-b.json" 2>"$SCRATCH/p2h-b.err" &
 HB=$!
 WORKER_PIDS="$WORKER_PIDS $HA $HB"
-wait "$HA" 2>/dev/null || true
-wait "$HB" 2>/dev/null || true
+# Each leg's own status. Silence from the hook is how a LOSER looks — so a leg
+# that crashed looks exactly like a leg that lost, and discarding the status
+# (`wait … || true`) is what makes the two indistinguishable. One session that
+# ticked and one that fell over is not "two sessions of one role".
+wait "$HA"; HA_RC=$?
+wait "$HB"; HB_RC=$?
 WORKER_PIDS=""
 
-ROOTDIR="$ROOT" TID="$T2" AOUT="$SCRATCH/p2h-a.json" BOUT="$SCRATCH/p2h-b.json" "$PY" - \
+ROOTDIR="$ROOT" TID="$T2" AOUT="$SCRATCH/p2h-a.json" BOUT="$SCRATCH/p2h-b.json" \
+  ARC="$HA_RC" BRC="$HB_RC" AERR="$SCRATCH/p2h-a.err" BERR="$SCRATCH/p2h-b.err" "$PY" - \
   > "$SCRATCH/p2h-assert.out" 2> "$SCRATCH/p2h-assert.err" <<'PY'
 import json, os, sys
 from pathlib import Path
@@ -831,7 +979,20 @@ root = Path(os.environ["ROOTDIR"]); sys.path.insert(0, str(root))
 from framework.events.emitter import replay
 tid = os.environ["TID"]
 problems, ctx = [], []
-for key in ("AOUT", "BOUT"):
+# A hook leg that exited non-zero prints nothing, and printing nothing is
+# exactly what a legitimate LOSER does. So the status is the only thing that
+# separates "this session lost the race" from "this session fell over", and a
+# crashed leg scored as a loser would make one tick look like two.
+for key, rckey, errkey in (("AOUT", "ARC", "AERR"), ("BOUT", "BRC", "BERR")):
+    rc = os.environ.get(rckey, "")
+    if rc != "0":
+        tail = ""
+        err = Path(os.environ.get(errkey) or "/nonexistent")
+        if err.is_file():
+            tail = err.read_text(encoding="utf-8", errors="replace").strip()[-200:]
+        problems.append("the %s hook leg exited %r rather than 0, so its silence is a crash "
+                        "and not a lost race: %s" % (key[0].lower(), rc, tail))
+        continue
     raw = Path(os.environ[key]).read_text(encoding="utf-8").strip()
     if not raw:
         continue
@@ -871,7 +1032,12 @@ HOOK_CLAIM="$V_FIELD"
 rm -f "$SENTINEL"
 CABINET_WORKER_ID="$HOOK_HOLDER" bash -c "printf '{\"session_id\":\"a\"}' | OFFICER_NAME='$SLUG' CABINET_ROOT='$ROOT' bash '$HOOK'" \
   > "$SCRATCH/p2h-again.json" 2>"$SCRATCH/p2h-again.err"
-ROOTDIR="$ROOT" TID="$T2" CLAIM="$HOOK_CLAIM" AGAIN="$SCRATCH/p2h-again.json" "$PY" - \
+AGAIN_RC=$?
+# This leg is the one where an empty output IS the pass condition, so a leg
+# that never ran would be the strongest possible "proof". Its status is checked
+# first, inside the verdict, for that reason.
+ROOTDIR="$ROOT" TID="$T2" CLAIM="$HOOK_CLAIM" AGAIN="$SCRATCH/p2h-again.json" \
+  AGAINRC="$AGAIN_RC" AGAINERR="$SCRATCH/p2h-again.err" "$PY" - \
   > "$SCRATCH/p2h-again-assert.out" 2> "$SCRATCH/p2h-again-assert.err" <<'PY'
 import json, os, sys
 from pathlib import Path
@@ -879,6 +1045,15 @@ root = Path(os.environ["ROOTDIR"]); sys.path.insert(0, str(root))
 from framework.events.emitter import replay
 tid, claim = os.environ["TID"], os.environ["CLAIM"]
 problems = []
+rc = os.environ.get("AGAINRC", "")
+if rc != "0":
+    tail = ""
+    err = Path(os.environ.get("AGAINERR") or "/nonexistent")
+    if err.is_file():
+        tail = err.read_text(encoding="utf-8", errors="replace").strip()[-200:]
+    problems.append("the holder's own tick exited %r rather than 0; printing nothing is what "
+                    "this leg PASSES on, so a tick that crashed would be read as the proof "
+                    "that it did not re-inject: %s" % (rc, tail))
 again = Path(os.environ["AGAIN"]).read_text(encoding="utf-8").strip()
 if again:
     problems.append("the holder's own tick re-injected its live claim; it would do that "
@@ -989,6 +1164,12 @@ pass_stage P6 "1 ratified, 2 completed with readable evidence, the released row,
 # ---------------------------------------------------------------------------
 # P7 — the result reaches an installed Cabinet. Without this the drill proves
 # a Cabinet that improves itself in a repository nobody is running.
+#
+# Three legs share one install and one ledger: a gate-red apply that must roll
+# back, a gate-green apply that must land, and a locked-path bundle that must
+# be refused whole. Each leg's proof is a DELTA taken around that leg — the
+# events and the snapshot directory are cumulative, and leg (b) asserting "the
+# ledger holds an applied event" would be satisfied by leg (a).
 # ---------------------------------------------------------------------------
 if [ "$SKIP_UPDATE" = "1" ]; then
   thin_stage P7 "skipped by --skip-update: the update leg was not run and nothing about it is proved"
@@ -1062,24 +1243,54 @@ print(d.get("latest", {}).get("source_sha") or d.get("latest_sha") or "")
   [ -n "$BUNDLE_SHA" ] || fail 50 P7 "the inbox reports no latest bundle after publish"
   printf '%s\n' "$BUNDLE_SHA" > "$STAMP_FILE"
 
+  # THE SEAM MUST BE REAL BEFORE THE LEG THAT DRIVES IT RUNS (A5.14). Leg (a)
+  # makes the health gate go red by handing the apply a restart command that
+  # does nothing. Measured 2026-09-07 against origin/feat/p1-update-path: that
+  # updater restarts through cabinet_dash_restart() in
+  # cabinet/scripts/lib/dashboard.sh and reads NO restart-command variable, and
+  # A5.14 renames the update path's two health-gate command seams to
+  # CABINET_UPDATE_TEST_*. A drill driving a seam nothing reads would let the
+  # dashboard restart normally, watch the gate go GREEN, and report the whole
+  # rollback arm against a server that was never stale. Refuse instead: a
+  # sensor pointed at a seam that does not exist is the disabled sensor this
+  # unit exists to be the opposite of. Whoever lands the updater reconciles the
+  # name here in the same commit.
+  grep -q 'CABINET_DASH_RESTART_CMD' "$INSTALL/cabinet/scripts/cabinet-update.sh" \
+       "$INSTALL/cabinet/scripts/lib/dashboard.sh" 2>/dev/null \
+    || fail 50 P7 "nothing in the installed update path reads CABINET_DASH_RESTART_CMD, so the gate-red leg would drive nothing and the rollback arm would be measuring a dashboard that restarted perfectly well (A5.14 renames the update path's command seams to CABINET_UPDATE_TEST_* — reconcile the name here)"
+
   # (a) the gate goes RED because the restart did not happen: the old process
   # answers, with the old stamp and the old start time. The apply must roll the
   # tree back rather than leave a half-updated install behind a green light.
+  #
+  # Counted AROUND the leg, never across the run: legs (a), (b) and (c) all
+  # write to one ledger, so "the ledger holds a rolled-back event" is satisfied
+  # by any leg that ever emitted one. What this leg claims is that IT rolled
+  # back, and only a delta says that.
+  event_count P7 50 cabinet_update_rolled_back
+  ROLLED_BEFORE="$EV_COUNT"
   ( cd "$INSTALL" && CABINET_ROOT="$INSTALL" CABINET_DASH_RESTART_CMD="/usr/bin/true" \
       bash "$UPDATER" apply --bundle "$BUNDLE_SHA" --door terminal $REBUILD_ARG ) \
     > "$SCRATCH/p7-gate-red.out" 2>&1
   RED_RC=$?
   event_count P7 50 cabinet_update_rolled_back
-  ROLLED="$EV_COUNT"
+  ROLLED_AFTER="$EV_COUNT"
+  ROLLED_DELTA=$((ROLLED_AFTER - ROLLED_BEFORE))
   if [ "$RED_RC" -eq 0 ]; then
     fail 50 P7 "an apply whose dashboard never restarted exited 0 — an identity-only probe passes an old process that survived a failed restart"
   fi
-  [ "$ROLLED" -gt 0 ] || fail 50 P7 "the failed health gate emitted no cabinet_update_rolled_back"
+  [ "$ROLLED_DELTA" -eq 1 ] || fail 50 P7 "the failed health gate emitted $ROLLED_DELTA cabinet_update_rolled_back event(s) of its own (the ledger holds $ROLLED_AFTER in all); exactly one is what a rollback that happened looks like"
   if grep -q 'the one changed line this bundle ships' "$INSTALL/$MUTATED_REL" 2>/dev/null; then
     fail 50 P7 "the rolled-back install still carries the bundle's change"
   fi
 
-  # (b) the same apply with a real restart: the gate goes green.
+  # (b) the same apply with a real restart: the gate goes green. Its event and
+  # its snapshot are counted around it for the same reason — leg (a) applied
+  # and rolled back a moment ago, and both of its rows are still there.
+  event_count P7 50 cabinet_update_applied
+  APPLIED_BEFORE="$EV_COUNT"
+  dir_count P7 50 "$INSTALL/.updates/snapshots"
+  SNAPS_BEFORE="$DIR_COUNT"
   ( cd "$INSTALL" && CABINET_ROOT="$INSTALL" bash "$UPDATER" apply --bundle "$BUNDLE_SHA" --door terminal $REBUILD_ARG ) \
     > "$SCRATCH/p7-apply.out" 2>&1
   APPLY_RC=$?
@@ -1089,11 +1300,14 @@ print(d.get("latest", {}).get("source_sha") or d.get("latest_sha") or "")
   sha256_of P7 50 "$INSTALL/$PRESERVED_REL"
   PRESERVED_AFTER="$SHA_OUT"
   [ "$PRESERVED_BEFORE" = "$PRESERVED_AFTER" ] || fail 50 P7 "apply overwrote a preserved path"
-  SNAPS="$(ls "$INSTALL/.updates/snapshots" 2>/dev/null | wc -l | tr -d ' ')"
-  [ "$SNAPS" -ge 1 ] || fail 50 P7 "apply kept no snapshot to roll back to"
+  dir_count P7 50 "$INSTALL/.updates/snapshots"
+  SNAPS_AFTER="$DIR_COUNT"
+  SNAPS_DELTA=$((SNAPS_AFTER - SNAPS_BEFORE))
+  [ "$SNAPS_DELTA" -eq 1 ] || fail 50 P7 "this apply kept $SNAPS_DELTA snapshot(s) of its own ($SNAPS_AFTER under .updates/snapshots in all); the contract is one snapshot per apply, and a directory that was already full is not a snapshot this apply took"
   event_count P7 50 cabinet_update_applied
-  APPLIED="$EV_COUNT"
-  [ "$APPLIED" -gt 0 ] || fail 50 P7 "a successful apply emitted no cabinet_update_applied"
+  APPLIED_AFTER="$EV_COUNT"
+  APPLIED_DELTA=$((APPLIED_AFTER - APPLIED_BEFORE))
+  [ "$APPLIED_DELTA" -eq 1 ] || fail 50 P7 "this apply emitted $APPLIED_DELTA cabinet_update_applied event(s) of its own (the ledger holds $APPLIED_AFTER in all); exactly one is what an update that reached the install looks like"
 
   # (c) a bundle that touches the locked set is refused whole, before any write.
   sha256_of P7 50 "$INSTALL/cabinet/scripts/hooks/session-task-inject.sh"
@@ -1110,6 +1324,8 @@ except Exception:
 print(d.get("latest", {}).get("source_sha") or d.get("latest_sha") or "")
 ')"
   [ -n "$LOCK_SHA" ] || fail 50 P7 "the inbox reports no bundle after the locked-path publish; an apply with an empty bundle id would be refused for the wrong reason and the drill would call it a locked-path refusal"
+  event_count P7 50 cabinet_update_refused
+  REFUSED_BEFORE="$EV_COUNT"
   ( cd "$INSTALL" && CABINET_ROOT="$INSTALL" bash "$UPDATER" apply --bundle "$LOCK_SHA" --door terminal $REBUILD_ARG ) \
     > "$SCRATCH/p7-locked.out" 2>&1
   LOCK_RC=$?
@@ -1118,8 +1334,9 @@ print(d.get("latest", {}).get("source_sha") or d.get("latest_sha") or "")
   HOOK_AFTER="$SHA_OUT"
   [ "$HOOK_BEFORE" = "$HOOK_AFTER" ] || fail 50 P7 "a refused bundle still changed a locked path"
   event_count P7 50 cabinet_update_refused
-  REFUSED="$EV_COUNT"
-  [ "$REFUSED" -gt 0 ] || fail 50 P7 "a refused bundle emitted no cabinet_update_refused"
+  REFUSED_AFTER="$EV_COUNT"
+  REFUSED_DELTA=$((REFUSED_AFTER - REFUSED_BEFORE))
+  [ "$REFUSED_DELTA" -eq 1 ] || fail 50 P7 "the refused bundle emitted $REFUSED_DELTA cabinet_update_refused event(s) of its own (the ledger holds $REFUSED_AFTER in all); a refusal nobody recorded is a refusal nobody can audit"
 
   "$PY" "$LIB_DIR/stub_dashboard.py" stop --state-file "$STUB_STATE" >/dev/null 2>&1 || true
   STUB_STATE=""
