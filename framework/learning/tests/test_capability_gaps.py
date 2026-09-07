@@ -325,6 +325,47 @@ def _get(gid: str) -> dict:
 # what a child process needs on its path, and what a source path resolves from.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
+# Builtins that are types. `a | b` over ordinary values (sets, ints, flags) is
+# legal in 3.9 and must NOT be flagged, so a union is only called a TYPE union
+# when every leaf reads as a type: a builtin type name, a capitalised name or
+# attribute, a subscript of one, or the bare `None` of `X | None` — which is
+# never anything but a type union.
+_BUILTIN_TYPE_NAMES = frozenset({
+    "bool", "bytearray", "bytes", "complex", "dict", "float", "frozenset",
+    "int", "list", "object", "range", "set", "str", "tuple", "type",
+})
+
+
+def _named_like_a_type(name: str) -> bool:
+    # CamelCase or a builtin type. ALL_CAPS is a constant, not a type — this
+    # clause is what keeps `os.O_RDWR | os.O_CREAT` out of the offender list.
+    return name in _BUILTIN_TYPE_NAMES or (name[:1].isupper() and not name.isupper())
+
+
+def _reads_as_a_type(node) -> bool:
+    if isinstance(node, ast.Name):
+        return _named_like_a_type(node.id)
+    if isinstance(node, ast.Attribute):
+        return _named_like_a_type(node.attr)
+    if isinstance(node, ast.Subscript):
+        return _reads_as_a_type(node.value)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _is_type_union(node)
+    return False
+
+
+def _is_none(node) -> bool:
+    return isinstance(node, ast.Constant) and node.value is None
+
+
+def _is_type_union(node: ast.BinOp) -> bool:
+    sides = (node.left, node.right)
+    # A bare `None` inside a `|` is only ever `Optional`; otherwise every side
+    # has to read as a type before the union is called one.
+    if any(_is_none(s) for s in sides):
+        return all(_is_none(s) or _reads_as_a_type(s) for s in sides)
+    return all(_reads_as_a_type(s) for s in sides)
+
 
 # ---------------------------------------------------------------------------
 # Structural kinds — recorded, rendered, and otherwise LEFT ALONE
@@ -387,6 +428,45 @@ class TestStructuralKinds:
         rel = "framework/learning/capability_gaps.py"
         source = (_REPO_ROOT / rel).read_text()
         ast.parse(source, filename=rel, feature_version=(3, 9))
+
+    def test_module_evaluates_no_310_union_at_runtime(self):
+        """A0.3, the half `feature_version` cannot see.
+
+        `X | Y` is GRAMMAR-legal in every version — it is a BinOp — so the
+        parse above passes a module that raises `TypeError: unsupported
+        operand type(s) for |` the moment 3.9 imports it. The deferred
+        annotation positions are safe (the module's `from __future__ import
+        annotations` turns them into strings, asserted here rather than
+        assumed); every OTHER position is evaluated, so this walks them.
+        """
+        rel = "framework/learning/capability_gaps.py"
+        tree = ast.parse((_REPO_ROOT / rel).read_text(), filename=rel)
+
+        assert any(
+            isinstance(n, ast.ImportFrom) and n.module == "__future__"
+            and any(a.name == "annotations" for a in n.names)
+            for n in tree.body
+        ), "annotations are evaluated without the future import"
+
+        # Positions PEP 563 defers — the whole subtree, not just its root, so
+        # a union nested inside `Dict[str, int | None]` is deferred too.
+        deferred = set()
+        for node in ast.walk(tree):
+            roots = []
+            if isinstance(node, (ast.AnnAssign, ast.arg)) and node.annotation:
+                roots.append(node.annotation)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.returns:
+                roots.append(node.returns)
+            for root in roots:
+                deferred.update(id(sub) for sub in ast.walk(root))
+
+        offenders = [
+            "line %d" % n.lineno
+            for n in ast.walk(tree)
+            if isinstance(n, ast.BinOp) and isinstance(n.op, ast.BitOr)
+            and id(n) not in deferred and _is_type_union(n)
+        ]
+        assert offenders == [], "3.10-only union evaluated at import: %s" % offenders
 
 
 # ---------------------------------------------------------------------------
