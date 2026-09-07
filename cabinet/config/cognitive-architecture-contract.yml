@@ -1057,7 +1057,23 @@ budgets:
     # search that can tell "I found you" from "I found something" is a permanent
     # organ, and an allowance would promise a deletion gate that will never fire.
     # observed == maximum, zero headroom.
-    maximum: 64741
+    #
+    # 64741 -> 64837 (+96 measured 2026-09-07 with
+    # cognitive-architecture-census.py: effective 79391 -> 79487, observed
+    # 79487): phase-1 unit U3a in framework/learning/capability_gaps.py — the
+    # three STRUCTURAL gap kinds (skill / authority / information) recorded
+    # surface-only, and `record_gap(dedup_key=...)`, an identity dedupe taken
+    # under a cross-process lock so the officer hook — a fresh process every
+    # tick — records a standing condition ONCE instead of once per tick. Half
+    # the mass is the three independent vetoes that keep the new kinds out of
+    # the propose and auto lanes (route, gate, config), which is deliberate:
+    # one veto is a line an edit can delete without a test noticing. Zero new
+    # production MODULES and zero expansion rows. RAISED VISIBLY rather than
+    # paid by a temporary allowance, same reason as every row above: a
+    # vocabulary the org records its own missing holders in is permanent, and
+    # an allowance would promise a deletion gate that will never fire.
+    # observed == maximum, zero headroom.
+    maximum: 64837
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
