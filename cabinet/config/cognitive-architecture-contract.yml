@@ -1073,7 +1073,16 @@ budgets:
     # vocabulary the org records its own missing holders in is permanent, and
     # an allowance would promise a deletion gate that will never fire.
     # observed == maximum, zero headroom.
-    maximum: 64837
+    #
+    # 64837 -> 64839 (+2 measured 2026-09-07, same unit and same run:
+    # effective 79487 -> 79489, observed 79489): the `surfaced` count wired
+    # into self_improvement_loop.py's own summary, plus the one-line fallback
+    # dict becoming two. A routing bucket that no consumer reads is a bucket a
+    # later edit deletes without a test noticing, and conflating it with
+    # `skipped` would report a deliberate silence as a routing failure — so the
+    # loop counts it separately, and a sensor pins the count.
+    # observed == maximum, zero headroom.
+    maximum: 64839
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

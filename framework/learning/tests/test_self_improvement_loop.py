@@ -567,3 +567,36 @@ class TestLoopEventsEmitted:
         assert started[0]["payload"]["skip_evals"] is True
         assert completed[0]["payload"]["skip_evals"] is True
         assert completed[0]["payload"]["validation_gate"] == {"skipped": "skip_evals"}
+
+
+# ---------------------------------------------------------------------------
+# Structural gap kinds reach the loop's own report (contract §3: the new kinds
+# are surface-only, and "surfaced" must stay countable — a bucket no consumer
+# reads is a bucket that gets deleted)
+# ---------------------------------------------------------------------------
+
+
+class TestStructuralGapsAreCountedNotProposed:
+    def test_loop_counts_a_structural_gap_and_proposes_nothing(self, tmp_path):
+        """End-to-end: record → route → the summary the loop actually reports.
+
+        Pre-change the same gap is classified into a propose kind, so it lands
+        under `proposed_to_captain` and the Captain is asked to approve a
+        missing holder into existence. The unit test beside this one pins
+        `route_open_gaps`; this one pins the only thing that reads it.
+        """
+        from framework.learning.capability_gaps import record_gap
+
+        record_gap("no holder on the roster for task-001 of outcome-a",
+                   kind="skill", recorded_by="supervisor",
+                   dedup_key="holder:outcome-a:task-001")
+
+        summary = sil.run_loop(dry_run=True)
+        gaps = summary["capability_gaps"]
+
+        assert gaps["surfaced"] == 1, gaps
+        assert gaps["proposed_to_captain"] == 0, gaps
+        assert gaps["auto_skilling"] == 0, gaps
+        # Not "skipped" either: that count means a gap this pass could not
+        # route, and a structural kind was never routable in the first place.
+        assert gaps["skipped"] == 0, gaps
