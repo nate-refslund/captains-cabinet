@@ -440,6 +440,12 @@ jobs:
         # side-effect). Previously unwired in CI — the Mac CABINET_LANE + slug
         # validation assertions never ran on PRs. deploy-mac --dry-run is
         # exercised too (renders plist via the python3 fallback; no launchctl).
+        # T6 (2026-09-06) pins the runtime-constitution assembly as FAIL-CLOSED:
+        # with load-preset.sh stubbed to exit 1 the launcher must refuse (exit
+        # 78) before any boot step — no claude, no tmux, no assembled command —
+        # and with it exiting 0 the boot command must still render. Reached via
+        # CABINET_MAC_TEST_ASSEMBLY=1, which runs the assembly block that plain
+        # --dry-run skips (T6c re-pins that --dry-run still skips it).
         run: bash /opt/founders-cabinet/cabinet/scripts/test-mac-dry-run.sh
 
       - name: Shell unit tests — post-tool-use.sh JSONL project field (FW-075)
