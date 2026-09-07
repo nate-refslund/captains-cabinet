@@ -168,4 +168,119 @@ grep -q '<key>CABINET_SOURCE_REPO</key>' "$TMP_DIR/deploy.out" \
   || fail "officer plist did not export Cabinet root env vars"
 pass "deploy-mac dry-run renders without envsubst dependency"
 
+# --- T6: runtime-constitution assembly FAILS CLOSED (2026-09-06) -------------
+# The launcher assembles the runtime constitution + safety boundaries via
+# load-preset.sh.  On a non-zero exit it used to log "may be incomplete" and
+# CONTINUE, starting an officer whose own rules were of unknown provenance —
+# while every sibling assembly failure in the same script already refuses
+# (egress, security paths, sandbox, broker, one-shot launcher).
+#
+# CABINET_MAC_DRY_RUN=1 skips the whole assembly block, so NO test could reach
+# that branch: it was an unsensored fail-open.  CABINET_MAC_TEST_ASSEMBLY=1 runs
+# the assembly and then behaves like --dry-run, which makes both arms testable.
+# Hermetic: scratch HOME (no writes to the live fleet's log dir), scratch
+# CABINET_RUNTIME_DIR (never the live /tmp/cabinet-runtime bundle), stubbed
+# load-preset/check-deps, and stub `claude`/`tmux` that record any invocation.
+echo
+echo "T6: constitution assembly fail-closed"
+
+ASM_HOME="$TMP_DIR/asm-home"
+ASM_RUNTIME="$TMP_DIR/asm-runtime"
+mkdir -p "$ASM_HOME" "$ASM_RUNTIME"
+CLAUDE_SENTINEL="$TMP_DIR/asm-claude-invoked"
+TMUX_SENTINEL="$TMP_DIR/asm-tmux-invoked"
+PRESET_SENTINEL="$TMP_DIR/asm-load-preset-invoked"
+
+cat > "$FAKE_BIN/claude" <<SH
+#!/bin/sh
+: >> "$CLAUDE_SENTINEL"
+if [ "\$1" = "--help" ]; then
+  echo "Usage: claude --agent <name>"
+elif [ "\$1" = "--version" ]; then
+  echo "2.1.150"
+fi
+SH
+chmod +x "$FAKE_BIN/claude"
+
+# Any boot step is a recorded, non-zero failure — the launcher must never reach
+# tmux at all in these arms, and if it ever does the arm fails loudly.
+cat > "$FAKE_BIN/tmux" <<SH
+#!/bin/sh
+: >> "$TMUX_SENTINEL"
+exit 1
+SH
+chmod +x "$FAKE_BIN/tmux"
+
+cat > "$FAKE_REPO/cabinet/scripts/check-deps.sh" <<'SH'
+#!/bin/sh
+exit 0
+SH
+chmod +x "$FAKE_REPO/cabinet/scripts/check-deps.sh"
+
+run_assembly_arm() {  # $1 = load-preset stub exit code → sets ARM_RC / ARM_OUT / ARM_ERR
+  cat > "$FAKE_REPO/cabinet/scripts/load-preset.sh" <<SH
+#!/bin/sh
+: >> "$PRESET_SENTINEL"
+echo "[load-preset stub] rc=$1" >&2
+exit $1
+SH
+  chmod +x "$FAKE_REPO/cabinet/scripts/load-preset.sh"
+  rm -f "$CLAUDE_SENTINEL" "$TMUX_SENTINEL" "$PRESET_SENTINEL"
+  ARM_RC=0
+  ARM_OUT="$(HOME="$ASM_HOME" PATH="$FAKE_BIN:$PATH" CABINET_SOURCE_REPO="$FAKE_REPO" \
+    CABINET_RUNTIME_DIR="$ASM_RUNTIME" CABINET_MAC_TEST_ASSEMBLY=1 \
+    bash "$FAKE_REPO/cabinet/scripts/start-officer-mac.sh" cos 2>"$TMP_DIR/asm.err")" || ARM_RC=$?
+  ARM_ERR="$(cat "$TMP_DIR/asm.err")"
+}
+
+# T6a: load-preset FAILS → refuse the boot, before any boot step.
+run_assembly_arm 1
+[ -e "$PRESET_SENTINEL" ] \
+  && pass "T6a: CABINET_MAC_TEST_ASSEMBLY=1 actually runs the assembly block" \
+  || fail "T6a: assembly block was skipped — the arm below would pass vacuously"
+[ "$ARM_RC" = "78" ] \
+  && pass "T6a: failed constitution assembly refuses the boot (exit 78)" \
+  || fail "T6a: failed constitution assembly did not exit 78 (got rc=$ARM_RC)"
+printf '%s' "$ARM_OUT" | grep -q 'dangerously-skip-permissions' \
+  && fail "T6a: launcher still assembled a claude command after a failed assembly" \
+  || pass "T6a: no claude command assembled after a failed assembly"
+[ -e "$CLAUDE_SENTINEL" ] \
+  && fail "T6a: claude was invoked after a failed constitution assembly" \
+  || pass "T6a: claude never invoked after a failed constitution assembly"
+[ -e "$TMUX_SENTINEL" ] \
+  && fail "T6a: tmux was invoked after a failed constitution assembly" \
+  || pass "T6a: tmux never invoked after a failed constitution assembly"
+printf '%s' "$ARM_ERR" | grep -q 'REFUSING to boot' \
+  && printf '%s' "$ARM_ERR" | grep -q 'load-preset.sh' \
+  && printf '%s' "$ARM_ERR" | grep -qF "$ASM_RUNTIME" \
+  && pass "T6a: refusal names the failure, the bundle path and the recovery" \
+  || fail "T6a: refusal message missing recovery detail — $ARM_ERR"
+
+# T6b: load-preset SUCCEEDS → the pre-existing path is untouched (still renders
+# the full boot command and still probes the claude CLI).
+run_assembly_arm 0
+[ "$ARM_RC" = "0" ] \
+  && pass "T6b: successful assembly still exits 0" \
+  || fail "T6b: successful assembly exited rc=$ARM_RC — $ARM_ERR"
+printf '%s' "$ARM_OUT" | grep -q "cd $FAKE_REPO" \
+  && printf '%s' "$ARM_OUT" | grep -q 'dangerously-skip-permissions' \
+  && pass "T6b: successful assembly still assembles the officer boot command" \
+  || fail "T6b: boot command missing after a successful assembly — $ARM_OUT"
+[ -e "$CLAUDE_SENTINEL" ] \
+  && pass "T6b: successful assembly reaches the claude capability probe" \
+  || fail "T6b: claude was never probed — execution stopped before the boot path"
+
+# T6c: plain --dry-run must STILL skip the assembly block (the knob changes
+# nothing for the rehearsal path hatch.sh proof-c1 depends on).
+rm -f "$PRESET_SENTINEL" "$CLAUDE_SENTINEL" "$TMUX_SENTINEL"
+HOME="$ASM_HOME" PATH="$FAKE_BIN:$PATH" CABINET_SOURCE_REPO="$FAKE_REPO" \
+  CABINET_RUNTIME_DIR="$ASM_RUNTIME" CABINET_MAC_DRY_RUN=1 \
+  bash "$FAKE_REPO/cabinet/scripts/start-officer-mac.sh" cos >/dev/null 2>&1
+[ -e "$PRESET_SENTINEL" ] \
+  && fail "T6c: --dry-run now runs load-preset — rehearsal gained a side effect" \
+  || pass "T6c: --dry-run still skips the assembly block (no side effects)"
+
+rm -f "$FAKE_REPO/cabinet/scripts/load-preset.sh" "$FAKE_REPO/cabinet/scripts/check-deps.sh" \
+      "$FAKE_BIN/tmux"
+
 echo "=== Mac dry-run eval PASS ==="
