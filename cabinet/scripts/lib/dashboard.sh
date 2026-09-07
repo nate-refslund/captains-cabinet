@@ -139,3 +139,74 @@ cabinet_dash_record_port() {
     } >> "$env_file" ) || return 1
   chmod 600 "$env_file" 2>/dev/null || true
 }
+
+# The launchd label the dashboard runs under when it runs supervised. Named
+# once, here, beside the port and the identity marker — the three facts every
+# probe and every restarter needs about the same process.
+CABINET_DASH_LABEL="${CABINET_DASH_LABEL:-com.cabinet.dashboard}"
+
+# cabinet_dash_restart <root> [why] — put a NEW dashboard process on the port.
+#
+# WHY THIS IS A FUNCTION AND NOT THREE LINES AT THE CALL SITE. There are two
+# ways this deployment runs its dashboard and they need opposite handling:
+# supervised by launchd (restart the JOB — killing the process alone just makes
+# KeepAlive start the OLD build again from the OLD working directory), or
+# started on demand from the app (nothing supervises it, so the caller must
+# kill the listener itself and start a detached replacement). Getting that
+# backwards produces the worst outcome available: something answers on the
+# port, so every identity probe says "up", while the bytes serving are the ones
+# the caller just tried to replace.
+#
+# rc 0 = a restart was ORDERED, not that the new process is healthy. Liveness
+# is the caller's own gate — this function deliberately makes no claim about
+# what came back, because a restarter that also declares success is how a
+# failed restart gets reported as a good one.
+cabinet_dash_restart() {
+  local root why port
+  root="$(cabinet_dash_root "${1:-}")"
+  why="${2:-a restart was requested}"
+  port="$(cabinet_dash_port "$root")"
+
+  if command -v launchctl >/dev/null 2>&1 \
+     && launchctl print "gui/$(id -u)/$CABINET_DASH_LABEL" >/dev/null 2>&1; then
+    # Loaded: kickstart -k is the supervised restart. A kill here would be
+    # undone by KeepAlive with the pre-update process arguments.
+    if launchctl kickstart -k "gui/$(id -u)/$CABINET_DASH_LABEL" >/dev/null 2>&1; then
+      printf 'cabinet_dash_restart: restarted the supervised dashboard (%s)\n' "$why" >&2
+      return 0
+    fi
+    printf 'cabinet_dash_restart: the supervised job would not restart\n' >&2
+    return 1
+  fi
+
+  # Unsupervised. Only ever kill a listener this deployment OWNS: the identity
+  # probe is what separates "my dashboard" from the unrelated dev server that
+  # once held this port on the Captain's Mac and was read as the cabinet by
+  # every bare-200 probe in the tree.
+  local state pids
+  state="$(cabinet_dash_state "$(cabinet_dash_url "$root")")"
+  if [ "$state" = "other" ]; then
+    printf 'cabinet_dash_restart: port %s is held by something that is not this cabinet — not killing it\n' "$port" >&2
+    return 1
+  fi
+  if [ "$state" = "mine" ]; then
+    pids="$(lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null || true)"
+    if [ -n "$pids" ]; then
+      # shellcheck disable=SC2086
+      kill $pids 2>/dev/null || true
+      "${CABINET_PYTHON:-python3.12}" -c 'import time; time.sleep(2)' 2>/dev/null || true
+      pids="$(lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null || true)"
+      # shellcheck disable=SC2086
+      [ -z "$pids" ] || kill -9 $pids 2>/dev/null || true
+    fi
+  fi
+  [ -x "$root/cabinet/scripts/start-dashboard.sh" ] || [ -f "$root/cabinet/scripts/start-dashboard.sh" ] || {
+    printf 'cabinet_dash_restart: no start-dashboard.sh under %s\n' "$root" >&2
+    return 1
+  }
+  mkdir -p "$root/cabinet/logs" 2>/dev/null || true
+  ( cd "$root" && CABINET_ROOT="$root" nohup bash cabinet/scripts/start-dashboard.sh \
+      >>"$root/cabinet/logs/dashboard-restart.log" 2>&1 </dev/null & ) || return 1
+  printf 'cabinet_dash_restart: started an unsupervised dashboard on %s (%s)\n' "$port" "$why" >&2
+  return 0
+}

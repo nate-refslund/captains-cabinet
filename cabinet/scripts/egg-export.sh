@@ -33,8 +33,14 @@ usage() {
   cat <<'EOF'
 egg-export.sh — cut the public egg as a fresh tree from git HEAD
 
-  --out DIR    REQUIRED. Destination directory. Must resolve OUTSIDE the
-               repo tree; its parent must exist. Created if absent.
+  --out DIR    Destination directory for a plain export. Must resolve
+               OUTSIDE the repo tree; its parent must exist. Created if absent.
+  --bundle DIR Cut an UPDATE BUNDLE into DIR instead: <sha>.tar.gz plus
+               <sha>.manifest.json (per-file sha256, source_sha, built_at,
+               changelog, informational locked_set). DIR is an installed
+               Cabinet's .updates/inbox. Exactly one of --out/--bundle.
+  --changelog-from SHA
+               Bundle mode only: one changelog line per commit in SHA..HEAD.
   --force      Clear a non-empty --out directory (contents only) first.
   -h, --help   This help.
 
@@ -54,15 +60,41 @@ fail() { echo "egg-export: FAIL — $*" >&2; exit 1; }
 # --- args ---------------------------------------------------------------------
 OUT_ARG=""
 FORCE=0
+BUNDLE_DIR=""
+CHANGELOG_FROM=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --out) [ $# -ge 2 ] || fail "--out needs a value"; OUT_ARG="$2"; shift 2 ;;
+    --bundle) [ $# -ge 2 ] || fail "--bundle needs a value"; BUNDLE_DIR="$2"; shift 2 ;;
+    --changelog-from) [ $# -ge 2 ] || fail "--changelog-from needs a commit"; CHANGELOG_FROM="$2"; shift 2 ;;
     --force) FORCE=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "egg-export: unknown argument '$1'" >&2; usage >&2; exit 2 ;;
   esac
 done
-[ -n "$OUT_ARG" ] || { echo "egg-export: --out DIR is required" >&2; usage >&2; exit 2; }
+# --- bundle mode --------------------------------------------------------------
+# A bundle is the SAME cut, packaged. Nothing about the packaging pass changes:
+# an update that shipped different bytes from the egg would be a second export
+# path to keep honest, and the whole point of this leg is that the operator
+# receives exactly what a fresh hatch would.
+BUNDLE_PY="$SCRIPT_DIR/lib/update_bundle.py"
+if [ -n "$BUNDLE_DIR" ]; then
+  [ -z "$OUT_ARG" ] || fail "--out and --bundle are alternatives, not a pair"
+  [ -f "$BUNDLE_PY" ] || fail "bundle mode needs $BUNDLE_PY"
+  case "$BUNDLE_DIR" in
+    /*) : ;;
+    *) BUNDLE_DIR="$(pwd)/$BUNDLE_DIR" ;;
+  esac
+  mkdir -p "$BUNDLE_DIR" || fail "could not create the bundle directory: $BUNDLE_DIR"
+  BUNDLE_DIR="$(cd "$BUNDLE_DIR" && pwd -P)"
+  # The staging cut lives beside the bundle, not in $TMPDIR: --out's safety
+  # rules apply to it unchanged, and a half-written cut is visible where the
+  # operator would look for it rather than in a directory nobody inspects.
+  OUT_ARG="$BUNDLE_DIR/.cut"
+  FORCE=1
+fi
+[ -n "$OUT_ARG" ] || { echo "egg-export: --out DIR or --bundle DIR is required" >&2; usage >&2; exit 2; }
+[ -n "$BUNDLE_DIR" ] || [ -z "$CHANGELOG_FROM" ] || fail "--changelog-from is bundle-mode only"
 [ -f "$MANIFEST" ] || fail "manifest not found: $MANIFEST"
 
 # --- output-dir safety (canonicalize WITHOUT requiring the dir to exist) -------
@@ -163,6 +195,26 @@ _header_only() {
   ' "$file" > "$tmp"
   cat >> "$tmp"
   mv "$tmp" "$file"
+}
+
+# The preserve set: paths an update must never write or delete. DERIVED, at
+# cut time, from this exporter's own manifest — the `delete instance/...` rules
+# plus the interface ledgers the transform above empties. It has to be
+# generated here rather than read at run time because the manifest DELETES
+# ITSELF from the egg (`delete cabinet/scripts/egg-export-manifest.txt`), so an
+# installed Cabinet has no other way to learn which paths are its own data.
+# One authoring source, derived data shipped.
+t_preserve_set() {
+  local rel="cabinet/config/egg-preserve-set.txt" tmp
+  [ -f "$BUNDLE_PY" ] || { verify_fail "preserve-set transform needs $BUNDLE_PY"; return 0; }
+  mkdir -p "$OUT/cabinet/config"
+  tmp="$OUT/$rel.egg-tmp"
+  if ! "${CABINET_PYTHON:-python3.12}" "$BUNDLE_PY" preserve-doc --export-manifest "$MANIFEST" > "$tmp"; then
+    rm -f "$tmp"
+    verify_fail "preserve-set generation failed — the egg would ship no preserve declaration"
+    return 0
+  fi
+  mv "$tmp" "$OUT/$rel"
 }
 
 t_interfaces_header_only() {
@@ -535,6 +587,7 @@ t_instance_verify() {
 run_transform() {
   case "$1" in
     interfaces-header-only) t_interfaces_header_only ;;
+    preserve-set)           t_preserve_set ;;
     plans-archive)          t_plans_archive ;;
     framework-docs-archive) t_framework_docs_archive ;;
     proposals-archive)      t_proposals_archive ;;
@@ -672,6 +725,46 @@ if [ "$VERIFY_FAILS" -gt 0 ]; then
   exit 1
 fi
 echo "  verify        : PASS (all expect-present/expect-absent rules hold)"
+
+# --- bundle packaging -----------------------------------------------------------
+# Only reached on a PASSING cut: a bundle is an artifact another machine applies
+# unattended, so a cut that failed its own verification must never become one.
+if [ -n "$BUNDLE_DIR" ]; then
+  BUNDLE_TAR="$BUNDLE_DIR/$SRC_COMMIT.tar.gz"
+  BUNDLE_MANIFEST="$BUNDLE_DIR/$SRC_COMMIT.manifest.json"
+  CHANGELOG_FILE="$OUT.changelog"
+  : > "$CHANGELOG_FILE"
+  if [ -n "$CHANGELOG_FROM" ]; then
+    if git -C "$REPO_ROOT" cat-file -e "${CHANGELOG_FROM}^{commit}" 2>/dev/null; then
+      git -C "$REPO_ROOT" log --no-merges --format='%s' "${CHANGELOG_FROM}..HEAD" > "$CHANGELOG_FILE" || true
+    else
+      # An unknown starting point is SAID, never silently rendered as "no
+      # changes" — an empty changelog on a bundle that changes 400 files is the
+      # degenerate answer this line exists to keep off the Captain's card.
+      echo "(changelog unavailable: this checkout does not carry $CHANGELOG_FROM)" > "$CHANGELOG_FILE"
+    fi
+  fi
+  # tar from inside the cut so members are repo-relative, never rooted at a
+  # path of this machine.
+  ( cd "$OUT" && tar -czf "$BUNDLE_TAR.egg-tmp" . ) || fail "could not pack the bundle"
+  mv "$BUNDLE_TAR.egg-tmp" "$BUNDLE_TAR"
+  "${CABINET_PYTHON:-python3.12}" "$BUNDLE_PY" manifest \
+      --tree "$OUT" \
+      --source-sha "$SRC_COMMIT" \
+      --built-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      --changelog-file "$CHANGELOG_FILE" \
+      --out "$BUNDLE_MANIFEST" >/dev/null \
+    || fail "could not write the bundle manifest"
+  rm -f "$CHANGELOG_FILE"
+  rm -rf "$OUT"
+  echo "  bundle        : $BUNDLE_TAR"
+  echo "  manifest      : $BUNDLE_MANIFEST"
+  echo "  next          : cabinet-update.sh status   (on the install that owns that inbox)"
+  echo "  REMINDER      : publishing remains CG-7 Captain-gated."
+  echo "-------------------------------------------------------------------------"
+  exit 0
+fi
+
 echo "  next          : bash cabinet/scripts/egg-publish-gate.sh --export $OUT"
 echo "  REMINDER      : publishing remains CG-7 Captain-gated."
 echo "-------------------------------------------------------------------------"

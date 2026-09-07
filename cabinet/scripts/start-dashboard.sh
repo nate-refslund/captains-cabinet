@@ -65,6 +65,21 @@ export NODE_ENV="production"
 
 cd "$DASH_DIR"
 
+# The commit the bytes came from, baked into the build so /api/health can say
+# WHICH bytes are serving (next.config.ts `env`). An installed Cabinet is
+# gitless, so the answer comes from the export's own manifest; a checkout can
+# say it from git. Absent on both ⇒ empty, and the update health gate then
+# refuses rather than passing an unidentifiable process.
+if [ -z "${CABINET_BUILD_SOURCE_COMMIT:-}" ]; then
+  if [ -f "$CABINET_ROOT/egg-manifest.json" ]; then
+    CABINET_BUILD_SOURCE_COMMIT="$(sed -n 's/.*"source_commit"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' "$CABINET_ROOT/egg-manifest.json" | head -1)"
+  fi
+  if [ -z "${CABINET_BUILD_SOURCE_COMMIT:-}" ] && [ -d "$CABINET_ROOT/.git" ]; then
+    CABINET_BUILD_SOURCE_COMMIT="$(git -C "$CABINET_ROOT" rev-parse HEAD 2>/dev/null || true)"
+  fi
+fi
+export CABINET_BUILD_SOURCE_COMMIT="${CABINET_BUILD_SOURCE_COMMIT:-}"
+
 # Build on first run (or if .next was cleared).
 if [ ! -d "$DASH_DIR/.next" ]; then
   echo "start-dashboard: no build found — building (first run, ~1-2 min)..."

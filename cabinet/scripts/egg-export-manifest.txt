@@ -433,8 +433,20 @@ transform claude-egg-swap
 # _default.yml, projects/_template.yml, germ-keep policies/ + posture-presets/
 # per R122/R123). Anything else FAILS the export.
 transform instance-verify
+# UPDATE PATH (2026-09-07): the preserve set — the paths an update must never
+# write or delete. DERIVED here, at cut time, from THIS file's own
+# `delete instance/...` rules plus the interface ledgers `interfaces-header-only`
+# empties. It cannot be read at run time from this manifest because the manifest
+# DELETES ITSELF from the egg (see `delete cabinet/scripts/egg-export-manifest.txt`
+# above), so an installed Cabinet would have no way to tell its own data from
+# shipped content. One authoring source (this file), derived data shipped.
+transform preserve-set
 
 # --- verification: what must have shipped ------------------------------------
+# The generated preserve set. expect-present is the sensor that keeps the
+# transform above from silently becoming a no-op: an update path with no
+# preserve declaration would overwrite the operator's own instance data.
+expect-present cabinet/config/egg-preserve-set.txt
 expect-present instance/config/platform.yml.example
 expect-present instance/config/sources.yml.example
 # LANE C role-registry fix (2026-07-15): the ONE R120-deleted instance file
@@ -670,6 +682,12 @@ expect-present cabinet/dashboard/src/app/api/health/route.ts
 # app shell that builds the vehicle stays excluded; see the APPSHELL rows.)
 expect-present cabinet/scripts/open-cabinet.sh
 expect-present cabinet/scripts/lib/dashboard.sh
+# UPDATE PATH (2026-09-07): the updater and its helper ride the egg. An
+# installed Cabinet with no updater cannot take an improvement at all — which
+# is the gap this leg closes — and the first bootstrap on a pre-update install
+# is a one-off orchestrator act, never the operator's problem twice.
+expect-present cabinet/scripts/cabinet-update.sh
+expect-present cabinet/scripts/lib/update_bundle.py
 # PC-D-COMPANION (Wave D companion, DESIGN-companion-2026-07-10 §3/§9): the
 # menu-bar companion ships as SOURCE + on-target build script, calread-style —
 # the built "bin/Cabinet Companion.app" bundle is gitignored so it never

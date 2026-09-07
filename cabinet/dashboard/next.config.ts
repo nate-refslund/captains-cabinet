@@ -2,6 +2,15 @@ import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  // BUILD-TIME IDENTITY (update path, 2026-09-07). `env` is inlined by Next at
+  // BUILD time, which is exactly the property the update health gate needs: a
+  // value read from the environment at request time would be answered by an
+  // OLD process that survived a failed restart and happened to inherit the new
+  // variable, and the gate would call that a successful update. Baked here, the
+  // stamp can only be the commit the running build was made from.
+  env: {
+    CABINET_BUILD_SOURCE_COMMIT: process.env.CABINET_BUILD_SOURCE_COMMIT ?? '',
+  },
   async headers() {
     return [
       {

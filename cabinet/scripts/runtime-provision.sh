@@ -136,6 +136,7 @@ Commands:
   rollback  <runtime_root>
   current   <runtime_root>
   list      <runtime_root>
+  lists                      print the persistence declarations as data
   prune     <runtime_root> [--keep N]
 EOF
 }
@@ -701,6 +702,27 @@ cmd_current() {
   fi
 }
 
+# ---- lists: the persistence declarations, as data ------------------------------
+# The three INSTANCE_PERSISTENT_* variables are this script's declaration of
+# what belongs to the OPERATOR rather than to a release. Until now they could
+# only be consumed by sourcing a provisioning script, so the update path — which
+# must never write or delete one of these paths — would have had to carry its
+# own copy. A second copy of a list is a second thing to keep in step, and the
+# copy is always the one that goes stale. So the declaration gets a read
+# interface instead.
+#
+# One record per line, `<kind> <path>`, kinds `dirs | seeded_dirs | files`. Takes
+# no runtime root: these are declarations about the SHAPE of an install, not
+# about any particular one, and requiring a root would make the updater resolve
+# a path it has no other use for.
+cmd_lists() {
+  [ $# -eq 0 ] || { echo "usage: runtime-provision.sh lists" >&2; exit 64; }
+  local rel
+  for rel in $INSTANCE_PERSISTENT_DIRS; do echo "dirs $rel"; done
+  for rel in $INSTANCE_PERSISTENT_SEEDED_DIRS; do echo "seeded_dirs $rel"; done
+  for rel in $INSTANCE_PERSISTENT_FILES; do echo "files $rel"; done
+}
+
 cmd_list() {
   [ $# -ge 1 ] || { echo "usage: runtime-provision.sh list <runtime_root>" >&2; exit 64; }
   local root cur="" prev="" d sha marker
@@ -787,6 +809,7 @@ main() {
     rollback)  cmd_rollback "$@" ;;
     current)   cmd_current "$@" ;;
     list)      cmd_list "$@" ;;
+    lists)     cmd_lists "$@" ;;
     prune)     cmd_prune "$@" ;;
     *) echo "runtime-provision.sh: unknown command '$cmd'" >&2; usage >&2; exit 64 ;;
   esac

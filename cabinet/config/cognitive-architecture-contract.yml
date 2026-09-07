@@ -2,9 +2,17 @@ schema_version: cognitive-architecture-contract/v1
 baseline_sha: 8f9c555d2064d55a159a53fcedd6df33434a9291
 budgets:
   central_event_types:
+    # 91 -> 94 (2026-09-07): the update path's three receipts
+    # (cabinet_update_applied / _refused / _rolled_back). RAISED VISIBLY, with
+    # the three members registered as expansions below rather than written into
+    # the baseline — a genuinely new member belongs in the surplus, where it
+    # stays visible, and a baseline line added in the same commit as the member
+    # it excuses is the purchase channel cabinet/scripts/baseline-set-ratchet.py
+    # exists to refuse. Adjudication:
+    # docs/proposals/update-path-event-expansion-2026-09-07.md
     path: framework/events/emitter.py
     symbol: VALID_EVENT_TYPES
-    maximum: 91
+    maximum: 94
   central_action_types:
     path: framework/authority/classifier.py
     symbol: ACTION_TYPES
@@ -2589,6 +2597,76 @@ temporary_allowances:
       (78824 -> 78932); prose counted honestly rather than reformatted into
       comments to duck the budget.
 expansions:
+  - member: cabinet_update_applied
+    member_class: central_event_types
+    gate_date: '2026-09-07'
+    models_run:
+      - Fable 5.1
+      - Opus 5
+    adjudication: docs/proposals/update-path-event-expansion-2026-09-07.md
+    merge_refuted: >-
+      framework/events/emitter.py::graduation_transition — the nearest existing
+      "a durable state of this deployment moved" receipt, and the obvious fold
+      target for anyone who reads this as a lifecycle transition. Refused on
+      three properties. Different subject: graduation_transition describes a
+      FIDELITY LEVEL moving (framework/fidelity/graduation.py) — a judgement
+      about behaviour, carrying no bytes, no from/to commit and no snapshot.
+      Different aggregate: it keys on the graduating subject, while an update
+      must key on the commit it was reaching for so a refusal, the retry that
+      succeeded and a later rollback read as one story. Different pairing: the
+      rollback receipt has nothing to pair with inside a fidelity vocabulary,
+      so folding one in would leave the other homeless.
+    consumer: framework/watchdog/receipts.py
+    provenance: >-
+      per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; contract
+      of record phase1-contracts-v2-2026-09-07 §5, two blind arms (Fable 5.1,
+      Opus 5) adjudicated in the document named above
+  - member: cabinet_update_refused
+    member_class: central_event_types
+    gate_date: '2026-09-07'
+    models_run:
+      - Fable 5.1
+      - Opus 5
+    adjudication: docs/proposals/update-path-event-expansion-2026-09-07.md
+    merge_refuted: >-
+      framework/events/emitter.py::captain_gate_bounced — the existing "an act
+      was stopped at a gate" receipt, and the only other refusal vocabulary in
+      the ledger. Refused because its subject is an item in the Captain's
+      attention queue (framework/attention/escalation.py) and its aggregate is
+      the captain: it exists to say that a person must now look at something.
+      The commonest refusal here has no person in it at all — a bundle whose
+      diff touches the constitutional set, arriving from the landing lane with
+      nobody watching — and it must aggregate on the commit, not on the
+      Captain, or the successful retry lands on a different story from the
+      refusal it answers.
+    consumer: framework/watchdog/receipts.py
+    provenance: >-
+      per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; contract
+      of record phase1-contracts-v2-2026-09-07 §5, two blind arms (Fable 5.1,
+      Opus 5) adjudicated in the document named above
+  - member: cabinet_update_rolled_back
+    member_class: central_event_types
+    gate_date: '2026-09-07'
+    models_run:
+      - Fable 5.1
+      - Opus 5
+    adjudication: docs/proposals/update-path-event-expansion-2026-09-07.md
+    merge_refuted: >-
+      framework/events/emitter.py::cabinet_update_applied — the sibling this row
+      would most obviously fold into, as one event type with a status field.
+      Refused on the number that decides whether this path may run unattended:
+      "how often does an applied update roll back" is the safety measurement for
+      the whole leg, and every consumer in this tree selects on event TYPE
+      (_AGGREGATE_MAP, _COMPLETION_EVENT_TYPES, _EVENT_TYPE_TO_STATUS, the
+      receipts read model, the mirror allow-lists), so a status inside the
+      payload would be the one vocabulary none of them can filter. The payloads
+      do not share a shape either: a rollback carries a reason and a restored
+      sha and creates nothing, where an apply carries counts and a snapshot.
+    consumer: framework/watchdog/receipts.py
+    provenance: >-
+      per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; contract
+      of record phase1-contracts-v2-2026-09-07 §5, two blind arms (Fable 5.1,
+      Opus 5) adjudicated in the document named above
   - member: framework/onboarding/salience.py
     member_class: framework_production_modules
     gate_date: '2026-07-28'

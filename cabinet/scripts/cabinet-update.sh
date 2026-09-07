@@ -3,48 +3,60 @@
 # no terminal in the loop.
 #
 # THE PROBLEM THIS SOLVES. An installed Cabinet is an unpacked export: no git,
-# no remote, no way to learn that better bytes exist. Every improvement the
-# org made about itself stopped at the repository. This is the last leg — the
-# one that makes the result reach the operator.
+# no remote, no way to learn that better bytes exist. Every improvement the org
+# made about itself stopped at the repository. This is the last leg — the one
+# that makes the result reach the operator.
 #
 # FOUR SUBCOMMANDS
-#   publish --from <clone> [--to <root>]  cut a bundle from a clone into an
+#   publish --from <clone> [--to <root>]  cut a bundle from a checkout into an
 #                                         install's inbox (the landing lane's
 #                                         step, run from a clone after a merge)
 #   status [--json]                       what is installed, what is waiting
 #   apply --bundle <sha> [...]            take it, or refuse and say why
 #   rollback [--to <stamp>]               put the previous bytes back
 #
-# WHAT IT REFUSES, AND WHY EACH REFUSAL IS WHOLE-BUNDLE
-#   * a digest mismatch anywhere in the bundle;
+# WHAT IT REFUSES, AND WHY EVERY REFUSAL IS WHOLE-BUNDLE
+#   * a per-file digest mismatch anywhere in the bundle;
 #   * ANY differing path inside the locked constitutional set, parsed from the
-#     INSTALLED germline-lock.sh (never from the bundle — a bundle that named
-#     its own boundary could widen it). The installed export is not itself
-#     flag-locked, so this refusal IS the boundary there;
+#     INSTALLED germline-lock.sh — never from the bundle, because a bundle that
+#     named its own boundary could widen it. The installed export carries no
+#     filesystem flags, so this refusal IS the boundary there;
 #   * an absent, empty or unreadable bundle;
-#   * a preserve set that neither side declares.
+#   * a preserve set that neither side declares;
+#   * a second updater already running (the lock).
 #   Partial application is never a legal state: the check precedes the first
 #   write and the whole bundle stands or falls.
 #
-# WHAT IT NEVER TOUCHES: any path in the preserve set (the operator's own
-# data), any path the previous bundle did not ship (deletions are
-# manifest-to-manifest), launchd definitions, and secrets — nothing here reads
-# cabinet/.env beyond the port the dashboard library already resolves.
+# WHAT IT NEVER TOUCHES. Any path in the preserve set (the operator's own
+# data); any path the previous bundle did not ship — deletions are
+# manifest-to-manifest, never bundle-versus-installed, because a bundle is a
+# scrubbed export that contains no instance path at all and diffing it against
+# the install would mark the operator's whole instance tree for deletion; the
+# service definitions this deployment is supervised by; and secrets — nothing
+# here reads cabinet/.env beyond the port the dashboard library already
+# resolves.
 #
-# HOW IT SURVIVES ITSELF. A bundle may change this script and the process this
-# script restarts is the one that spawned it, so before the first write the
+# HOW IT SURVIVES ITSELF. A bundle may change this script, and the process this
+# script restarts is the one that spawned it. So before the first write the
 # updater copies itself into <root>/.updates/run/ and re-execs there in a NEW
 # SESSION. Killing the caller — closing the window, restarting the dashboard —
 # no longer kills the update.
 #
 # THE HEALTH GATE IS NOT AN IDENTITY PROBE. "Something answered as the
 # dashboard" passes for an OLD process that survived a failed restart, so the
-# gate requires the answering process to carry the NEW source commit and a
-# start time later than this apply. Plus the receipts read model exits 0, plus
-# the state-persistence preflight exits 0. Red ⇒ automatic rollback, restart,
-# and a recorded rolled-back event. cabinet-doctor is REPORTED, never gated: a
-# single-worker install DEADs on services it was never meant to run, and a
-# doctor gate would roll back every good update.
+# gate requires the answering process to carry the NEW source commit AND a
+# start time later than this apply began. Plus the receipt ledger still reads,
+# plus the state-persistence preflight exits 0. Red ⇒ automatic rollback,
+# restart, and a recorded rolled-back event. cabinet-doctor is REPORTED, never
+# gated: a single-worker install is DEAD on fleet services it was never meant
+# to run, and a doctor gate would roll back every good update.
+#
+# TWO TEST SEAMS, both env-gated and both named here so neither is mistaken for
+# production behaviour. CABINET_UPDATE_TEST_KILL_AFTER=<n> makes the writer
+# SIGKILL itself after n files, so the resume path can be proven rather than
+# asserted. CABINET_UPDATE_TEST_HOLD_SECONDS=<n> holds the re-exec'd updater
+# before its first write, so "survives the death of the process that spawned
+# it" is a deterministic assertion instead of a race.
 #
 # Exit codes: 0 ok / 1 operational failure (gate red, rolled back) / 2 usage
 # / 3 refusal (locked path, digest mismatch, unreadable bundle) / 4 busy.
@@ -62,7 +74,7 @@ usage() {
   cat <<'EOF'
 Usage: cabinet-update.sh <command> [options]
 
-  publish --from <clone> [--to <install-root>] [--keep N]
+  publish --from <clone> [--to <install-root>]
         Cut an update bundle from a checkout and place it in the install's
         inbox. Run from a clone after a merge; never on the install itself.
 
@@ -76,23 +88,17 @@ Usage: cabinet-update.sh <command> [options]
   rollback [--to <stamp>] [--from terminal|web|chat] [--skip-restart]
         Restore the newest snapshot (or the named one) and restart.
 
-Root resolution: CABINET_ROOT, else the checkout this script lives in.
+Root resolution: CABINET_ROOT, else the tree this script lives in.
 EOF
 }
 
 fail_usage() { echo "cabinet-update: $*" >&2; usage >&2; exit "$EXIT_USAGE"; }
 
 # ---- root -------------------------------------------------------------------
-resolve_root() {
-  if [ -n "${CABINET_ROOT:-}" ]; then printf '%s\n' "$CABINET_ROOT"; return 0; fi
-  # The re-exec'd copy lives at <root>/.updates/run/, not at <root>/cabinet/scripts/.
-  case "$SCRIPT_DIR" in
-    */.updates/run) (cd "$SCRIPT_DIR/../.." && pwd) ;;
-    *) (cd "$SCRIPT_DIR/../.." && pwd) ;;
-  esac
-}
-ROOT="$(resolve_root)"
-[ -d "$ROOT" ] || { echo "cabinet-update: root not a directory: $ROOT" >&2; exit 1; }
+# Both homes of this script — <root>/cabinet/scripts/ and the re-exec'd copy at
+# <root>/.updates/run/ — sit exactly two levels under the root.
+ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+[ -d "$ROOT" ] || { echo "cabinet-update: root is not a directory: $ROOT" >&2; exit 1; }
 
 UPD="$ROOT/.updates"
 INBOX="$UPD/inbox"
@@ -105,24 +111,29 @@ LOCK="$UPD/.lock"
 LOG="$UPD/update.log"
 
 # The helper + the dashboard library, resolved so the re-exec'd copy finds its
-# own siblings rather than the checkout's.
+# own siblings rather than the tree's.
 LIB_DIR="${CABINET_UPDATE_LIB:-$SCRIPT_DIR/lib}"
 BUNDLE_PY="$LIB_DIR/update_bundle.py"
 DASH_LIB="$LIB_DIR/dashboard.sh"
 
 KEEP="${CABINET_UPDATE_KEEP:-3}"
+DOOR="terminal"
 
+# Progress goes to STDERR, always. Stdout belongs to `status`, whose --json a
+# machine parses; a progress line on stdout is how a captured verdict becomes
+# "gate: leg green\ngreen" and every good update rolls itself back.
 log() {
   mkdir -p "$UPD" 2>/dev/null || true
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >>"$LOG" 2>/dev/null || true
-  printf '%s\n' "$*"
+  printf '%s\n' "$*" >&2
 }
 
 now_utc() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 # ---- events -----------------------------------------------------------------
-# Never silenced: a swallowed emit is an update with no record. Failure to
-# record is reported and does not abort the update itself.
+# Never silenced: a swallowed emit is an update with no record. A failure to
+# record is REPORTED and does not abort the update itself — the bytes are
+# already where they are, and pretending otherwise would be the larger lie.
 emit_event() {
   local kind="$1" actor="$2" payload="$3"
   if ! ( cd "$ROOT" && "$PY" -m framework.events.emitter "$kind" "$actor" "$payload" ) >>"$LOG" 2>&1; then
@@ -130,9 +141,9 @@ emit_event() {
   fi
 }
 
-# door kind -> ledger actor. The terminal is attribution, not authentication:
-# it is the same uid as everything else on the box, so it never claims to be
-# the Captain. The web and chat doors carry an authenticated session.
+# Door kind -> ledger actor. The terminal is attribution, not authentication:
+# it is the same uid as every officer on the box, so it never claims to be the
+# Captain. Only the web and chat doors carry an authenticated session.
 door_actor() {
   case "$1" in
     web|chat) printf 'captain\n' ;;
@@ -140,8 +151,8 @@ door_actor() {
   esac
 }
 
-# Legacy spellings accepted so an older invocation keeps working; the ledger
-# only ever sees the agnostic kinds.
+# The ledger only ever sees the agnostic kinds; the older spellings are
+# accepted so an existing invocation keeps working.
 normalize_door() {
   case "${1:-terminal}" in
     cli|terminal) printf 'terminal\n' ;;
@@ -154,11 +165,11 @@ normalize_door() {
 json_escape() { "$PY" -c 'import json,sys; sys.stdout.write(json.dumps(sys.argv[1]))' "$1"; }
 
 # ---- the updater lock -------------------------------------------------------
-# flock(1) is not on every box this runs on (it is absent on macOS), so the
-# lock is taken with the interpreter that IS pinned here. The lock lives on the
-# open file description bash holds on fd 9, not on the python process: the
-# child's exit closes its copy of the descriptor, the description stays open in
-# this shell, and the lock stays held for the life of the update.
+# flock(1) is not on every box this runs on (macOS has none), so the lock is
+# taken with the interpreter that IS pinned here. The lock lives on the open
+# file description bash holds on fd 9, not on the python process: the child's
+# exit closes only its copy of the descriptor, the description stays open in
+# this shell, and the lock is held for the life of the update.
 take_lock() {
   mkdir -p "$UPD" || return 1
   exec 9>>"$LOCK" || return 1
@@ -185,9 +196,9 @@ reexec_detached() {
   if command -v setsid >/dev/null 2>&1; then
     exec setsid bash "$RUN_DIR/cabinet-update.sh" "$@"
   fi
-  # No setsid on this platform: the interpreter already pinned here has the
-  # same call. A process that is already a session leader raises EPERM; that
-  # is already the property we want, so it is not an error.
+  # No setsid(1) on this platform. The interpreter already pinned here has the
+  # same call. A process that is already a session leader raises EPERM — which
+  # is already the property wanted, so it is not an error.
   exec "$PY" -c '
 import os, sys
 try:
@@ -217,17 +228,20 @@ print(value if isinstance(value, str) else json.dumps(value))
 ' "$STATE" "$1"
 }
 
-installed_sha() {
+# The installed identity. NOT a .cabinet-version file: the export already
+# stamps egg-manifest.json with the commit it was cut from, and a second
+# identity file is a second thing that can disagree with the first.
+installed_sha_of() { # <root>
   "$PY" -c '
 import json, sys
 from pathlib import Path
-path = Path(sys.argv[1]) / "egg-manifest.json"
 try:
-    print(json.loads(path.read_text()).get("source_commit") or "")
+    print(json.loads((Path(sys.argv[1]) / "egg-manifest.json").read_text()).get("source_commit") or "")
 except Exception:
     print("")
-' "$ROOT"
+' "$1"
 }
+installed_sha() { installed_sha_of "$ROOT"; }
 
 # ---- publish ----------------------------------------------------------------
 cmd_publish() {
@@ -236,36 +250,30 @@ cmd_publish() {
     case "$1" in
       --from) [ $# -ge 2 ] || fail_usage "--from needs a checkout"; from="$2"; shift 2 ;;
       --to) [ $# -ge 2 ] || fail_usage "--to needs an install root"; to="$2"; shift 2 ;;
-      --keep) [ $# -ge 2 ] || fail_usage "--keep needs a number"; KEEP="$2"; shift 2 ;;
       *) fail_usage "unknown publish option '$1'" ;;
     esac
   done
   [ -n "$from" ] || fail_usage "publish needs --from <clone>"
-  [ -d "$from/.git" ] || { echo "cabinet-update: --from is not a checkout (no .git): $from" >&2; exit "$EXIT_REFUSED"; }
-  [ -x "$from/cabinet/scripts/egg-export.sh" ] || [ -f "$from/cabinet/scripts/egg-export.sh" ] \
+  [ -e "$from/.git" ] || { echo "cabinet-update: --from is not a checkout (no .git): $from" >&2; exit "$EXIT_REFUSED"; }
+  [ -f "$from/cabinet/scripts/egg-export.sh" ] \
     || { echo "cabinet-update: $from carries no egg-export.sh — publish needs the exporter" >&2; exit "$EXIT_REFUSED"; }
+  [ -d "$to" ] || { echo "cabinet-update: --to is not a directory: $to" >&2; exit "$EXIT_REFUSED"; }
 
-  local target_inbox installed
+  local target_inbox installed extra=()
   target_inbox="$to/.updates/inbox"
   mkdir -p "$target_inbox" || exit 1
-  installed="$( CABINET_ROOT="$to" "$PY" -c '
-import json, sys
-from pathlib import Path
-path = Path(sys.argv[1]) / "egg-manifest.json"
-try:
-    print(json.loads(path.read_text()).get("source_commit") or "")
-except Exception:
-    print("")
-' "$to" )"
-
-  local extra=()
-  if [ -n "$installed" ] && git -C "$from" cat-file -e "${installed}^{commit}" 2>/dev/null; then
+  installed="$(installed_sha_of "$to")"
+  # The changelog is only honest when this checkout actually carries the
+  # commit the install is on; otherwise the bundle says so rather than
+  # rendering an empty list as "nothing changed".
+  if [ -n "$installed" ]; then
     extra=(--changelog-from "$installed")
   fi
-  bash "$from/cabinet/scripts/egg-export.sh" --bundle "$target_inbox" "${extra[@]+"${extra[@]}"}" || exit 1
+  bash "$from/cabinet/scripts/egg-export.sh" --bundle "$target_inbox" "${extra[@]+"${extra[@]}"}" >&2 || exit 1
 
-  # from_sha is the install's identity at cut time — the exporter cannot know
-  # it, so it is stamped here, where both ends are in hand.
+  # from_sha is the INSTALL's identity at cut time. The exporter cannot know
+  # it — it only knows the checkout — so it is stamped here, where both ends
+  # are in hand.
   if [ -n "$installed" ]; then
     local head sha_manifest
     head="$(git -C "$from" rev-parse HEAD)"
@@ -293,6 +301,7 @@ cmd_status() {
   done
   "$PY" - "$ROOT" "$as_json" <<'PYSTATUS'
 import json, os, pwd, sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 root = Path(sys.argv[1])
@@ -316,16 +325,15 @@ def owner(path):
 
 here = installed()
 available = []
-for manifest_path in sorted((upd / "inbox").glob("*.manifest.json")) if (upd / "inbox").is_dir() else []:
+inbox = upd / "inbox"
+for manifest_path in sorted(inbox.glob("*.manifest.json")) if inbox.is_dir() else []:
     try:
         doc = json.loads(manifest_path.read_text())
     except Exception:
         continue
     sha = doc.get("source_sha") or ""
-    tarball = upd / "inbox" / f"{sha}.tar.gz"
-    if not sha or not tarball.is_file():
-        continue
-    if sha == here:
+    tarball = inbox / f"{sha}.tar.gz"
+    if not sha or not tarball.is_file() or sha == here:
         continue
     stat = tarball.stat()
     available.append({
@@ -335,9 +343,12 @@ for manifest_path in sorted((upd / "inbox").glob("*.manifest.json")) if (upd / "
         "from_sha": doc.get("from_sha"),
         "file_count": len(doc.get("files") or {}),
         "changelog": doc.get("changelog") or [],
+        # A5.11: the inbox is same-uid writable, so the card says who put the
+        # file there and when. That is the honest limit of the trust story
+        # until an officer-sandbox deny lands under .updates/.
         "owner": owner(tarball),
-        "mtime": stat.st_mtime,
-        "path": str(tarball),
+        "mtime": datetime.fromtimestamp(stat.st_mtime, timezone.utc)
+                         .strftime("%Y-%m-%dT%H:%M:%SZ"),
     })
 available.sort(key=lambda row: row["built_at"], reverse=True)
 
@@ -365,34 +376,44 @@ if as_json:
     json.dump(report, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
 else:
-    print(f"installed : {here[:8] or '(unknown)'}")
-    print(f"phase     : {report['phase']}")
+    print("installed : %s" % (here[:8] or "(unknown)"))
+    print("phase     : %s" % report["phase"])
     if not available:
         print("waiting   : nothing (no bundle in the inbox that differs from the install)")
     for row in available:
-        print(f"waiting   : {row['short']}  built {row['built_at']}  {row['file_count']} files  owner {row['owner']}")
+        print("waiting   : %s  built %s  %d files  owner %s"
+              % (row["short"], row["built_at"], row["file_count"], row["owner"]))
         for line in row["changelog"][:5]:
-            print(f"            - {line}")
-    print(f"snapshots : {len(snapshots)}")
+            print("            - %s" % line)
+    print("snapshots : %d" % len(snapshots))
 PYSTATUS
 }
 
 # ---- health gate ------------------------------------------------------------
-# Three legs, each reporting its own verdict. An identity-only probe would pass
-# an OLD process that survived a failed restart, so the dashboard leg requires
-# the answering process to carry the new source commit AND to have started
-# after this apply began.
+# Three legs. An identity-only probe would pass an OLD process that survived a
+# failed restart, so the dashboard leg requires the answering process to carry
+# the new source commit AND to have started after this apply began.
+#
+# rc 0 = green. Nothing is printed to stdout here on purpose: the verdict is
+# the exit status.
 health_gate() { # <to_sha> <apply_started_at> <skip_restart>
   local to_sha="$1" started="$2" skip_restart="$3"
-  local tries="${CABINET_OPEN_TRIES:-150}" url state_ok=0 verdict_dash="thin"
+  local tries="${CABINET_OPEN_TRIES:-150}" url state_ok=0
 
   if [ "$skip_restart" = "1" ]; then
     log "gate: dashboard leg THIN (--skip-restart: nothing was restarted, so a start time cannot be compared)"
   else
-    # shellcheck disable=SC1090
-    [ -f "$DASH_LIB" ] && . "$DASH_LIB"
-    url="${CABINET_UPDATE_HEALTH_URL:-$(cabinet_dash_url "$ROOT")api/health}"
-    verdict_dash="red"
+    url="${CABINET_UPDATE_HEALTH_URL:-}"
+    if [ -z "$url" ]; then
+      if [ -f "$DASH_LIB" ]; then
+        # shellcheck disable=SC1090
+        . "$DASH_LIB"
+        url="$(cabinet_dash_url "$ROOT")api/health"
+      else
+        log "gate: dashboard leg RED (no dashboard library at $DASH_LIB, so the door cannot be resolved)"
+        return 1
+      fi
+    fi
     while [ "$tries" -gt 0 ]; do
       if "$PY" - "$url" "$to_sha" "$started" <<'PYHEALTH'
 import json, sys, urllib.request
@@ -401,76 +422,87 @@ try:
     with urllib.request.urlopen(url, timeout=3) as response:
         body = json.loads(response.read().decode("utf-8"))
 except Exception as exc:
-    print(f"health: no answer yet ({exc})", file=sys.stderr)
+    print("health: no answer yet (%s)" % exc, file=sys.stderr)
     sys.exit(1)
 if body.get("service") != "cabinet-dashboard":
     print("health: something answered and it is not this cabinet", file=sys.stderr)
     sys.exit(1)
 stamp = body.get("source_commit") or ""
 if not stamp:
-    print("health: the answer carries no source_commit", file=sys.stderr)
+    print("health: the answer carries no build stamp", file=sys.stderr)
     sys.exit(1)
 if not (stamp.startswith(to_sha) or to_sha.startswith(stamp)):
-    print(f"health: answering process carries {stamp[:12]}, expected {to_sha[:12]}", file=sys.stderr)
+    print("health: the answering build is %s, expected %s" % (stamp[:12], to_sha[:12]), file=sys.stderr)
     sys.exit(1)
 if (body.get("started_at") or "") <= started:
     print("health: the answering process predates this update — the restart did not happen", file=sys.stderr)
     sys.exit(1)
 sys.exit(0)
 PYHEALTH
-      then state_ok=1; verdict_dash="green"; break; fi
+      then state_ok=1; break; fi
       tries=$((tries - 1))
-      "$PY" -c 'import time; time.sleep(2)'
+      [ "$tries" -gt 0 ] && "$PY" -c 'import time; time.sleep(2)'
     done
-    [ "$state_ok" = "1" ] || { log "gate: dashboard leg RED"; printf 'red\n'; return 1; }
+    [ "$state_ok" = "1" ] || { log "gate: dashboard leg RED"; return 1; }
     log "gate: dashboard leg green"
   fi
 
+  # The receipt ledger still reads under the new bytes. The contract names this
+  # leg `receipts --json`; this tree has no such CLI yet (the read model is
+  # framework/events/emitter.replay and the /receipts page over it), so the
+  # gate exercises THAT and the seam below is where a CLI plugs in when one
+  # lands. Stated rather than quietly skipped.
   local receipts_cmd preflight_cmd
-  receipts_cmd="${CABINET_UPDATE_RECEIPTS_CMD:-$PY -m framework.missions.receipts --json}"
+  receipts_cmd="${CABINET_UPDATE_RECEIPTS_CMD:-$PY -c \"import json,sys; from framework.events.emitter import replay; json.dump({'receipts': len(replay())}, sys.stdout)\"}"
   preflight_cmd="${CABINET_UPDATE_PREFLIGHT_CMD:-$PY cabinet/scripts/state-persistence-preflight.py --repo .}"
   if ! ( cd "$ROOT" && eval "$receipts_cmd" ) >>"$LOG" 2>&1; then
-    log "gate: receipts leg RED ($receipts_cmd) — see $LOG"
-    printf 'red\n'; return 1
+    log "gate: receipts leg RED — see $LOG"
+    return 1
   fi
   log "gate: receipts leg green"
   if ! ( cd "$ROOT" && eval "$preflight_cmd" ) >>"$LOG" 2>&1; then
-    log "gate: persistence preflight RED ($preflight_cmd) — see $LOG"
-    printf 'red\n'; return 1
+    log "gate: persistence preflight RED — see $LOG"
+    return 1
   fi
   log "gate: persistence preflight green"
 
-  # REPORTED, never gated: a single-worker install DEADs on fleet services it
-  # was never meant to run, and gating here would roll back every good update.
-  if [ -f "$ROOT/cabinet/scripts/cabinet-doctor.sh" ]; then
-    ( cd "$ROOT" && bash cabinet/scripts/cabinet-doctor.sh ) >>"$LOG" 2>&1 \
-      && log "doctor: reported green" || log "doctor: reported findings (NOT a gate) — see $LOG"
+  # REPORTED, never gated.
+  if [ -f "$ROOT/cabinet/scripts/cabinet-doctor.sh" ] && [ "${CABINET_UPDATE_SKIP_DOCTOR:-0}" != "1" ]; then
+    if ( cd "$ROOT" && bash cabinet/scripts/cabinet-doctor.sh ) >>"$LOG" 2>&1; then
+      log "doctor: reported green"
+    else
+      log "doctor: reported findings (NOT a gate) — see $LOG"
+    fi
   fi
-  printf 'green\n'
   return 0
 }
 
 restart_dashboard() {
-  # shellcheck disable=SC1090
   [ -f "$DASH_LIB" ] || { log "restart: no dashboard library at $DASH_LIB"; return 1; }
+  # shellcheck disable=SC1090
   . "$DASH_LIB"
   cabinet_dash_restart "$ROOT" "taking an update"
 }
 
-# ---- rollback ---------------------------------------------------------------
+# ---- restore ----------------------------------------------------------------
 restore_snapshot() { # <snapshot-dir>
-  local snap="$1"
+  local snap="$1" from_sha
   "$PY" "$BUNDLE_PY" restore --root "$ROOT" --snapshot "$snap" >>"$LOG" 2>&1 || return 1
+  # The built dashboard is a LOCAL artifact, not shipped content, so it lives
+  # beside the snapshot rather than in it. Restoring it before the gate is what
+  # makes "gate red ⇒ roll back ⇒ gate green" true instead of hopeful.
   if [ -d "$snap/next-previous" ]; then
     rm -rf "$ROOT/cabinet/dashboard/.next.rollback-tmp"
     [ -d "$ROOT/cabinet/dashboard/.next" ] && mv "$ROOT/cabinet/dashboard/.next" "$ROOT/cabinet/dashboard/.next.rollback-tmp"
     mv "$snap/next-previous" "$ROOT/cabinet/dashboard/.next" || return 1
     rm -rf "$ROOT/cabinet/dashboard/.next.rollback-tmp"
   fi
-  local from_sha
   from_sha="$("$PY" -c '
 import json, sys
-print(json.load(open(sys.argv[1])).get("from_sha") or "")
+try:
+    print(json.load(open(sys.argv[1])).get("from_sha") or "")
+except Exception:
+    print("")
 ' "$snap/snapshot.json")"
   if [ -n "$from_sha" ]; then
     "$PY" "$BUNDLE_PY" stamp-identity --root "$ROOT" --source-commit "$from_sha" \
@@ -485,44 +517,108 @@ newest_snapshot() {
 }
 
 cmd_rollback() {
-  local want="" door="terminal" skip_restart=0
+  local want="" skip_restart=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --to) [ $# -ge 2 ] || fail_usage "--to needs a snapshot stamp"; want="$2"; shift 2 ;;
-      --from) [ $# -ge 2 ] || fail_usage "--from needs a door"; door="$(normalize_door "$2")" || fail_usage "unknown door '$2'"; shift 2 ;;
+      --from) [ $# -ge 2 ] || fail_usage "--from needs a door"; DOOR="$(normalize_door "$2")" || fail_usage "unknown door '$2'"; shift 2 ;;
       --skip-restart) skip_restart=1; shift ;;
       *) fail_usage "unknown rollback option '$1'" ;;
     esac
   done
+  case "$want" in *[!0-9A-Za-z_-]*) fail_usage "snapshot stamps are [0-9A-Za-z_-] only" ;; esac
   take_lock || { echo "cabinet-update: another update is running" >&2; exit "$EXIT_BUSY"; }
-  local snap_name
+  local snap_name before after
   snap_name="${want:-$(newest_snapshot)}"
-  [ -n "$snap_name" ] && [ -d "$SNAPSHOTS/$snap_name" ] || {
+  { [ -n "$snap_name" ] && [ -d "$SNAPSHOTS/$snap_name" ]; } || {
     echo "cabinet-update: no snapshot to roll back to" >&2; exit 1; }
-  local before after
   before="$(installed_sha)"
   restore_snapshot "$SNAPSHOTS/$snap_name" || { echo "cabinet-update: restore failed — see $LOG" >&2; exit 1; }
   [ "$skip_restart" = "1" ] || restart_dashboard || log "restart after rollback did not complete"
   after="$(installed_sha)"
-  write_state "{\"phase\":\"rolled_back\",\"from_sha\":$(json_escape "$before"),\"to_sha\":$(json_escape "$after"),\"snapshot\":$(json_escape "$snap_name"),\"finished_at\":$(json_escape "$(now_utc)"),\"door\":$(json_escape "$door")}"
-  emit_event cabinet_update_rolled_back "$(door_actor "$door")" \
-    "{\"from_sha\":$(json_escape "$before"),\"to_sha\":$(json_escape "$after"),\"reason\":\"requested\",\"door\":$(json_escape "$door")}"
+  write_state "{\"phase\":\"rolled_back\",\"from_sha\":$(json_escape "$before"),\"to_sha\":$(json_escape "$after"),\"snapshot\":$(json_escape "$snap_name"),\"reason\":\"requested\",\"finished_at\":$(json_escape "$(now_utc)"),\"door\":$(json_escape "$DOOR")}"
+  emit_event cabinet_update_rolled_back "$(door_actor "$DOOR")" \
+    "{\"from_sha\":$(json_escape "$before"),\"to_sha\":$(json_escape "$after"),\"reason\":\"requested\",\"door\":$(json_escape "$DOOR")}"
   log "rolled back to $snap_name"
   return 0
 }
 
 # ---- apply ------------------------------------------------------------------
-refuse() { # <exit> <reason> <to_sha> <locked-json>
+refuse() { # <exit> <reason> <to_sha> [locked-json]
   local code="$1" reason="$2" to_sha="$3" locked="${4:-[]}"
   log "REFUSED: $reason"
-  emit_event cabinet_update_refused "$(door_actor "${DOOR:-terminal}")" \
-    "{\"to_sha\":$(json_escape "$to_sha"),\"reason\":$(json_escape "$reason"),\"locked_paths\":$locked,\"door\":$(json_escape "${DOOR:-terminal}")}"
+  emit_event cabinet_update_refused "$(door_actor "$DOOR")" \
+    "{\"to_sha\":$(json_escape "$to_sha"),\"reason\":$(json_escape "$reason"),\"locked_paths\":$locked,\"door\":$(json_escape "$DOOR")}"
   exit "$code"
+}
+
+plan_field() { # <plan-file> <field>
+  "$PY" -c '
+import json, sys
+value = json.load(open(sys.argv[1]))[sys.argv[2]]
+print(json.dumps(value) if not isinstance(value, str) else value)
+' "$1" "$2"
+}
+
+# The build runs in the STAGE tree, never in the install: a failed build must
+# not be able to leave the served directory half-written. The previous build is
+# moved beside the snapshot (a local artifact the export manifest deletes, not
+# shipped content) and the new one is renamed into place LAST.
+stage_build() { # <stage-tree> <snapshot-dir> <to_sha>
+  local stage_tree="$1" snap="$2" to_sha="$3"
+  local stage_dash="$stage_tree/cabinet/dashboard"
+  local live_dash="$ROOT/cabinet/dashboard"
+  [ -d "$stage_dash" ] || { log "build: the bundle carries no dashboard"; return 0; }
+  command -v npm >/dev/null 2>&1 || { log "build: no node toolchain on this box"; return 1; }
+
+  if [ -d "$live_dash/node_modules" ] && [ -f "$live_dash/package-lock.json" ] \
+     && [ -f "$stage_dash/package-lock.json" ] \
+     && cmp -s "$live_dash/package-lock.json" "$stage_dash/package-lock.json"; then
+    # Same lockfile, same dependencies: reuse what is installed rather than
+    # paying a fresh install on every update.
+    ln -s "$live_dash/node_modules" "$stage_dash/node_modules"
+  else
+    ( cd "$stage_dash" && npm ci --include=dev --no-audit --no-fund ) >>"$LOG" 2>&1 || return 1
+  fi
+  ( cd "$stage_dash" && CABINET_BUILD_SOURCE_COMMIT="$to_sha" npm run build ) >>"$LOG" 2>&1 || return 1
+  [ -d "$stage_dash/.next" ] || { log "build: produced no output"; return 1; }
+  mkdir -p "$snap"
+  if [ -d "$live_dash/.next" ]; then
+    rm -rf "$snap/next-previous"
+    mv "$live_dash/.next" "$snap/next-previous" || return 1
+  fi
+  mv "$stage_dash/.next" "$live_dash/.next" || return 1
+  log "build: swapped in a fresh build (the previous one is beside the snapshot)"
+  return 0
+}
+
+prune_snapshots() {
+  [ -d "$SNAPSHOTS" ] || return 0
+  local keep="$KEEP" names count old
+  case "$keep" in ''|*[!0-9]*) keep=3 ;; esac
+  names="$(ls -1 "$SNAPSHOTS" 2>/dev/null | sort)"
+  count="$(printf '%s\n' "$names" | grep -c . || true)"
+  [ "$count" -gt "$keep" ] || return 0
+  printf '%s\n' "$names" | head -n "$((count - keep))" | while IFS= read -r old; do
+    [ -n "$old" ] || continue
+    rm -rf "${SNAPSHOTS:?}/$old"
+    log "pruned snapshot $old"
+  done
+}
+
+roll_back_after() { # <snapshot-dir> <to_sha> <from_sha> <reason> <skip_restart>
+  local snap="$1" to_sha="$2" from_sha="$3" reason="$4" skip_restart="$5"
+  log "$reason — rolling back automatically"
+  restore_snapshot "$snap" || log "the automatic rollback did not complete cleanly — see $LOG"
+  [ "$skip_restart" = "1" ] || restart_dashboard || true
+  write_state "{\"phase\":\"rolled_back\",\"from_sha\":$(json_escape "$to_sha"),\"to_sha\":$(json_escape "$from_sha"),\"snapshot\":$(json_escape "$(basename "$snap")"),\"reason\":$(json_escape "$reason"),\"finished_at\":$(json_escape "$(now_utc)")}"
+  emit_event cabinet_update_rolled_back "$(door_actor "$DOOR")" \
+    "{\"from_sha\":$(json_escape "$to_sha"),\"to_sha\":$(json_escape "$from_sha"),\"reason\":$(json_escape "$reason"),\"door\":$(json_escape "$DOOR")}"
+  exit 1
 }
 
 cmd_apply() {
   local sha="" skip_rebuild=0 skip_restart=0
-  DOOR="terminal"
   while [ $# -gt 0 ]; do
     case "$1" in
       --bundle) [ $# -ge 2 ] || fail_usage "--bundle needs a sha"; sha="$2"; shift 2 ;;
@@ -534,7 +630,7 @@ cmd_apply() {
     esac
   done
   [ -n "$sha" ] || fail_usage "apply needs --bundle <sha>"
-  case "$sha" in *[!0-9a-fA-F]*|'') fail_usage "bundle id must be a hex sha" ;; esac
+  case "$sha" in *[!0-9a-fA-F]*|'') fail_usage "a bundle id is a hex sha" ;; esac
 
   take_lock || {
     echo "cabinet-update: another update is running" >&2
@@ -546,8 +642,8 @@ cmd_apply() {
   mkdir -p "$INBOX" "$APPLIED" "$SNAPSHOTS" "$STAGE"
 
   # RESUME FIRST. A killed apply leaves state.json at `applying` with its
-  # snapshot on disk; the tree is then neither version. Nothing else may run
-  # until it is put back.
+  # snapshot on disk, and the tree is then neither version. Nothing else may
+  # run until that is put back.
   if [ "$(read_state_field phase)" = "applying" ]; then
     local stale
     stale="$(read_state_field snapshot)"
@@ -560,23 +656,22 @@ cmd_apply() {
     fi
   fi
 
-  local manifest tarball
+  local manifest tarball here
   manifest="$INBOX/$sha.manifest.json"
   tarball="$INBOX/$sha.tar.gz"
-  [ -f "$manifest" ] || refuse "$EXIT_REFUSED" "no manifest for bundle $sha in $INBOX" "$sha"
-  [ -s "$tarball" ] || refuse "$EXIT_REFUSED" "bundle $sha is absent or empty in $INBOX" "$sha"
+  [ -f "$manifest" ] || refuse "$EXIT_REFUSED" "no manifest for bundle $sha in the inbox" "$sha"
+  [ -s "$tarball" ] || refuse "$EXIT_REFUSED" "bundle $sha is absent or empty in the inbox" "$sha"
 
-  local here
   here="$(installed_sha)"
   if [ -n "$here" ] && [ "$here" = "$sha" ]; then
-    log "installed source commit is already $sha — nothing to do"
+    log "the installed source commit is already $sha — nothing to do"
     return 0
   fi
 
   local stage_tree="$STAGE/$sha/tree"
-  rm -rf "$STAGE/$sha"
+  rm -rf "${STAGE:?}/$sha"
   mkdir -p "$stage_tree"
-  tar -xzf "$tarball" -C "$stage_tree" || refuse "$EXIT_REFUSED" "bundle $sha could not be unpacked" "$sha"
+  tar -xzf "$tarball" -C "$stage_tree" 2>>"$LOG" || refuse "$EXIT_REFUSED" "bundle $sha could not be unpacked" "$sha"
 
   "$PY" "$BUNDLE_PY" verify --tree "$stage_tree" --manifest "$manifest" >>"$LOG" 2>&1 \
     || refuse "$EXIT_REFUSED" "bundle $sha failed per-file digest verification — see $LOG" "$sha"
@@ -590,43 +685,43 @@ cmd_apply() {
   if ! "$PY" "$BUNDLE_PY" plan --root "$ROOT" --tree "$stage_tree" \
         --manifest "$manifest" "${prev_manifest_arg[@]+"${prev_manifest_arg[@]}"}" \
         --out "$plan_file" >/dev/null 2>>"$LOG"; then
-    refuse "$EXIT_REFUSED" "the plan could not be computed (preserve or locked set unreadable) — see $LOG" "$sha"
+    refuse "$EXIT_REFUSED" "the plan could not be computed (the preserve or locked set is unreadable) — see $LOG" "$sha"
   fi
 
   local locked_hits
-  locked_hits="$("$PY" -c '
-import json, sys
-print(json.dumps(json.load(open(sys.argv[1]))["locked_hits"]))
-' "$plan_file")"
+  locked_hits="$(plan_field "$plan_file" locked_hits)"
   if [ "$locked_hits" != "[]" ]; then
-    echo "----------------------------------------------------------------------"
-    echo "This update touches the constitutional set, so none of it was applied."
-    echo "Paths:"
-    "$PY" -c '
+    {
+      echo "----------------------------------------------------------------------"
+      echo "This update changes the constitutional set, so none of it was applied."
+      echo "Paths:"
+      "$PY" -c '
 import json, sys
 for path in json.load(open(sys.argv[1]))["locked_hits"]:
     print("  " + path)
 ' "$plan_file"
-    echo
-    echo "Current boundary state:"
-    ( cd "$ROOT" && bash cabinet/scripts/germline-lock.sh status ) 2>&1 | sed 's/^/  /'
-    echo
-    echo "Changing these bytes is a deliberate ceremony, not an update: unlock"
-    echo "the boundary, apply, and lock it again in the same sitting."
-    echo "----------------------------------------------------------------------"
+      echo
+      echo "Current boundary state:"
+      ( cd "$ROOT" && bash cabinet/scripts/germline-lock.sh status ) 2>&1 | sed 's/^/  /'
+      echo
+      echo "Changing these bytes is a deliberate ceremony, not an update: unlock"
+      echo "the boundary, apply, and lock it again in the same sitting."
+      echo "----------------------------------------------------------------------"
+    } >&2
     refuse "$EXIT_REFUSED" "bundle $sha changes locked constitutional paths" "$sha" "$locked_hits"
   fi
 
   local changed_n deleted_n skipped
   changed_n="$("$PY" -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["changed"]))' "$plan_file")"
   deleted_n="$("$PY" -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["deleted"]))' "$plan_file")"
-  skipped="$("$PY" -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))["skipped_preserved"]))' "$plan_file")"
+  skipped="$(plan_field "$plan_file" skipped_preserved)"
 
   if [ "$changed_n" = "0" ] && [ "$deleted_n" = "0" ]; then
     log "bundle $sha changes nothing outside the preserve set — recording it and stopping"
     cp "$manifest" "$APPLIED/$sha.manifest.json"
     "$PY" "$BUNDLE_PY" stamp-identity --root "$ROOT" --source-commit "$sha" \
       --applied-at "$(now_utc)" ${here:+--from-sha "$here"} >>"$LOG" 2>&1
+    write_state "{\"phase\":\"applied\",\"from_sha\":$(json_escape "$here"),\"to_sha\":$(json_escape "$sha"),\"changed\":0,\"deleted\":0,\"skipped_preserved\":$skipped,\"finished_at\":$(json_escape "$(now_utc)"),\"door\":$(json_escape "$DOOR")}"
     return 0
   fi
 
@@ -635,7 +730,7 @@ for path in json.load(open(sys.argv[1]))["locked_hits"]:
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   snap="$SNAPSHOTS/$stamp-${here:-unknown}"
   "$PY" "$BUNDLE_PY" snapshot --root "$ROOT" --plan "$plan_file" --snapshot "$snap" >>"$LOG" 2>&1 \
-    || { echo "cabinet-update: snapshot failed — nothing was written" >&2; exit 1; }
+    || { echo "cabinet-update: the snapshot failed — nothing was written" >&2; exit 1; }
 
   write_state "{\"phase\":\"applying\",\"from_sha\":$(json_escape "$here"),\"to_sha\":$(json_escape "$sha"),\"snapshot\":$(json_escape "$(basename "$snap")"),\"started_at\":$(json_escape "$started"),\"door\":$(json_escape "$DOOR")}"
 
@@ -643,12 +738,11 @@ for path in json.load(open(sys.argv[1]))["locked_hits"]:
   [ -n "${CABINET_UPDATE_TEST_KILL_AFTER:-}" ] && kill_arg=(--kill-after "$CABINET_UPDATE_TEST_KILL_AFTER")
   "$PY" "$BUNDLE_PY" apply-plan --root "$ROOT" --tree "$stage_tree" --plan "$plan_file" \
     "${kill_arg[@]+"${kill_arg[@]}"}" >>"$LOG" 2>&1 \
-    || { log "write failed — rolling back"; restore_snapshot "$snap"; write_state "{\"phase\":\"rolled_back\",\"reason\":\"write failed\"}"; exit 1; }
+    || roll_back_after "$snap" "$sha" "$here" "the write failed" "$skip_restart"
 
   "$PY" "$BUNDLE_PY" stamp-identity --root "$ROOT" --source-commit "$sha" \
     --applied-at "$(now_utc)" ${here:+--from-sha "$here"} >>"$LOG" 2>&1
 
-  # ---- staged rebuild, swapped by rename last ----
   local dashboard_changed=0
   "$PY" -c '
 import json, sys
@@ -657,99 +751,43 @@ touched = plan["changed"] + plan["deleted"]
 sys.exit(0 if any(p.startswith("cabinet/dashboard/") for p in touched) else 1)
 ' "$plan_file" && dashboard_changed=1
   if [ "$dashboard_changed" = "1" ] && [ "$skip_rebuild" = "0" ]; then
-    if ! stage_build "$stage_tree" "$snap"; then
-      log "build failed — rolling back"
-      restore_snapshot "$snap"
-      [ "$skip_restart" = "1" ] || restart_dashboard || true
-      write_state "{\"phase\":\"rolled_back\",\"from_sha\":$(json_escape "$sha"),\"to_sha\":$(json_escape "$here"),\"snapshot\":$(json_escape "$(basename "$snap")"),\"reason\":\"build failed\",\"finished_at\":$(json_escape "$(now_utc)")}"
-      emit_event cabinet_update_rolled_back "$(door_actor "$DOOR")" \
-        "{\"from_sha\":$(json_escape "$sha"),\"to_sha\":$(json_escape "$here"),\"reason\":\"build failed\",\"door\":$(json_escape "$DOOR")}"
-      exit 1
-    fi
+    stage_build "$stage_tree" "$snap" "$sha" \
+      || roll_back_after "$snap" "$sha" "$here" "the build failed" "$skip_restart"
   elif [ "$dashboard_changed" = "1" ]; then
     log "rebuild SKIPPED by request — the running build is now older than the code it serves (THIN)"
   fi
 
-  [ "$skip_restart" = "1" ] || restart_dashboard || log "restart did not complete — the gate will say so"
+  [ "$skip_restart" = "1" ] || restart_dashboard || log "the restart did not complete — the gate will say so"
 
-  local verdict
-  verdict="$(health_gate "$sha" "$started" "$skip_restart")"
-  if [ "$verdict" != "green" ]; then
-    log "health gate RED — rolling back automatically"
-    restore_snapshot "$snap"
-    [ "$skip_restart" = "1" ] || restart_dashboard || true
-    write_state "{\"phase\":\"rolled_back\",\"from_sha\":$(json_escape "$sha"),\"to_sha\":$(json_escape "$here"),\"snapshot\":$(json_escape "$(basename "$snap")"),\"reason\":\"health gate red\",\"finished_at\":$(json_escape "$(now_utc)")}"
-    emit_event cabinet_update_rolled_back "$(door_actor "$DOOR")" \
-      "{\"from_sha\":$(json_escape "$sha"),\"to_sha\":$(json_escape "$here"),\"reason\":\"health gate red\",\"door\":$(json_escape "$DOOR")}"
-    exit 1
-  fi
+  health_gate "$sha" "$started" "$skip_restart" \
+    || roll_back_after "$snap" "$sha" "$here" "the health gate was red" "$skip_restart"
 
+  # Pruning only after a green gate: an older snapshot is the only way back if
+  # the next apply is the one that goes wrong.
   cp "$manifest" "$APPLIED/$sha.manifest.json"
   prune_snapshots
   local built_at owner mtime
   built_at="$("$PY" -c 'import json,sys; print(json.load(open(sys.argv[1])).get("built_at") or "")' "$manifest")"
   owner="$("$PY" -c '
-import pwd, sys, os
+import os, pwd, sys
 try:
     print(pwd.getpwuid(os.stat(sys.argv[1]).st_uid).pw_name)
 except Exception:
     print("")
 ' "$tarball")"
-  mtime="$("$PY" -c 'import os,sys,datetime; print(datetime.datetime.utcfromtimestamp(os.stat(sys.argv[1]).st_mtime).strftime("%Y-%m-%dT%H:%M:%SZ"))' "$tarball")"
+  mtime="$("$PY" -c '
+import os, sys
+from datetime import datetime, timezone
+print(datetime.fromtimestamp(os.stat(sys.argv[1]).st_mtime, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+' "$tarball")"
   write_state "{\"phase\":\"applied\",\"from_sha\":$(json_escape "$here"),\"to_sha\":$(json_escape "$sha"),\"snapshot\":$(json_escape "$(basename "$snap")"),\"started_at\":$(json_escape "$started"),\"finished_at\":$(json_escape "$(now_utc)"),\"changed\":$changed_n,\"deleted\":$deleted_n,\"skipped_preserved\":$skipped,\"built_at\":$(json_escape "$built_at"),\"door\":$(json_escape "$DOOR")}"
   emit_event cabinet_update_applied "$(door_actor "$DOOR")" \
-    "{\"from_sha\":$(json_escape "$here"),\"to_sha\":$(json_escape "$sha"),\"changed\":$changed_n,\"deleted\":$deleted_n,\"snapshot\":$(json_escape "$(basename "$snap")"),\"door\":$(json_escape "$DOOR"),\"source_commit\":$(json_escape "$sha"),\"built_at\":$(json_escape "$built_at"),\"inbox_owner\":$(json_escape "$owner"),\"inbox_mtime\":$(json_escape "$mtime"),\"skipped_preserved\":$skipped}"
+    "{\"from_sha\":$(json_escape "$here"),\"to_sha\":$(json_escape "$sha"),\"changed\":$changed_n,\"deleted\":$deleted_n,\"snapshot\":$(json_escape "$(basename "$snap")"),\"door\":$(json_escape "$DOOR"),\"built_at\":$(json_escape "$built_at"),\"inbox_owner\":$(json_escape "$owner"),\"inbox_mtime\":$(json_escape "$mtime"),\"skipped_preserved\":$skipped}"
   log "applied ${here:0:8} -> ${sha:0:8}: $changed_n changed, $deleted_n deleted"
   if [ "$skipped" != "[]" ]; then
     log "kept your own data instead of the shipped copy: $skipped"
   fi
   return 0
-}
-
-# The build runs in the STAGE tree, not in the install: a failed build must
-# never be able to leave the served directory half-written. The previous build
-# is moved into the snapshot (it is a local artifact, not shipped content) and
-# the new one is renamed into place LAST.
-stage_build() { # <stage-tree> <snapshot-dir>
-  local stage_tree="$1" snap="$2"
-  local stage_dash="$stage_tree/cabinet/dashboard"
-  local live_dash="$ROOT/cabinet/dashboard"
-  [ -d "$stage_dash" ] || { log "build: the bundle carries no dashboard"; return 0; }
-  command -v npm >/dev/null 2>&1 || { log "build: no node toolchain on this box"; return 1; }
-
-  if [ -d "$live_dash/node_modules" ] && [ -f "$live_dash/package-lock.json" ] \
-     && [ -f "$stage_dash/package-lock.json" ] \
-     && cmp -s "$live_dash/package-lock.json" "$stage_dash/package-lock.json"; then
-    # Same lockfile, same dependencies: reuse what is already installed rather
-    # than paying a fresh install per update (the loop tax, not the typing).
-    ln -s "$live_dash/node_modules" "$stage_dash/node_modules"
-  else
-    ( cd "$stage_dash" && npm ci --include=dev --no-audit --no-fund ) >>"$LOG" 2>&1 || return 1
-  fi
-  ( cd "$stage_dash" && CABINET_BUILD_SOURCE_COMMIT="${1:-}" npm run build ) >>"$LOG" 2>&1 || return 1
-  [ -d "$stage_dash/.next" ] || { log "build: produced no output"; return 1; }
-  mkdir -p "$snap"
-  if [ -d "$live_dash/.next" ]; then
-    rm -rf "$snap/next-previous"
-    mv "$live_dash/.next" "$snap/next-previous" || return 1
-  fi
-  mv "$stage_dash/.next" "$live_dash/.next" || return 1
-  log "build: swapped in a fresh build (previous one snapshotted)"
-  return 0
-}
-
-prune_snapshots() {
-  [ -d "$SNAPSHOTS" ] || return 0
-  local keep="$KEEP" names count
-  case "$keep" in ''|*[!0-9]*) keep=3 ;; esac
-  names="$(ls -1 "$SNAPSHOTS" 2>/dev/null | sort)"
-  count="$(printf '%s\n' "$names" | grep -c . || true)"
-  [ "$count" -gt "$keep" ] || return 0
-  printf '%s\n' "$names" | head -n "$((count - keep))" | while IFS= read -r old; do
-    [ -n "$old" ] || continue
-    rm -rf "${SNAPSHOTS:?}/$old"
-    log "pruned snapshot $old"
-  done
 }
 
 # ---- dispatch ---------------------------------------------------------------
@@ -761,9 +799,12 @@ case "$CMD" in
   publish) cmd_publish "$@" ;;
   status)  cmd_status "$@" ;;
   apply|rollback)
-    [ -f "$BUNDLE_PY" ] || { echo "cabinet-update: helper missing: $BUNDLE_PY" >&2; exit 1; }
+    [ -f "$BUNDLE_PY" ] || { echo "cabinet-update: the helper is missing: $BUNDLE_PY" >&2; exit 1; }
     if [ "${CABINET_UPDATE_REEXEC:-0}" != "1" ]; then
       reexec_detached "$CMD" "$@"
+    fi
+    if [ -n "${CABINET_UPDATE_TEST_HOLD_SECONDS:-}" ]; then
+      "$PY" -c 'import sys, time; time.sleep(float(sys.argv[1]))' "$CABINET_UPDATE_TEST_HOLD_SECONDS"
     fi
     if [ "$CMD" = "apply" ]; then cmd_apply "$@"; else cmd_rollback "$@"; fi
     ;;
