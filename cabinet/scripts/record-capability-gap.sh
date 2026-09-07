@@ -62,8 +62,13 @@ g = record_gap(
 )
 print(f"capability gap recorded: {g['gap_id']} [{g['kind']}] status={g['status']} hit_count={g['hit_count']}")
 print(f"  need: {g['need']}")
+from framework.learning.capability_gaps import STRUCTURAL_KINDS
 if g['kind'] == 'procedure':
     print("  → procedure: the self-improvement loop will try to auto-skill this (eval-gated).")
+elif g['kind'] in STRUCTURAL_KINDS:
+    # Say the truth rather than the old catch-all: nothing proposes these.
+    print(f"  → {g['kind']}: surface-only. It is recorded and shown on the gaps"
+          " surface; no proposal is drafted and nothing is auto-applied.")
 else:
     print("  → tool/integration: the loop will propose a fix to the Captain (nothing installs without approval).")
 PY
