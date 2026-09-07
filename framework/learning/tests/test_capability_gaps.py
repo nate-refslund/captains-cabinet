@@ -418,6 +418,41 @@ class TestStructuralKinds:
         for kind in sorted(STRUCTURAL_KINDS):
             assert can_auto_apply(kind, set(), policy) is False
 
+    def test_the_config_veto_alone_keeps_the_lane_unconfigurable(self, tmp_path):
+        """ONE ARM PER VETO — the config half, on its own.
+
+        The arm above passes if EITHER veto stands, so a single-veto deletion
+        is invisible to it (the reviewer of cp3 reproduced exactly that:
+        dropping `load_autonomy`'s ACTIONABLE_KINDS loop OR
+        `can_auto_apply`'s STRUCTURAL_KINDS check, one at a time, left the
+        whole suite green). This arm reads only what `load_autonomy` puts in
+        the policy: a file that asks for an auto lane on a structural kind
+        must leave `defaults` with no structural key at all, so the widening
+        `for k in VALID_KINDS` reds here alone.
+        """
+        cfg = tmp_path / "instance" / "config"
+        cfg.mkdir(parents=True)
+        (cfg / "autonomy.yml").write_text(
+            "defaults:\n  skill: auto\n  authority: auto\n  information: auto\n")
+        policy = load_autonomy(cabinet_root=tmp_path)
+        assert set(policy.defaults) & STRUCTURAL_KINDS == set(), policy.defaults
+
+    def test_the_gate_veto_alone_refuses_a_policy_that_already_says_auto(self):
+        """ONE ARM PER VETO — the gate half, on its own.
+
+        `load_autonomy` is not the only way a policy reaches `can_auto_apply`:
+        the parameter is public and every caller may build its own. This arm
+        hands the gate the exact state the config veto exists to prevent —
+        `defaults` already carrying `<structural kind>: auto` — so it exercises
+        `can_auto_apply`'s own refusal with the config veto out of the picture,
+        and reds alone when that refusal is deleted.
+        """
+        for kind in sorted(STRUCTURAL_KINDS):
+            policy = AutonomyPolicy(defaults={kind: "auto"})
+            assert policy.defaults[kind] == "auto"  # the gate is not being fed a no-op
+            assert can_auto_apply(kind, set(), policy) is False
+            assert can_auto_apply(kind, None, policy) is False
+
     def test_classify_never_resolves_an_ambiguity_to_a_structural_kind(self):
         """An ambiguous need must reach the Captain, not go quiet."""
         for kind in sorted(STRUCTURAL_KINDS):
@@ -666,3 +701,70 @@ class TestLedgerDirectoryCoupling:
             "time. Update that import in the SAME commit — and if the rename "
             "made it public, point this test at the public name."
         )
+
+
+class TestTheLockOrderThisUnitCanActuallyPin:
+    """`_gaps_lock`'s docstring fixes claims-lock -> gaps-lock -> ledger-lock.
+
+    A3.1 says keyed records are taken "under the claims lock";
+    `framework/missions/claims.py` does not exist at this commit, so the
+    ordering sentence was written into the docstring against the day it does.
+    The cp3 reviewer's note is exact: NOTHING asserted it, so an inversion
+    introduced later would be caught by no sensor here.
+
+    Half of it is unassertable from this unit and stays U2's — no call site
+    holds a claims lock yet, so there is no order to observe. The OTHER half is
+    the sentence this module makes about ITSELF ("nothing in this module ever
+    takes a claims lock, so this module cannot invert it on its own"), and that
+    is checkable today. Pinned here rather than left as prose, because a
+    docstring promising a property is a claim surface.
+
+    STATED LIMIT, so nobody reads this as more than it is: it proves only that
+    the acquisition of a claims lock does not appear in THIS module. It cannot
+    see an inversion introduced in claims.py or at a call site, and it is not a
+    substitute for U2's ordering test at the site where the pull path holds the
+    claims lock while recording a gap.
+    """
+
+    def test_this_module_never_acquires_a_claims_lock(self):
+        rel = "framework/learning/capability_gaps.py"
+        source = (_REPO_ROOT / rel).read_text()
+        tree = ast.parse(source, filename=rel)
+
+        offenders = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                if "claims" in node.module.split("."):
+                    offenders.append(f"line {node.lineno}: from {node.module} import ...")
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    if "claims" in alias.name.split("."):
+                        offenders.append(f"line {node.lineno}: import {alias.name}")
+            elif isinstance(node, ast.Attribute) and "claim" in node.attr.lower() \
+                    and "lock" in node.attr.lower():
+                offenders.append(f"line {node.lineno}: .{node.attr}")
+            elif isinstance(node, ast.Name) and "claim" in node.id.lower() \
+                    and "lock" in node.id.lower():
+                offenders.append(f"line {node.lineno}: {node.id}")
+
+        assert not offenders, (
+            "framework/learning/capability_gaps.py now reaches for a claims "
+            "lock: " + "; ".join(offenders) + ". `_gaps_lock`'s docstring fixes "
+            "the order as claims-lock -> gaps-lock -> ledger-lock; taking a "
+            "claims lock from INSIDE this module can only take it after the "
+            "gaps lock, which is the inversion. Move the acquisition out to "
+            "the caller, and update that docstring in the same commit."
+        )
+
+    def test_the_ordering_sentence_is_still_in_the_docstring_it_binds(self):
+        """The rule's only home today is prose, so pin the prose.
+
+        Red when someone deletes the paragraph (or edits the order into a
+        different one) without landing the call-site test that would replace
+        it — which is exactly how a rule with no enforcement disappears.
+        """
+        from framework.learning.capability_gaps import _gaps_lock
+
+        doc = (_gaps_lock.__doc__ or "").replace("\n", " ")
+        doc = " ".join(doc.split())
+        assert "claims-lock → gaps-lock → ledger-lock" in doc, doc

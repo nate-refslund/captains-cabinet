@@ -1082,7 +1082,22 @@ budgets:
     # `skipped` would report a deliberate silence as a routing failure — so the
     # loop counts it separately, and a sensor pins the count.
     # observed == maximum, zero headroom.
-    maximum: 64839
+    #
+    # 64839 -> 64870 (+31 measured 2026-09-07, same unit, third and last bump:
+    # effective 79489 -> 79520, observed 79520): DOCSTRING MASS, not behaviour.
+    # `_gaps_lock`'s docstring gained the acquisition order the lock U2 has not
+    # landed yet must respect — claims-lock -> gaps-lock -> ledger-lock — and
+    # `record_gap`'s gained what a keyed gap's hit_count staying 1 for life does
+    # to the /gaps ranking. Zero new statements, zero new modules, zero
+    # expansion rows. Bumped rather than reworded because the census counts
+    # every line that is not a `#` line, so a docstring IS mass under this law
+    # and the honest move is to pay for it on the line the zero-headroom rule is
+    # read from; rewriting the prose as `#` comments to dodge the count would
+    # put the ordering rule somewhere `help()` and the egg's own reader never
+    # see it. Paid separately from the two bumps above because it was measured
+    # after them, and a budget row that hides when its mass arrived is a budget
+    # row nobody can audit. observed == maximum, zero headroom.
+    maximum: 64870
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
