@@ -68,3 +68,39 @@ Red-before/green-after for every sensor, the full local battery, and the
 pre-existing failing-set identity proof are on the pull request. Locked-set
 check over `git diff --name-only origin/master...HEAD` plus the working tree:
 zero hits.
+
+## Checkpoint 2 — the evidence pass (2026-09-07)
+
+One real defect surfaced when the battery ran whole, and it was not in the
+update path: `framework/triggers/tests/test_schema_registry.py::test_m4_central_enum_untouched`
+pinned `len(VALID_EVENT_TYPES) == 91` beside the assertion that actually
+carries M4 — that a schema resolve leaves the enum byte-identical. Registering
+the three update receipts moved the enum to 94 through the expansion registry,
+a route the schema registry cannot reach, and the size literal could not tell
+that apart from the failure M4 exists to catch. The literal is gone; the
+identity assertion is the whole test and was proved still armed by injecting a
+rebind of `emitter.VALID_EVENT_TYPES` into `schema_registry.resolve`. The
+count ceiling keeps its own sensor — the census.
+
+That fix had a second-order cost worth recording: the first rewrite of the
+production docstring added ONE non-comment line, which put
+`framework_production_noncomment_lines` at 79446 against a 79445 maximum and
+turned 31 tests plus 14 errors red across every census-dependent suite. The
+docstring was reworded to the same line count. A one-line docstring is a
+budget event here.
+
+Every invariant of §5 was additionally proved red by MUTATION, not only by
+module-absence:
+
+| Invariant | Mutation | Sensor's red |
+|---|---|---|
+| A5.2 preserve set | `build_plan` no longer skips preserved paths | the veto row came back `vetoes: []` |
+| A5.1 deletion set | deletions computed bundle-vs-installed | first apply deleted 17 paths |
+| A5.5/A5.6 gate | rollback-on-red replaced by a log line | apply exited 0 on a red gate |
+| A5.7 lock | `flock` call removed | the second updater exited 0 instead of busy |
+| A5.9 web guard | `verifySession` swapped for `requireDashboardAuth` | no-auth posture returned `{ok: true}` |
+
+Two inverted arms ship inside the suite itself rather than as one-off
+mutations, because they guard controls whose absence is otherwise invisible:
+`test_a_locked_check_stripped_from_the_script_lets_the_bundle_through` and
+`test_without_the_re_exec_the_group_kill_takes_the_updater_with_it`.
