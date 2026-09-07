@@ -14,13 +14,22 @@
  */
 import { listReceipts } from '@/actions/receipts'
 import ReceiptRow from '@/components/receipts/receipt-row'
+import { DOOR_LABEL, newestFirst, readReceipts } from '@/lib/work-receipts'
 
 export const dynamic = 'force-dynamic'
+
+/** Render cap for the work section — the same shape as the journal's. */
+const WORK_CAP = 100
 
 export default async function ReceiptsPage() {
   const payload = await listReceipts()
   const { receipts, total, skipped, skippedFiles, missingDir, error, journalDir, cap } =
     payload
+  // The SECOND record, deliberately not merged into the first: the undo
+  // journal is about acts the cabinet took, this is about the life of a
+  // responsibility — taken on, claimed, finished, or missing something.
+  const work = await readReceipts()
+  const workRows = newestFirst(work.receipts, WORK_CAP)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
@@ -88,6 +97,63 @@ export default async function ReceiptsPage() {
           undo pointer in Redis is only an index — this page reads the durable
           JSONL.
         </p>
+      </div>
+
+      <div className="max-w-3xl">
+        <h2 className="text-lg font-semibold text-white">Work</h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          The life of each responsibility, off the event ledger: taken on,
+          claimed, finished, verified — or a gap where a silence used to be.
+          Read-only, like everything on this page.
+        </p>
+
+        {work.unreadable && (
+          <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
+            {work.unreadable} — showing nothing rather than a guess.
+          </p>
+        )}
+
+        {!work.unreadable && workRows.length === 0 && (
+          <p className="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 text-sm text-zinc-400">
+            no work receipts yet — the ledger is honestly empty. The first
+            ratified outcome writes the first row.
+          </p>
+        )}
+
+        {workRows.length > 0 && (
+          <ul className="mt-4 space-y-2">
+            {workRows.map((row, index) => (
+              <li
+                key={row.event_id || `${row.kind}-${index}`}
+                className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-3 text-sm"
+              >
+                <p className="text-zinc-200">
+                  <span className="font-medium text-zinc-100">{row.kind}</span>
+                  {row.outcome_id ? <span className="text-zinc-400"> · {row.outcome_id}</span> : null}
+                  {row.task_id ? <span className="text-zinc-400"> · {row.task_id}</span> : null}
+                </p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  {row.actor || 'unattributed'}
+                  {row.door ? ` · via ${DOOR_LABEL[row.door] || row.door}` : ''}
+                  {row.holder ? ` · held by ${row.holder}` : ''}
+                  {row.ts ? ` · ${row.ts}` : ''}
+                </p>
+                {row.evidence_path && (
+                  <p className="mt-1 break-all font-mono text-[10px] text-zinc-600">
+                    {row.evidence_path}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {work.receipts.length > workRows.length && (
+          <p className="mt-3 text-xs text-zinc-500">
+            showing latest {workRows.length} of {work.receipts.length} work
+            receipts (render capped at {WORK_CAP}).
+          </p>
+        )}
       </div>
     </div>
   )

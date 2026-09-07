@@ -21,6 +21,8 @@
 
 import Link from 'next/link'
 import VaultMarkdown from '@/components/vault/VaultMarkdown'
+import ProposedCard from '@/components/outcomes/proposed-card'
+import { listProposedOutcomes } from '@/lib/outcomes'
 import {
   hasBriefingRoot,
   latestFirstBriefing,
@@ -78,10 +80,14 @@ function Doc({ doc }: { doc: BriefingDoc }) {
   )
 }
 
-export default function BriefingPage() {
+export default async function BriefingPage() {
   const rooted = hasBriefingRoot()
   const briefing = rooted ? latestFirstBriefing() : null
   const brief = rooted ? researchBrief() : null
+  // The proposed cards, with the one control they were missing. This page is
+  // otherwise read-only and stays so: the card's button is the ONLY mutation
+  // reachable from here, and it goes through the framework's single writer.
+  const proposed = await listProposedOutcomes()
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -90,9 +96,28 @@ export default function BriefingPage() {
         <h1 className="mt-1 text-3xl font-bold text-white">Your first briefing</h1>
         <p className="mt-2 max-w-2xl text-zinc-400">
           What your Cabinet proposed to do first, and what it went and read before proposing it.
-          Both were written by the hatch. Nothing here can be edited from this page.
+          Both were written by the hatch. Ratify a card here to make it something your
+          Cabinet may start working on.
         </p>
       </div>
+
+      <section className="mb-8">
+        <h2 className="mb-3 text-lg font-semibold text-zinc-200">
+          Proposed outcomes
+        </h2>
+        {proposed.length > 0 ? (
+          <div className="space-y-4">
+            {proposed.map((outcome) => (
+              <ProposedCard key={outcome.id} outcome={outcome} />
+            ))}
+          </div>
+        ) : (
+          <p className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 text-sm text-zinc-400">
+            No cards are waiting for you. Proposed outcomes appear here as the
+            hatch and your Cabinet write them.
+          </p>
+        )}
+      </section>
 
       <section className="mb-8">
         <h2 className="mb-3 text-lg font-semibold text-zinc-200">Briefing</h2>

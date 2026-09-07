@@ -984,6 +984,77 @@ def _emit_posture_cap_receipt(event_type: str, prior_cap: Optional[str],
         log(f"binder-wire: posture cap receipt emit failed: {e!r}")
 
 
+# --- THE TAP, chat door: `ratify <id>` --------------------------------------
+# One typed verb, no card handle. The card tap verbs in CB_VERBS are
+# engine-minted handles for a rendered card; a proposed outcome is addressed by
+# the id the operator can already read on it, so a verb that needs no card is
+# the door that works from anywhere — including a reply typed in bed.
+#
+# The id charset is the org's id charset, anchored at both ends: this text
+# arrives from a chat transport and is UNTRUSTED, and the writer interpolates
+# it into no shell of any kind, but a loose pattern would let a sentence that
+# merely contains the word bind a card the Captain never named.
+_RATIFY_RE = re.compile(r"^\s*ratify\s+([A-Za-z0-9._-]{1,64})\s*$", re.IGNORECASE)
+
+
+def _route_ratify_command(text: str, *, principal: Optional[str],
+                          present: Callable[[str], Any],
+                          log: Callable[[str], None]) -> Optional[dict]:
+    """`ratify <id>` → the one writer. None (fall through) for anything else.
+
+    Reached only on the Captain-verified path (the handle_captain_update gate),
+    which is what lets this door claim the ``captain`` actor. An unverified
+    sender never reaches here at all, so nothing is written and the message
+    relays byte-identically — the refusal is structural, not a branch.
+
+    TERMINAL on any match, refusals included: the reply IS the answer, and a
+    matched verb that fell through would then be re-read as a draft verdict.
+    """
+    m = _RATIFY_RE.match(text or "")
+    if m is None:
+        return None
+    oid = m.group(1)
+
+    def _say(msg: str) -> None:
+        try:
+            present(msg)
+        except Exception as e:  # a reply failure never loses the act
+            log(f"binder-wire: ratify reply failed: {e!r}")
+
+    who = str(principal or "").strip()
+    if not who:
+        # A door that cannot name a principal refuses. An unattributed
+        # ratification records nothing worth having.
+        _say("Ratify refused: this door could not name who you are.")
+        return {"handled": True, "ratify": "refused", "outcome_id": oid,
+                "summary": f"ratify {oid} refused (door named no principal)"}
+
+    try:
+        from framework.outcomes import ratify as _ratify
+        res = _ratify.ratify(oid, door="chat", principal=who)
+    except Exception as e:
+        log(f"binder-wire: ratify failed: {e!r}")
+        _say(f"Ratify {oid} failed — nothing was written. ({str(e)[:160]})")
+        return {"handled": True, "ratify": "error", "outcome_id": oid,
+                "summary": f"ratify {oid} failed: {str(e)[:120]}"}
+
+    status = str(res.get("status") or "")
+    if status == "ratified":
+        _say(f"Taking on: {oid}. It is now an active outcome; the receipt is on "
+             f"the ledger.")
+    elif status == "already_ratified":
+        _say(f"{oid} was already ratified — nothing changed.")
+    elif status == "not_found":
+        _say(f"No proposed card with id {oid}.")
+    else:
+        _say(f"Ratify {oid} refused — {res.get('reason') or status}. Nothing "
+             f"was written.")
+    log(f"binder-wire: ratify {oid} -> {status}")
+    return {"handled": True, "ratify": status, "outcome_id": oid,
+            "event_id": res.get("event_id"),
+            "summary": f"ratify {oid} {status}"}
+
+
 def _route_posture_command(text: str, *, present: Callable[[str], Any],
                            log: Callable[[str], None]) -> Optional[dict]:
     """The AX-7 posture verb, or None when the reply is not one. TERMINAL on
@@ -1098,6 +1169,11 @@ def handle_captain_update(
     redis_set: Callable[[str, str], Any] | None = None,
     redis_del: Callable[[str], Any] | None = None,
     captain_verified: bool = True,
+    # WHO the transport verified, not merely THAT it verified someone. The tap
+    # records a principal on every ratification, and a door that cannot name
+    # one refuses — so this is threaded from the transport rather than
+    # defaulted to a constant that would name nobody.
+    principal: Optional[str] = None,
     receipt_message_id: Optional[int] = None,
     capture_lesson: Callable[..., Any] | None = None,
     mark_need: Callable[..., Any] | None = None,
@@ -1168,6 +1244,18 @@ def handle_captain_update(
         # provenance). TERMINAL on any match, refusals included (the refusal
         # card is the answer — the reply must never fall through and record
         # as a policy); None ⇒ byte-identical routing (collision corpus). ---
+        # --- THE TAP (phase 1): `ratify <id>` on the Captain-verified path.
+        # NOT dark behind a wiring flag — the whole point of the tap is that a
+        # proposed card can be ratified without a terminal, and a door that
+        # ships disarmed is the "move the row by hand" instruction wearing a
+        # different hat. None ⇒ byte-identical routing for every other reply.
+        if captain_verified:
+            ratify_res = _route_ratify_command(
+                text, principal=principal,
+                present=present or _default_present, log=log)
+            if ratify_res is not None:
+                return ratify_res
+
         if captain_verified:
             from framework.frontdoor import reply_binder
             charter_res = reply_binder.route_charter_amend(

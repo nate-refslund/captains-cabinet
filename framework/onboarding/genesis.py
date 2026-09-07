@@ -1474,22 +1474,69 @@ def _proposals_doc(cards: list[dict], answers: dict, *, now: str,
     }
 
 
+# THE DEAD INSTRUCTION, and the live one that replaced it.
+#
+# Every hatched instance carries the first paragraph verbatim in its staging
+# file, and it told the operator to open a YAML file and move a row by hand —
+# a no-terminal-law violation, and the reason a Cabinet could propose work it
+# had no way of being given. The tap (framework/outcomes/ratify.py) is the
+# replacement, so the sentence has to go from the artifact too, not only from
+# the code that writes new ones: a file written before the tap existed keeps
+# instructing the operator forever otherwise.
+#
+# The rewrite matches the paragraph BYTE FOR BYTE as genesis wrote it, so an
+# operator who reflowed or annotated their own header is left alone — we heal
+# only what we wrote. Residual, stated: a hand-reflowed stale header keeps the
+# dead sentence, and the sweep sensor over the shipped surfaces is what
+# catches it entering anywhere new.
+_STALE_RATIFY_PARAGRAPH = (
+    "# nothing in this file can activate itself. To ratify a card: review it, edit\n"
+    "# freely, then move the row into instance/config/outcomes.yml with\n"
+    "# status: active + captain_ratified: true. To reject: delete the row (a note\n"
+    "# in the decisions ledger beats silence).\n"
+)
+_LIVE_RATIFY_PARAGRAPH = (
+    "# nothing in this file can activate itself. To ratify a card:\n"
+    "# tap Ratify on the card, or reply `ratify <id>` — one writer copies the\n"
+    "# row into instance/config/outcomes.yml and marks this one ratified.\n"
+    "# To reject: delete the row (a note in the decisions ledger beats silence).\n"
+)
+
+#: The sanctioned sentence, exported so a sensor can assert it POSITIVELY
+#: rather than only asserting the dead one is gone (an empty surface passes a
+#: negative grep, which is how a deleted file reads as compliance).
+RATIFY_HINT = "tap Ratify on the card, or reply `ratify <id>`"
+
 _PROPOSALS_HEADER = """\
 # instance/config/outcomes-proposed.yml — org-PROPOSED outcome cards (genesis).
 # {marker} (ONBOARD-1)
 #
 # PROPOSE-ONLY: every row is status: draft + captain_ratified: false. The
 # mission compiler reads ONLY instance/config/outcomes.yml (filename gate), so
-# nothing in this file can activate itself. To ratify a card: review it, edit
-# freely, then move the row into instance/config/outcomes.yml with
-# status: active + captain_ratified: true. To reject: delete the row (a note
-# in the decisions ledger beats silence).
-"""
+""" + _LIVE_RATIFY_PARAGRAPH
+
+
+def rewrite_stale_proposals_header(raw: str) -> tuple[str, int]:
+    """Heal the dead move-the-row instruction. Returns (text, replacements).
+
+    The count is returned rather than a bare string on purpose: a programmatic
+    replace that silently no-ops is the class this repo keeps paying for, so
+    the caller's sensor asserts the per-file occurrence count CHANGED instead
+    of asserting that a replace was attempted.
+    """
+    count = raw.count(_STALE_RATIFY_PARAGRAPH)
+    if not count:
+        return raw, 0
+    return raw.replace(_STALE_RATIFY_PARAGRAPH, _LIVE_RATIFY_PARAGRAPH), count
 
 
 def _preserved_header(raw: str) -> str:
     """The file's existing leading comment block, so a Captain comment survives
-    a rewrite; the standard header when the file carries none."""
+    a rewrite; the standard header when the file carries none.
+
+    The stale-instruction rewrite runs HERE rather than at each call site, so
+    every writer that preserves a header (merge, re-derivation, the tap) heals
+    the same paragraph the same way."""
     head: list[str] = []
     for line in raw.splitlines():
         if line.startswith("#") or not line.strip():
@@ -1497,7 +1544,9 @@ def _preserved_header(raw: str) -> str:
         else:
             break
     if any(ln.startswith("#") for ln in head):
-        return "\n".join(head).strip() + "\n"
+        healed, _n = rewrite_stale_proposals_header(
+            "\n".join(head).strip() + "\n")
+        return healed
     return _PROPOSALS_HEADER.format(marker=GENERATED_MARKER)
 
 

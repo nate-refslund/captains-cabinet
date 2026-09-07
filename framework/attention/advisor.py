@@ -149,11 +149,13 @@ def detect_aging_drafts(root: Path | None = None, *, now: str | None = None,
             f"unratified for over {max_age_days}d "
             f"(oldest: {oldest_id}, {int(oldest_age)}d)"
         ),
+        # The action an operator can actually take without a terminal: the
+        # tap. It used to read "move the row into <file> by hand", which is
+        # the only instruction here nobody could follow from a phone.
         "action": (
-            "Review each draft: ratify (move the row into "
-            "instance/config/outcomes.yml with status: active + "
-            "captain_ratified: true), edit it, or reject (delete the row — a "
-            "decisions-ledger note beats silence)."
+            "Review each draft: ratify (" + genesis.RATIFY_HINT + "), edit it, "
+            "or reject (delete the row — a decisions-ledger note beats "
+            "silence)."
         ),
     }]
 
