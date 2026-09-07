@@ -148,6 +148,8 @@ From Work Cabinet, invoke `mcp__cabinet__presence` on `personal`. Expected: `sta
 
 From Work Cabinet, invoke `mcp__cabinet__send_message` with `to_cabinet=personal`. Check that the message lands in Redis stream `cabinet:inbox:personal` and Personal Cabinet's CoS picks it up.
 
+Then invoke `mcp__cabinet__request_handoff` the same way. The queued row carries `kind=handoff_request`, `context_slug`, `reason` and a `content` line rendered from the last two — `content` is what makes it deliverable at all, because the relay delivers every inbox row by calling `send_message` on the peer and that call refuses an empty content. On the receiving side the row arrives on `cabinet:triggers:<role>` still carrying `kind` and `context_slug`, so the coach can tell a handoff from an ordinary message.
+
 ### Step 10 — Create the Captain-facing context
 
 Edit `/opt/founders-cabinet-personal/instance/config/contexts/` to add real personal contexts (beyond the placeholder `personal.yml`). Example: `sleep.yml`, `training.yml`, `mindfulness.yml` — whatever slicing makes sense for how you think about your life.
