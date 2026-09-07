@@ -62,7 +62,7 @@
 #
 # Usage:
 #   bash cabinet/scripts/drills/one-responsibility.sh [--root DIR] [--tree DIR]
-#        [--skip-update] [--keep-scratch] [--json]
+#        [--skip-update] [--with-rebuild] [--keep-scratch] [--json]
 #
 # Foreground only. Every wait is a bounded inline poll; no watcher, no daemon,
 # no background job survives the run (macOS has no timeout(1), so waits are
@@ -89,6 +89,7 @@ LEASE_S="${CABINET_DRILL_LEASE_SECONDS:-3}"
 ROOT_ARG=""
 TREE_ARG="${CABINET_DRILL_TREE:-}"
 SKIP_UPDATE=0
+WITH_REBUILD=0
 KEEP_SCRATCH=0
 JSON_OUT=0
 
@@ -104,6 +105,7 @@ while [ $# -gt 0 ]; do
     --tree) [ $# -ge 2 ] || { echo "one-responsibility: --tree needs a value" >&2; exit 64; }; TREE_ARG="$2"; shift 2 ;;
     --tree=*) TREE_ARG="${1#--tree=}"; shift ;;
     --skip-update) SKIP_UPDATE=1; shift ;;
+    --with-rebuild) WITH_REBUILD=1; shift ;;
     --keep-scratch) KEEP_SCRATCH=1; shift ;;
     --json) JSON_OUT=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -940,6 +942,15 @@ else
   UPDATER="$ROOT/cabinet/scripts/cabinet-update.sh"
   [ -f "$UPDATER" ] || fail 50 P7 "no update path at cabinet/scripts/cabinet-update.sh — the result cannot reach an installed Cabinet"
 
+  # A4.7 wants the FULL apply — stage build, restart, health gate. A scratch
+  # install carries no node toolchain and no installed dependencies, so the
+  # build step is skippable and the run that skips it says so (THIN) instead of
+  # quietly reporting a leg it never walked. --with-rebuild is the full variant;
+  # it is what an operator runs on a box that has the toolchain, and it is the
+  # only way the staged-build-and-swap (A5.6) is exercised end to end.
+  REBUILD_ARG="--skip-rebuild"
+  [ "$WITH_REBUILD" = "1" ] && REBUILD_ARG=""
+
   INSTALL="$SCRATCH/install"
   MUT="$SCRATCH/mutated"
   LOCKMUT="$SCRATCH/mutated-locked"
@@ -1000,7 +1011,7 @@ print(d.get("latest", {}).get("source_sha") or d.get("latest_sha") or "")
   # answers, with the old stamp and the old start time. The apply must roll the
   # tree back rather than leave a half-updated install behind a green light.
   ( cd "$INSTALL" && CABINET_ROOT="$INSTALL" CABINET_DASH_RESTART_CMD="/usr/bin/true" \
-      bash "$UPDATER" apply --bundle "$BUNDLE_SHA" --from cli --skip-rebuild ) \
+      bash "$UPDATER" apply --bundle "$BUNDLE_SHA" --door terminal $REBUILD_ARG ) \
     > "$SCRATCH/p7-gate-red.out" 2>&1
   RED_RC=$?
   ROLLED="$(ROOTDIR="$ROOT" "$PY" - <<'PY'
@@ -1020,7 +1031,7 @@ PY
   fi
 
   # (b) the same apply with a real restart: the gate goes green.
-  ( cd "$INSTALL" && CABINET_ROOT="$INSTALL" bash "$UPDATER" apply --bundle "$BUNDLE_SHA" --from cli --skip-rebuild ) \
+  ( cd "$INSTALL" && CABINET_ROOT="$INSTALL" bash "$UPDATER" apply --bundle "$BUNDLE_SHA" --door terminal $REBUILD_ARG ) \
     > "$SCRATCH/p7-apply.out" 2>&1
   APPLY_RC=$?
   [ "$APPLY_RC" -eq 0 ] || fail 50 P7 "apply exited $APPLY_RC: $(tr '\n' ' ' < "$SCRATCH/p7-apply.out" | cut -c1-400)"
@@ -1050,7 +1061,7 @@ except Exception:
     print(""); raise SystemExit(0)
 print(d.get("latest", {}).get("source_sha") or d.get("latest_sha") or "")
 ')"
-  ( cd "$INSTALL" && CABINET_ROOT="$INSTALL" bash "$UPDATER" apply --bundle "$LOCK_SHA" --from cli --skip-rebuild ) \
+  ( cd "$INSTALL" && CABINET_ROOT="$INSTALL" bash "$UPDATER" apply --bundle "$LOCK_SHA" --door terminal $REBUILD_ARG ) \
     > "$SCRATCH/p7-locked.out" 2>&1
   LOCK_RC=$?
   [ "$LOCK_RC" -eq 3 ] || fail 50 P7 "a bundle changing a locked path exited $LOCK_RC, expected 3"
@@ -1067,7 +1078,11 @@ PY
 
   "$PY" "$LIB_DIR/stub_dashboard.py" stop --state-file "$STUB_STATE" >/dev/null 2>&1 || true
   STUB_STATE=""
-  thin_stage P7 "rebuild step skipped (--skip-rebuild): a scratch install carries no node toolchain, so the built stamp came from the stub server rather than from npm run build"
+  if [ "$WITH_REBUILD" = "1" ]; then
+    pass_stage P7 "the build step ran (--with-rebuild): the staged build was swapped in and the health gate read the stamp it baked"
+  else
+    thin_stage P7 "rebuild step skipped (--skip-rebuild): a scratch install carries no node toolchain, so the built stamp came from the stub server rather than from npm run build"
+  fi
   pass_stage P7 "gate red rolled back, gate green applied, preserved path intact, locked bundle refused whole"
 fi
 

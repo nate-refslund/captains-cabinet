@@ -61,3 +61,31 @@ modified, no locked path touched.
   is U4g's test to drive through the same `--tree` seam.
 * `CABINET_DASH_RESTART_CMD` is a seam this drill names for the update path;
   the contract is silent on how a restart is injected, and U5 must honour it.
+
+---
+
+# Checkpoint review — feat/p1-drill-red cp2 (2026-09-07, second builder)
+
+Re-verified against `origin/master c479b5f5` (cp1's evidence was taken at
+`97164616`; PR #368 landed in between). Two contract deviations found by
+reading the P7 block against §5 and the amendments, and fixed here.
+
+| Finding | Why it is a defect | Fix |
+|---|---|---|
+| `apply --from cli` | `--from` already means a SOURCE DIRECTORY on the sibling verb (`publish --from <clone> --to <install>`, A5.10), and `cli` is a door kind outside the sanctioned `terminal \| web \| chat` set (A0.1) — the drill would have pinned the update unit to both mistakes, and the kind would have landed in the ledger on `cabinet_update_applied`. | `apply --door terminal`, matching P1's own tap and A0.1's vocabulary. |
+| `--skip-rebuild` hard-coded | A4.7 says P7 runs the FULL apply (stage build, restart, health gate) and that the skip flags exist only for the CI variant, which is labelled THIN. The drill offered only the THIN variant, so the staged-build-and-swap of A5.6 was unreachable — a leg relabelled as covered. | `--with-rebuild` runs the full apply; the default stays node-free and still reports THIN, and the full variant reports PASS for that step instead. |
+
+Everything cp1 recorded was re-proved on the current tree rather than cited:
+three red arms (exit 10 / 20 / 21), the four-arm stub-server proof, the
+manifest-scrub degenerate guard (exit 64 when the manifest names no instance
+path), and a new hermeticity arm — the whole stubbed run under a poisoned
+`DATABASE_URL` / `ORG_RUNTIME_DB` / `REDIS_*` / `CABINET_*` / `PYTHONPATH`
+environment returns the identical verdict, which is what A4.3 is for.
+
+Battery run on this tree and on a pristine `c479b5f5` clone; per-harness and
+per-test verdict lines diffed rather than counted. The two rows that differed
+between the runs (`test_cog1_outbox_capture.py::…::test_baselines_hold_the_bound`
+on the pristine run, `test_killswitch_test_fence.py::…::test_emergency_stop_writers_cannot_reach_an_unfenced_control_plane`
+on this one) both PASS when re-run on BOTH trees: the first is a wall-clock p95
+bound, the second a canary `redis-server` the harness could not reach. Neither
+is attributable to this branch, which adds no collectable test.
