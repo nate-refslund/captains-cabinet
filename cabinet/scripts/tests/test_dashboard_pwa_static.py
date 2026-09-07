@@ -198,17 +198,98 @@ def test_health_route_is_liveness_only():
         assert banned not in code, (
             f"/api/health must stay a config-free liveness boolean ({banned!r})"
         )
-    # THE ONE ENVIRONMENT READ, named rather than banned (update path, A5.5).
-    # The health gate has to know WHICH BYTES answered, or an old process that
-    # survived a failed restart passes an identity probe and a bad update is
-    # recorded as a good one. `CABINET_BUILD_SOURCE_COMMIT` is inlined by the
-    # build (next.config.ts `env`), so it is a constant baked into the bundle,
-    # not configuration read at request time — which is exactly why it can be
-    # trusted to describe the running build. The ban stays for everything else:
-    # any OTHER process.env read here is still a failure.
+    # TWO ENVIRONMENT READS, named rather than banned (update path, A5.5).
+    # The health gate has to know WHICH CABINET answered and WHICH BUILD is
+    # serving, or an old process that survived a failed restart passes an
+    # identity probe and a bad update is recorded as a good one. Neither is
+    # configuration and neither is a secret: one is a commit id fixed at build
+    # time, the other a commit id fixed when this process was started. The ban
+    # stays for everything else: any OTHER process.env read here is a failure.
     env_reads = re.findall(r"process\.env\.([A-Za-z0-9_]+)", code)
-    assert set(env_reads) <= {"CABINET_BUILD_SOURCE_COMMIT"}, (
+    assert set(env_reads) <= {"CABINET_BUILD_SOURCE_COMMIT", "CABINET_SOURCE_COMMIT"}, (
         f"/api/health must stay a config-free liveness boolean ({env_reads!r})"
+    )
+
+
+def _health_field_sources() -> dict[str, str]:
+    """Which environment variable each /api/health field is answered from.
+
+    Read out of the route itself so a reader of this file cannot describe a
+    route that no longer exists.
+    """
+    text = (_APP / "api" / "health" / "route.ts").read_text(encoding="utf-8")
+    code = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("//"))
+    return dict(re.findall(r"(\w+):\s*process\.env\.([A-Za-z0-9_]+)", code))
+
+
+def _build_inlined_names() -> set[str]:
+    """The variables next.config.ts bakes into the bundle at build time."""
+    config = (_DASH / "next.config.ts").read_text(encoding="utf-8")
+    block = re.search(r"\n  env:\s*\{(.*?)\n  \}", config, re.S)
+    assert block, "next.config.ts no longer declares an `env` block"
+    return set(re.findall(r"([A-Za-z0-9_]+)\s*:", block.group(1)))
+
+
+def test_the_health_identity_field_is_not_baked_into_the_build():
+    """THE UPDATE PATH'S IDENTITY LEG, pinned where it can actually be broken.
+
+    The update health gate asks the dashboard "which Cabinet are you?" and rolls
+    the whole update back when the answer is not the sha it just installed. If
+    that answer is a value `next build` INLINED into the bundle, then the only
+    way to change it is to rebuild — and the updater rebuilds only when the
+    bundle touched `cabinet/dashboard/**`. Every framework-only update would
+    then restart the same build, hear the old sha, and roll a perfectly good
+    update back. That is not hypothetical: it shipped, and it was found by
+    building with one commit and starting with another.
+
+    So the two fields carry two different facts and must come from two
+    different places:
+
+      source_commit  WHICH CABINET this process was started against — read at
+                     request time from the environment the process was spawned
+                     with (start-dashboard.sh reads egg-manifest.json). An old
+                     process that survived a failed restart still holds the OLD
+                     value: its environment was fixed when it started, and
+                     nothing can reach into a running process to change it.
+      build_commit   WHICH BUILD is serving — inlined by `next build`, so it
+                     cannot be anything but the commit the bundle was made
+                     from. The gate demands this one only when the apply
+                     actually rebuilt.
+    """
+    fields = _health_field_sources()
+    inlined = _build_inlined_names()
+    assert "source_commit" in fields, "the health body lost its identity field"
+    assert fields["source_commit"] not in inlined, (
+        "/api/health answers source_commit from %s, which next.config.ts bakes "
+        "in at BUILD time — a framework-only update cannot change it, so the "
+        "update health gate would roll every one of them back"
+        % fields["source_commit"]
+    )
+    assert "build_commit" in fields, (
+        "the health body lost the build stamp — without it a dashboard bundle "
+        "whose build silently failed answers as the new version"
+    )
+    assert fields["build_commit"] in inlined, (
+        "/api/health answers build_commit from %s, which is NOT baked in at "
+        "build time — a stale build would be free to claim the new commit"
+        % fields["build_commit"]
+    )
+
+
+def test_the_health_start_time_is_the_process_start_not_a_module_load():
+    """`started_at` is the leg that catches a restart that did not happen.
+
+    A module-scope `new Date()` is evaluated when the route module is first
+    LOADED, which in a Next production server is the first request that reaches
+    it — possibly long after the process started, and possibly after the update
+    that was supposed to restart it. Derived from `process.uptime()` it is the
+    process's own start time however late the module loads.
+    """
+    text = (_APP / "api" / "health" / "route.ts").read_text(encoding="utf-8")
+    code = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("//"))
+    assert "process.uptime()" in code, (
+        "started_at must be derived from process.uptime(), not from the moment "
+        "this module happened to be loaded"
     )
 
 

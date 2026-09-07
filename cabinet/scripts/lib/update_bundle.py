@@ -62,6 +62,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Iterable
@@ -195,15 +196,26 @@ def _read_preserve_file(path: Path) -> list[str]:
 
 
 def parse_provision_lists(script: Path) -> list[str]:
-    """`runtime-provision.sh lists` as data — the three declared list variables.
+    """The install's persistence declaration, through its own read interface.
 
-    Parsed from the assignments rather than executed: this runs on an installed
-    Cabinet where sourcing a provisioning script would be an odd thing to do
-    for a read. An unparseable list raises; it never reads as an empty list.
+    `runtime-provision.sh lists` prints `<kind> <path>` records and exists for
+    exactly this caller. ASKING IT is the whole point: a second parser of the
+    same declaration is a second thing to keep in step, and the copy is always
+    the one that goes stale — which is what the amendment that added the
+    subcommand set out to end.
+
+    The text parse below is the documented FALLBACK, for an installed Cabinet
+    whose script will not run on this box (no bash, a partial export, a
+    provisioning script from a future version that exits non-zero on an
+    argument it does not know). Either way an unparseable declaration RAISES:
+    "no declaration" must never read as "nothing to preserve".
     """
 
     if not script.is_file():
         return []
+    entries = _provision_lists_subcommand(script)
+    if entries:
+        return entries
     text = script.read_text(encoding="utf-8", errors="replace")
     entries: list[str] = []
     found = 0
@@ -219,9 +231,33 @@ def parse_provision_lists(script: Path) -> list[str]:
         entries.extend(part for part in match.group(1).split() if part)
     if found == 0:
         raise BundleError(
-            f"{script} carries none of the INSTANCE_PERSISTENT_* lists — an "
-            "unparseable list must never read as an empty list"
+            f"{script} neither answers `lists` nor carries the "
+            "INSTANCE_PERSISTENT_* declarations — an unreadable list must "
+            "never read as an empty list"
         )
+    return entries
+
+
+def _provision_lists_subcommand(script: Path) -> list[str]:
+    """`bash <script> lists` -> the declared paths. [] when it cannot answer."""
+
+    try:
+        completed = subprocess.run(
+            ["bash", str(script), "lists"],
+            capture_output=True, text=True, timeout=30, cwd=str(script.parent),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if completed.returncode != 0:
+        return []
+    entries: list[str] = []
+    for line in completed.stdout.splitlines():
+        parts = line.split(None, 1)
+        if len(parts) != 2:
+            continue
+        kind, rel = parts[0].strip(), parts[1].strip()
+        if kind in ("dirs", "seeded_dirs", "files") and rel:
+            entries.append(rel)
     return entries
 
 
@@ -332,31 +368,42 @@ def build_plan(
     new_files: dict[str, str] = manifest["files"]
     previous_files = set((previous_manifest or {}).get("files", {}))
 
-    changed: list[str] = []
+    # THE RAW SETS FIRST — what this bundle would change and delete if nothing
+    # were protected. The two filters below run over them in a fixed order, and
+    # the order is the whole point: LOCKED beats PRESERVED.
+    #
+    # Two of the locked FILES are also in the generated preserve set
+    # (`instance/config/egress.yml`, `instance/config/act-first-surfaces.yml`).
+    # Filtering preserved paths first made a bundle that ships a changed copy of
+    # either read as a routine `skipped_preserved` while the rest of the bundle
+    # applied — the constitutional refusal §5 requires, downgraded to a note
+    # nobody reads. Nothing was written either way, so the fail-closed property
+    # held; the SIGNAL was lost, and a boundary nobody is told about is a
+    # boundary that erodes.
     unchanged = 0
-    skipped_preserved: list[str] = []
+    raw_changed: list[str] = []
     for rel in sorted(new_files):
-        if is_preserved(rel, preserve):
-            skipped_preserved.append(rel)
-            continue
         installed = install_root / rel
         if installed.is_file() and not installed.is_symlink():
             if sha256_file(installed) == new_files[rel]:
                 unchanged += 1
                 continue
-        changed.append(rel)
+        raw_changed.append(rel)
 
-    deleted: list[str] = []
-    for rel in sorted(previous_files - set(new_files)):
-        if is_preserved(rel, preserve):
-            skipped_preserved.append(rel)
-            continue
-        if (install_root / rel).exists():
-            deleted.append(rel)
+    raw_deleted = [rel for rel in sorted(previous_files - set(new_files))
+                   if (install_root / rel).exists()]
 
     locked_hits = sorted(
-        rel for rel in set(changed) | set(deleted) if is_locked(rel, locked)
+        rel for rel in set(raw_changed) | set(raw_deleted) if is_locked(rel, locked)
     )
+
+    changed: list[str] = []
+    deleted: list[str] = []
+    skipped_preserved: list[str] = []
+    for rel in raw_changed:
+        (skipped_preserved if is_preserved(rel, preserve) else changed).append(rel)
+    for rel in raw_deleted:
+        (skipped_preserved if is_preserved(rel, preserve) else deleted).append(rel)
     return {
         "to_sha": manifest["source_sha"],
         "from_sha": installed_source_commit(install_root),

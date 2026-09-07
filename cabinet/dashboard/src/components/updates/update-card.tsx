@@ -11,6 +11,13 @@
  * The card never claims a state it did not read. While an apply is in flight
  * the dashboard is being restarted underneath it, so the button goes to a
  * waiting line rather than a spinner that would outlive the process.
+ *
+ * THE PROVENANCE LINE carries all three facts about a waiting bundle: when it
+ * was BUILT, who put it in the inbox, and when. The inbox is same-uid
+ * writable (A5.11), so "where did this come from" is a question the Captain
+ * must be able to answer from the card before tapping Apply — and the build
+ * time is the half that says whether the thing waiting is newer than what is
+ * running.
  */
 
 import { useState, useTransition } from 'react'
@@ -46,7 +53,8 @@ export default function UpdateCard({
           )}
           {waiting && (
             <p className="mt-2 text-xs text-zinc-500">
-              Placed by {waiting.owner || 'an unknown account'} at {waiting.mtime}
+              Built {waiting.built_at || 'at an unrecorded time'} · placed by{' '}
+              {waiting.owner || 'an unknown account'} at {waiting.mtime}
             </p>
           )}
           {applied && (status.last?.skipped_preserved?.length ?? 0) > 0 && (

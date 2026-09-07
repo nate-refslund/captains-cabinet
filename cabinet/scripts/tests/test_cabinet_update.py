@@ -690,9 +690,19 @@ def test_health_gate_defaults_are_the_contract_legs(tmp_path):
             assert name.startswith("CABINET_UPDATE_TEST_"), name
     assert "state-persistence-preflight.py --repo ." in text
     assert "from framework.events.emitter import replay" in text
-    # The dashboard leg checks BOTH the build stamp and the start time.
+    # The BUILD seam has a default too, and the default is npm.
+    assert "CABINET_UPDATE_TEST_BUILD_CMD:-" in text
+    assert "npm run build" in text and "npm ci --include=dev" in text
+    # The dashboard leg checks the identity, the start time, and — only when
+    # this apply rebuilt — the build stamp. All three sentences live here so a
+    # leg cannot be dropped without this arm noticing.
     assert "source_commit" in text and "started_at" in text
+    assert "build_commit" in text
+    assert 'if rebuilt == "1":' in text, (
+        "the build stamp leg is unconditional again — a bundle that changes no "
+        "dashboard file would roll itself back")
     assert "predates this update" in text
+    assert "the cabinet answering is" in text
     # cabinet-doctor is reported, never gated.
     assert "REPORTED, never gated" in text
 
@@ -1212,3 +1222,580 @@ def test_publish_refuses_a_source_that_is_not_a_checkout(tmp_path):
         env={**os.environ, "CABINET_ROOT": str(root)},
     )
     assert result.returncode == 3, (result.returncode, result.stderr)
+
+
+# ===========================================================================
+# 12. the health gate's DASHBOARD leg — the one leg with an automatic
+#     rollback behind it, and the one that shipped with no arm at all
+# ===========================================================================
+#
+# WHY THIS SECTION EXISTS. Every arm above passes `--skip-restart`, which makes
+# the dashboard leg log "THIN" and return without running. So the leg that can
+# roll a good update back was never executed by a test — and a defect lived
+# there: the served identity was baked into the dashboard BUILD, the updater
+# rebuilds only when the bundle touched `cabinet/dashboard/**`, and every
+# framework-only update therefore restarted the same build, heard the old sha
+# and rolled itself back.
+#
+# HOW THE DASHBOARD IS STOOD IN FOR, AND WHY THAT IS HONEST. A fixture install
+# has no Next.js, so these arms run a ~30-line HTTP stub. The one thing that
+# must not be invented is WHICH FACT each health field carries, so the stub
+# does not hardcode the body: `health_field_sources()` reads the field →
+# environment-variable mapping OUT OF THE LIVE ROUTE FILE and the stub answers
+# from that. A route that goes back to answering its identity from the baked
+# build variable makes these arms red without anyone editing them.
+#
+# The other half of the model is the restart: the fixture dashboard library
+# below re-reads `egg-manifest.json` when it starts a new stub, exactly as
+# `start-dashboard.sh` does, and the stub freezes those values at ITS start —
+# so a process that was never restarted keeps answering with the old ones,
+# which is the property the whole leg exists to detect.
+
+_HEALTH_ROUTE = _REPO_ROOT / "cabinet" / "dashboard" / "src" / "app" / "api" / "health" / "route.ts"
+_BUILD_STAMP_REL = "cabinet/dashboard/.next/BUILD_SOURCE_COMMIT"
+
+#: A dashboard, reduced to the one endpoint the update gate reads. Every value
+#: is frozen at process start: that is what a running server is.
+_STUB_SERVER = '''
+import json, os, sys
+from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+FIELDS = json.loads(os.environ["STUB_FIELDS"])
+if not FIELDS:
+    raise SystemExit("the stub was given no field map — it would answer a body "
+                     "that no route has ever produced")
+SERVICE = os.environ.get("STUB_SERVICE") or "cabinet-dashboard"
+STARTED_AT = os.environ.get("STUB_STARTED_AT") or datetime.now(timezone.utc).strftime(
+    "%Y-%m-%dT%H:%M:%SZ")
+VALUES = {field: os.environ.get(var, "") for field, var in FIELDS.items()}
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = {"ok": True, "service": SERVICE, "started_at": STARTED_AT,
+                "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+        body.update(VALUES)
+        raw = json.dumps(body).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def log_message(self, *args):
+        pass
+
+
+HTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
+'''
+
+#: The fixture's `lib/dashboard.sh`. `restart_dashboard` sources this, so the
+#: updater's own restart path — fd 9 closed, subshell, detached child — is the
+#: thing under test here, not a mock of it.
+_FIXTURE_DASH_LIB = '''
+cabinet_dash_url() { printf 'http://127.0.0.1:%s/\\n' "$CABINET_FIXTURE_PORT"; }
+
+cabinet_dash_restart() {
+  local root="${1:-$CABINET_ROOT}" pidfile ident build old n
+  pidfile="$root/.updates/stub.pid"
+  if [ "${CABINET_FIXTURE_NO_RESTART:-0}" = "1" ]; then
+    printf 'fixture dashboard: the restart did not happen\\n' >&2
+    return 1
+  fi
+  if [ -f "$pidfile" ]; then
+    old="$(cat "$pidfile")"
+    kill "$old" 2>/dev/null || true
+    n=0
+    while [ "$n" -lt 50 ] && kill -0 "$old" 2>/dev/null; do
+      %(py)s -c 'import time; time.sleep(0.1)'
+      n=$((n + 1))
+    done
+  fi
+  # The identity a NEW process is started with, read the way start-dashboard.sh
+  # reads it: out of the install's own manifest, which the apply has already
+  # rewritten by the time the restart runs.
+  ident="$(sed -n 's/.*"source_commit"[[:space:]]*:[[:space:]]*"\\([0-9a-f]*\\)".*/\\1/p' "$root/egg-manifest.json" | head -1)"
+  build=""
+  [ -f "$root/%(stamp)s" ] && build="$(cat "$root/%(stamp)s")"
+  STUB_FIELDS="$CABINET_FIXTURE_FIELDS" \\
+  STUB_SERVICE="${CABINET_FIXTURE_SERVICE:-}" \\
+  STUB_STARTED_AT="${CABINET_FIXTURE_STARTED_AT:-}" \\
+  CABINET_SOURCE_COMMIT="$ident" \\
+  CABINET_BUILD_SOURCE_COMMIT="$build" \\
+    nohup %(py)s "$CABINET_FIXTURE_STUB" "$CABINET_FIXTURE_PORT" \\
+      >>"$root/.updates/stub.log" 2>&1 </dev/null &
+  printf '%%s\\n' "$!" >"$pidfile"
+  n=0
+  while [ "$n" -lt 50 ]; do
+    if curl -sS --max-time 1 "http://127.0.0.1:$CABINET_FIXTURE_PORT/api/health" >/dev/null 2>&1; then
+      printf 'fixture dashboard: restarted\\n' >&2
+      return 0
+    fi
+    %(py)s -c 'import time; time.sleep(0.2)'
+    n=$((n + 1))
+  done
+  printf 'fixture dashboard: the new stub never answered\\n' >&2
+  return 1
+}
+''' % {"py": _PY, "stamp": _BUILD_STAMP_REL}
+
+
+def health_field_sources() -> dict[str, str]:
+    """field -> environment variable, READ OUT OF THE LIVE ROUTE.
+
+    The degenerate answer is refused: an empty map would make the stub answer a
+    body with no identity in it at all, and every arm below would then be
+    measuring the gate's behaviour on a body no real dashboard produces.
+    """
+    text = _HEALTH_ROUTE.read_text(encoding="utf-8")
+    code = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("//"))
+    fields = dict(re.findall(r"(\w+):\s*process\.env\.([A-Za-z0-9_]+)", code))
+    assert "source_commit" in fields, (
+        "/api/health no longer answers source_commit from the environment — the "
+        "fixture dashboard cannot model a route it cannot read (%r)" % fields)
+    return fields
+
+
+def _free_port() -> int:
+    import socket
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+class FixtureDashboard:
+    """A dashboard that answers /api/health, and the library that restarts it."""
+
+    def __init__(self, root: Path, tmp_path: Path, *, build_stamp: str,
+                 service: str = "", started_at: str = "", no_restart: bool = False):
+        self.root = root
+        self.port = _free_port()
+        self.stub = tmp_path / "health-stub.py"
+        self.stub.write_text(_STUB_SERVER, encoding="utf-8")
+        self.fields = health_field_sources()
+        self.service = service
+        self.started_at = started_at
+        self.no_restart = no_restart
+        self.pid_file = root / ".updates" / "stub.pid"
+        _write(root / _BUILD_STAMP_REL, build_stamp)
+        _write(root / "cabinet/scripts/lib/dashboard.sh", _FIXTURE_DASH_LIB)
+        self.process: subprocess.Popen | None = None
+
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self.port}/api/health"
+
+    @property
+    def env(self) -> dict[str, str]:
+        env = {
+            "CABINET_UPDATE_HEALTH_URL": self.url,
+            "CABINET_FIXTURE_STUB": str(self.stub),
+            "CABINET_FIXTURE_PORT": str(self.port),
+            "CABINET_FIXTURE_FIELDS": json.dumps(self.fields),
+            "CABINET_FIXTURE_SERVICE": self.service,
+            "CABINET_FIXTURE_STARTED_AT": self.started_at,
+            "CABINET_FIXTURE_NO_RESTART": "1" if self.no_restart else "0",
+            # Short polls: a red arm must not sit for five minutes.
+            "CABINET_OPEN_TRIES": "8",
+        }
+        return env
+
+    def start(self, *, source_commit: str, build_commit: str) -> None:
+        """The dashboard that was already running when the update arrived."""
+        env = dict(os.environ)
+        env.update({
+            "STUB_FIELDS": json.dumps(self.fields),
+            "STUB_SERVICE": self.service or "cabinet-dashboard",
+            "STUB_STARTED_AT": self.started_at,
+            "CABINET_SOURCE_COMMIT": source_commit,
+            "CABINET_BUILD_SOURCE_COMMIT": build_commit,
+        })
+        self.pid_file.parent.mkdir(parents=True, exist_ok=True)
+        self.process = subprocess.Popen(
+            [_PY, str(self.stub), str(self.port)], env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.pid_file.write_text(str(self.process.pid) + "\n", encoding="utf-8")
+        assert _wait_for(self.answers, seconds=20), "the fixture dashboard never came up"
+
+    def answers(self) -> bool:
+        import urllib.request
+        try:
+            with urllib.request.urlopen(self.url, timeout=1) as response:
+                json.loads(response.read().decode("utf-8"))
+            return True
+        except Exception:
+            return False
+
+    def body(self) -> dict:
+        import urllib.request
+        with urllib.request.urlopen(self.url, timeout=2) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    def stop(self) -> None:
+        pids = set()
+        if self.process is not None:
+            pids.add(self.process.pid)
+        try:
+            pids.add(int(self.pid_file.read_text().strip()))
+        except (OSError, ValueError):
+            pass
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+
+
+def make_dashboard_install(tmp_path: Path, **kwargs) -> tuple[Path, FixtureDashboard]:
+    root = make_install(tmp_path)
+    dash = FixtureDashboard(root, tmp_path, build_stamp=OLD_SHA, **kwargs)
+    return root, dash
+
+
+def test_a_bundle_that_changes_no_dashboard_file_still_passes_the_gate(tmp_path):
+    """THE ROUND-2 BLOCKING DEFECT, as an arm.
+
+    Phase-1 units 1–4 are framework-only: not one of them touches
+    `cabinet/dashboard/**`. So the common bundle shape is one that needs no
+    rebuild — the dashboard is restarted, comes back on the same build, and
+    must be recognised as this Cabinet at its new commit. It was not: the served
+    identity was inlined at BUILD time, the gate demanded it equal the new sha,
+    and every framework-only update rolled itself back with a
+    `cabinet_update_rolled_back` receipt and the Captain's improvement undone.
+    """
+    root, dash = make_dashboard_install(tmp_path)
+    dash.start(source_commit=OLD_SHA, build_commit=OLD_SHA)
+    try:
+        make_bundle(tmp_path, root, NEW_SHA,
+                    extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
+        result = run_updater(root, "apply", "--bundle", NEW_SHA, env_extra=dash.env)
+        assert result.returncode == 0, (result.returncode, result.stderr[-3000:])
+        assert state(root)["phase"] == "applied", state(root)
+        assert "cabinet_update_rolled_back" not in event_types(root)
+        assert "cabinet_update_applied" in event_types(root)
+        assert installed_sha(root) == NEW_SHA
+        assert (root / "cabinet/scripts/hello.sh").read_text() == "echo hello v2\n"
+        # And the build was NOT re-made: nothing in the bundle asked for one.
+        assert (root / _BUILD_STAMP_REL).read_text() == OLD_SHA
+    finally:
+        dash.stop()
+
+
+def test_a_dashboard_that_never_restarted_reds_the_gate(tmp_path):
+    """The property A5.5 names: an identity probe alone passes a dead restart.
+
+    The fixture library refuses to restart, so the process answering after the
+    apply is the one that was answering before it — still holding the old
+    identity and the old start time. The update must not be recorded as good.
+    """
+    root, dash = make_dashboard_install(tmp_path, no_restart=True)
+    dash.start(source_commit=OLD_SHA, build_commit=OLD_SHA)
+    try:
+        make_bundle(tmp_path, root, NEW_SHA,
+                    extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
+        result = run_updater(root, "apply", "--bundle", NEW_SHA, env_extra=dash.env)
+        assert result.returncode == 1, (result.returncode, result.stderr[-3000:])
+        assert state(root)["phase"] == "rolled_back"
+        assert "cabinet_update_rolled_back" in event_types(root)
+        assert installed_sha(root) == OLD_SHA
+        assert (root / "cabinet/scripts/hello.sh").read_text() == "echo hello v1\n"
+    finally:
+        dash.stop()
+
+
+def test_a_process_that_predates_the_apply_reds_the_gate(tmp_path):
+    """The second half of A5.5, on its own.
+
+    Here the restart DOES happen and the new process carries the new identity —
+    but it reports a start time from before the apply began. That is the shape
+    of a supervisor that answered the kickstart with the old process still
+    holding the port; identity alone would call it a good update.
+    """
+    root, dash = make_dashboard_install(tmp_path, started_at="2000-01-01T00:00:00Z")
+    dash.start(source_commit=OLD_SHA, build_commit=OLD_SHA)
+    try:
+        make_bundle(tmp_path, root, NEW_SHA,
+                    extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
+        result = run_updater(root, "apply", "--bundle", NEW_SHA, env_extra=dash.env)
+        assert result.returncode == 1, (result.returncode, result.stderr[-3000:])
+        assert "predates this update" in result.stderr
+        assert installed_sha(root) == OLD_SHA
+    finally:
+        dash.stop()
+
+
+def test_something_else_on_the_port_is_never_this_cabinet(tmp_path):
+    """The identity marker, at the gate. A foreign server answering 200 on the
+    dashboard's port once read as "the cabinet is up" to every probe in the
+    tree; it must never read as "the update landed"."""
+    root, dash = make_dashboard_install(tmp_path, service="some-other-app")
+    dash.start(source_commit=NEW_SHA, build_commit=NEW_SHA)
+    try:
+        make_bundle(tmp_path, root, NEW_SHA,
+                    extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
+        result = run_updater(root, "apply", "--bundle", NEW_SHA, env_extra=dash.env)
+        assert result.returncode == 1, (result.returncode, result.stderr[-3000:])
+        assert "not this cabinet" in result.stderr
+        assert installed_sha(root) == OLD_SHA
+    finally:
+        dash.stop()
+
+
+# --- the build leg: only demanded when a build actually happened -------------
+
+_BUILD_OK = ('mkdir -p .next && printf %s "$CABINET_BUILD_SOURCE_COMMIT" '
+             '> .next/BUILD_SOURCE_COMMIT')
+_BUILD_STALE = 'mkdir -p .next && printf %s "0000000000" > .next/BUILD_SOURCE_COMMIT'
+
+
+def test_a_rebuilt_dashboard_must_serve_the_build_it_was_given(tmp_path):
+    """A5.5's build stamp, where it IS the right question.
+
+    When the bundle changed a dashboard file the updater rebuilds, and a build
+    that silently produced the previous bytes must not pass: nothing else in
+    the gate can see the difference, because the process restarted and the
+    install's identity is already the new one.
+    """
+    root, dash = make_dashboard_install(tmp_path)
+    dash.start(source_commit=OLD_SHA, build_commit=OLD_SHA)
+    try:
+        make_bundle(tmp_path, root, NEW_SHA, extra={
+            "cabinet/dashboard/src/app/page.tsx": "export default function P() {}\n",
+        })
+        env = dict(dash.env)
+        env["CABINET_UPDATE_TEST_BUILD_CMD"] = _BUILD_STALE
+        result = run_updater(root, "apply", "--bundle", NEW_SHA, env_extra=env)
+        assert result.returncode == 1, (result.returncode, result.stderr[-3000:])
+        assert "the answering build" in result.stderr
+        assert installed_sha(root) == OLD_SHA
+    finally:
+        dash.stop()
+
+
+def test_a_dashboard_bundle_that_builds_and_serves_its_own_bytes_is_green(tmp_path):
+    """The green twin of the arm above, and A5.6's swap.
+
+    The previous build is beside the snapshot, the new one is in place, and the
+    rollback puts the previous one back — the property that makes "gate red ⇒
+    roll back ⇒ gate green" true for a dashboard bundle rather than hopeful.
+    """
+    root, dash = make_dashboard_install(tmp_path)
+    dash.start(source_commit=OLD_SHA, build_commit=OLD_SHA)
+    try:
+        make_bundle(tmp_path, root, NEW_SHA, extra={
+            "cabinet/dashboard/src/app/page.tsx": "export default function P() {}\n",
+        })
+        env = dict(dash.env)
+        env["CABINET_UPDATE_TEST_BUILD_CMD"] = _BUILD_OK
+        result = run_updater(root, "apply", "--bundle", NEW_SHA, env_extra=env)
+        assert result.returncode == 0, (result.returncode, result.stderr[-3000:])
+        assert installed_sha(root) == NEW_SHA
+        assert (root / _BUILD_STAMP_REL).read_text() == NEW_SHA
+
+        snap = sorted((root / ".updates" / "snapshots").iterdir())[-1]
+        assert (snap / "next-previous" / "BUILD_SOURCE_COMMIT").read_text() == OLD_SHA
+
+        back = run_updater(root, "rollback", "--skip-restart", env_extra=dash.env)
+        assert back.returncode == 0, back.stderr[-2000:]
+        assert (root / _BUILD_STAMP_REL).read_text() == OLD_SHA
+        assert installed_sha(root) == OLD_SHA
+    finally:
+        dash.stop()
+
+
+def test_the_gate_says_which_legs_it_ran(tmp_path):
+    """A leg that is skipped says so. The dashboard leg was silently THIN in
+    every arm of this file for a whole review round; a gate that names the legs
+    it did not run is how that becomes visible in a log rather than in a
+    reviewer's reproduction."""
+    root, dash = make_dashboard_install(tmp_path)
+    dash.start(source_commit=OLD_SHA, build_commit=OLD_SHA)
+    try:
+        make_bundle(tmp_path, root, NEW_SHA,
+                    extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
+        result = run_updater(root, "apply", "--bundle", NEW_SHA, env_extra=dash.env)
+        assert result.returncode == 0, result.stderr[-3000:]
+        assert "gate: dashboard leg green" in result.stderr
+        assert "build stamp leg THIN" in result.stderr, result.stderr[-3000:]
+    finally:
+        dash.stop()
+
+
+# ===========================================================================
+# 13. what a failed apply leaves on the operator's disk (A5.14)
+# ===========================================================================
+
+def test_the_stage_tree_does_not_outlive_a_rolled_back_apply(tmp_path):
+    """A5.14. The green path cleaned up; the rollback path did not.
+
+    A rolled-back apply is the one that is MOST likely to be repeated with a
+    different bundle, so "one whole unpacked export per distinct failed sha,
+    for ever" is the shape this leaves behind — and with the round-2 blocking
+    defect in place, rollback was the normal outcome.
+    """
+    root = make_install(tmp_path)
+    make_bundle(tmp_path, root, NEW_SHA, extra={"cabinet/scripts/hello.sh": "v2\n"})
+    result = run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild", "--skip-restart",
+                         env_extra={"CABINET_UPDATE_TEST_RECEIPTS_CMD": "false"})
+    assert result.returncode == 1, result.stderr
+    assert state(root)["phase"] == "rolled_back"
+    stage = root / ".updates" / "stage"
+    left = sorted(p.name for p in stage.iterdir()) if stage.is_dir() else []
+    assert NEW_SHA not in left, left
+    # The way back is untouched — pruning the stage is not pruning the snapshot.
+    assert len(list((root / ".updates" / "snapshots").iterdir())) == 1
+
+
+def test_a_refused_bundle_leaves_no_unpacked_tree_behind(tmp_path):
+    """The same disk, the other exit. A refusal unpacks before it refuses."""
+    root = make_install(tmp_path)
+    make_bundle(tmp_path, root, NEW_SHA,
+                extra={"cabinet/scripts/hooks/post-tool-use.py": "print('x')\n"})
+    result = run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild", "--skip-restart")
+    assert result.returncode == 3, result.stderr
+    stage = root / ".updates" / "stage"
+    left = sorted(p.name for p in stage.iterdir()) if stage.is_dir() else []
+    assert NEW_SHA not in left, left
+
+
+def test_the_stage_is_bounded_by_the_keep_policy(tmp_path):
+    """The belt under both: whatever gets left, the KEEP policy bounds it."""
+    root = make_install(tmp_path)
+    stage = root / ".updates" / "stage"
+    stage.mkdir(parents=True)
+    for i in range(6):
+        old = stage / (f"{i}" * 40)
+        (old / "tree").mkdir(parents=True)
+        (old / "tree" / "junk").write_text("x", encoding="utf-8")
+        os.utime(old, (1_600_000_000 + i, 1_600_000_000 + i))
+    make_bundle(tmp_path, root, NEW_SHA, extra={"cabinet/scripts/hello.sh": "v2\n"})
+    assert run_updater(root, "apply", "--bundle", NEW_SHA,
+                       "--skip-rebuild", "--skip-restart").returncode == 0
+    left = sorted(p.name for p in stage.iterdir()) if stage.is_dir() else []
+    assert len(left) <= 3, left
+
+
+# ===========================================================================
+# 14. a locked path is never downgraded to a skip (§5 invariant 1)
+# ===========================================================================
+
+def test_a_locked_path_that_is_also_preserved_is_still_a_refusal(tmp_path):
+    """Two of the locked FILES are also in the generated preserve set —
+    `instance/config/egress.yml` and `instance/config/act-first-surfaces.yml`.
+
+    The preserve filter ran FIRST, so a bundle shipping a changed copy of
+    either was reported as `skipped_preserved` and the rest of it applied.
+    Nothing was written either way, so the fail-closed property held — but the
+    signal §5 requires (the WHOLE bundle refused, with the ceremony sentence)
+    was lost, and a refusal nobody sees is a boundary nobody knows about.
+    """
+    root = make_install(tmp_path)
+    make_bundle(tmp_path, root, NEW_SHA, extra={
+        "instance/config/egress.yml": "allow: everything\n",
+        "cabinet/scripts/hello.sh": "echo hello v2\n",
+    })
+    result = run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild", "--skip-restart")
+    assert result.returncode == 3, (result.returncode, result.stderr[-2000:])
+    assert "instance/config/egress.yml" in result.stderr
+    refused = [e for e in events(root)
+               if (e.get("event_type") or e.get("type")) == "cabinet_update_refused"]
+    assert refused and "instance/config/egress.yml" in refused[-1]["payload"]["locked_paths"]
+    # Whole-bundle: the innocent half of it did not land either.
+    assert (root / "cabinet/scripts/hello.sh").read_text() == "echo hello v1\n"
+    assert installed_sha(root) == OLD_SHA
+
+
+# ===========================================================================
+# 15. one declaration, one reader (A5.2)
+# ===========================================================================
+
+_FIXTURE_PROVISION = '''#!/bin/bash
+# A provisioning script whose DECLARATION and whose printed LISTS disagree.
+INSTANCE_PERSISTENT_DIRS="instance/state"
+INSTANCE_PERSISTENT_SEEDED_DIRS=""
+INSTANCE_PERSISTENT_FILES=""
+case "${1:-}" in
+  lists)
+    echo "dirs instance/state"
+    echo "files cabinet/scripts/hello.sh"
+    ;;
+  *) echo "usage: runtime-provision.sh lists" >&2; exit 64 ;;
+esac
+'''
+
+
+def test_the_preserve_set_reads_the_lists_subcommand_not_the_script_text(tmp_path):
+    """A5.2 shipped `runtime-provision.sh lists` and then read the file's text
+    anyway, so the declaration had two readers and the subcommand had no
+    production consumer at all — the exact drift the amendment set out to end.
+
+    The fixture script's printed lists and its variable assignments disagree on
+    purpose. Whichever one the updater actually consults decides the answer.
+    """
+    root = make_install(tmp_path)
+    _write(root / "cabinet/scripts/runtime-provision.sh", _FIXTURE_PROVISION)
+    make_bundle(tmp_path, root, NEW_SHA, extra={
+        "cabinet/scripts/hello.sh": "echo hello v2\n",
+        "cabinet/docs/readme.md": "readme v2\n",
+    })
+    result = run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild", "--skip-restart")
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert (root / "cabinet/docs/readme.md").read_text() == "readme v2\n"
+    assert (root / "cabinet/scripts/hello.sh").read_text() == "echo hello v1\n", (
+        "the updater read the script's TEXT, not its `lists` subcommand")
+    assert "cabinet/scripts/hello.sh" in state(root)["skipped_preserved"]
+
+
+def test_an_unrunnable_provision_script_falls_back_to_its_declaration(tmp_path):
+    """The documented fallback, and its degenerate end.
+
+    An installed Cabinet may carry a provisioning script that will not run on
+    this box. Reading the assignments is then the honest second source — and an
+    empty answer is still refused, because "no declaration" must never read as
+    "nothing to preserve"."""
+    root = make_install(tmp_path)
+    text = (root / "cabinet/scripts/runtime-provision.sh").read_text(encoding="utf-8")
+    _write(root / "cabinet/scripts/runtime-provision.sh",
+           text.replace("#!/bin/bash", "#!/bin/bash\nexit 3\n", 1))
+    entries = update_bundle.parse_provision_lists(
+        root / "cabinet/scripts/runtime-provision.sh")
+    assert entries, "an unrunnable script read as an empty list"
+    assert any(e.startswith("instance/") for e in entries), entries
+
+    _write(root / "cabinet/scripts/runtime-provision.sh", "#!/bin/bash\nexit 3\n")
+    with pytest.raises(update_bundle.BundleError):
+        update_bundle.parse_provision_lists(root / "cabinet/scripts/runtime-provision.sh")
+
+
+# ===========================================================================
+# 16. the busy branch inside apply/rollback is reachable, and covered
+# ===========================================================================
+
+def test_a_re_execed_updater_takes_the_lock_for_itself(tmp_path):
+    """`CABINET_UPDATE_REEXEC=1` skips the dispatch's lock, so the branch inside
+    `cmd_apply` is the only one left — the round-2 reviewer found it by
+    mutating it and watching the sensor stay green.
+
+    That entry point is real: it is how the re-exec'd copy runs, and it is what
+    a caller that sets the variable by hand gets. An unlocked apply there would
+    be two updaters writing one tree.
+    """
+    root = make_install(tmp_path)
+    make_bundle(tmp_path, root, NEW_SHA, extra={"cabinet/scripts/hello.sh": "v2\n"})
+    holder = open(root / ".updates" / ".lock", "a+")
+    fcntl.flock(holder.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    try:
+        result = run_updater(root, "apply", "--bundle", NEW_SHA, "--from", "web",
+                             "--skip-rebuild", "--skip-restart", timeout=60,
+                             env_extra={"CABINET_UPDATE_REEXEC": "1"})
+        assert result.returncode == 4, (result.returncode, result.stderr[-2000:])
+        refused = [e for e in events(root)
+                   if (e.get("event_type") or e.get("type")) == "cabinet_update_refused"]
+        assert refused, "a busy re-exec'd apply left no receipt"
+        assert refused[-1]["payload"]["reason"] == "busy"
+        assert installed_sha(root) == OLD_SHA
+        assert (root / "cabinet/scripts/hello.sh").read_text() == "echo hello v1\n"
+    finally:
+        fcntl.flock(holder.fileno(), fcntl.LOCK_UN)
+        holder.close()

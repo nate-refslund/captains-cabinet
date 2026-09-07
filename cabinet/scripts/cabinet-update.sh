@@ -476,19 +476,40 @@ PYSTATUS
 }
 
 # ---- health gate ------------------------------------------------------------
-# Three legs. An identity-only probe would pass an OLD process that survived a
-# failed restart, so the dashboard leg requires the answering process to carry
-# the new source commit AND to have started after this apply began.
+# Three legs, and the dashboard leg is itself three questions that must not be
+# collapsed into one:
+#
+#   WHICH CABINET answered      `source_commit`, which the dashboard reads from
+#                               its own environment at request time. An update
+#                               rewrites the identity BEFORE it restarts, so a
+#                               process that survived a failed restart still
+#                               answers with the old one.
+#   WHICH BUILD is serving      `build_commit`, inlined at `next build`. Asked
+#                               ONLY when this apply actually rebuilt. A bundle
+#                               that changes no dashboard file does not rebuild,
+#                               and demanding the new sha from an unchanged
+#                               build rolled every framework-only update back —
+#                               which is most of them (found in review,
+#                               2026-09-07).
+#   WHEN it started             `started_at`, from the process's own uptime.
+#                               Identity alone passes an old process on a box
+#                               where the previous build carried the same
+#                               commit (a rebuild, a rollback-then-forward).
 #
 # rc 0 = green. Nothing is printed to stdout here on purpose: the verdict is
 # the exit status.
-health_gate() { # <to_sha> <apply_started_at> <skip_restart>
-  local to_sha="$1" started="$2" skip_restart="$3"
+health_gate() { # <to_sha> <apply_started_at> <skip_restart> <rebuilt>
+  local to_sha="$1" started="$2" skip_restart="$3" rebuilt="${4:-0}"
   local tries="${CABINET_OPEN_TRIES:-150}" url state_ok=0
 
   if [ "$skip_restart" = "1" ]; then
     log "gate: dashboard leg THIN (--skip-restart: nothing was restarted, so a start time cannot be compared)"
   else
+    if [ "$rebuilt" = "1" ]; then
+      log "gate: build stamp leg armed (this apply rebuilt the dashboard, so the build must be the new one)"
+    else
+      log "gate: build stamp leg THIN (nothing was rebuilt in this apply, so the running build's stamp is not this update's identity and cannot be asked for it)"
+    fi
     url="${CABINET_UPDATE_HEALTH_URL:-}"
     if [ -z "$url" ]; then
       if [ -f "$DASH_LIB" ]; then
@@ -501,9 +522,34 @@ health_gate() { # <to_sha> <apply_started_at> <skip_restart>
       fi
     fi
     while [ "$tries" -gt 0 ]; do
-      if "$PY" - "$url" "$to_sha" "$started" <<'PYHEALTH'
+      if "$PY" - "$url" "$to_sha" "$started" "$rebuilt" <<'PYHEALTH'
 import json, sys, urllib.request
-url, to_sha, started = sys.argv[1], sys.argv[2], sys.argv[3]
+from datetime import datetime
+
+url, to_sha, started, rebuilt = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+
+
+def same_commit(answer, expected):
+    """Prefix match either way: an export stamps a full sha, a checkout may
+    carry a short one, and neither is wrong."""
+    return bool(answer) and (answer.startswith(expected) or expected.startswith(answer))
+
+
+def epoch(value):
+    """ISO-8601 -> seconds. NEVER a string comparison: the dashboard answers
+    with milliseconds and the updater's own clock reading does not, so
+    `...T12:00:00.123Z` sorts BEFORE `...T12:00:00Z` and a restart in the same
+    second as the apply began would read as a process that predates it — a
+    good update rolled back on a lexicographic accident."""
+    value = (value or "").strip()
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(value).timestamp()
+    except ValueError:
+        return None
+
+
 try:
     with urllib.request.urlopen(url, timeout=3) as response:
         body = json.loads(response.read().decode("utf-8"))
@@ -513,14 +559,29 @@ except Exception as exc:
 if body.get("service") != "cabinet-dashboard":
     print("health: something answered and it is not this cabinet", file=sys.stderr)
     sys.exit(1)
-stamp = body.get("source_commit") or ""
-if not stamp:
-    print("health: the answer carries no build stamp", file=sys.stderr)
+identity = body.get("source_commit") or ""
+if not identity:
+    print("health: the answer carries no identity", file=sys.stderr)
     sys.exit(1)
-if not (stamp.startswith(to_sha) or to_sha.startswith(stamp)):
-    print("health: the answering build is %s, expected %s" % (stamp[:12], to_sha[:12]), file=sys.stderr)
+if not same_commit(identity, to_sha):
+    print("health: the cabinet answering is %s, expected %s"
+          % (identity[:12], to_sha[:12]), file=sys.stderr)
     sys.exit(1)
-if (body.get("started_at") or "") <= started:
+if rebuilt == "1":
+    build = body.get("build_commit") or ""
+    if not build:
+        print("health: the answer carries no build stamp", file=sys.stderr)
+        sys.exit(1)
+    if not same_commit(build, to_sha):
+        print("health: the answering build is %s, expected %s"
+              % (build[:12], to_sha[:12]), file=sys.stderr)
+        sys.exit(1)
+answered_at = epoch(body.get("started_at"))
+apply_at = epoch(started)
+if answered_at is None:
+    print("health: the answer carries no start time", file=sys.stderr)
+    sys.exit(1)
+if apply_at is not None and int(answered_at) < int(apply_at):
     print("health: the answering process predates this update — the restart did not happen", file=sys.stderr)
     sys.exit(1)
 sys.exit(0)
@@ -642,6 +703,12 @@ cmd_rollback() {
     esac
   done
   case "$want" in *[!0-9A-Za-z_-]*) fail_usage "snapshot stamps are [0-9A-Za-z_-] only" ;; esac
+  # THE RE-EXEC ENTRY POINT'S OWN LOCK. On the normal path the dispatch below
+  # has already taken it and `lock_is_inherited` makes this a no-op — but the
+  # dispatch skips locking when `CABINET_UPDATE_REEXEC=1`, which is how the
+  # re-exec'd copy arrives and what a caller that sets the variable by hand
+  # gets. Without this line that entry point would run unlocked, so it stays,
+  # and `test_a_re_execed_updater_takes_the_lock_for_itself` is its arm.
   take_lock || refuse_busy ""
   local snap_name before after
   snap_name="${want:-$(newest_snapshot)}"
@@ -662,6 +729,9 @@ cmd_rollback() {
 refuse() { # <exit> <reason> <to_sha> [locked-json]
   local code="$1" reason="$2" to_sha="$3" locked="${4:-[]}"
   log "REFUSED: $reason"
+  # Several refusals happen AFTER the bundle is unpacked (a digest mismatch, an
+  # unreadable plan, a locked path). A5.14: none of them leaves a tree behind.
+  drop_stage "$to_sha"
   emit_event cabinet_update_refused "$(door_actor "$DOOR")" \
     "{\"to_sha\":$(json_escape "$to_sha"),\"reason\":$(json_escape "$reason"),\"locked_paths\":$locked,\"door\":$(json_escape "$DOOR")}"
   exit "$code"
@@ -679,23 +749,37 @@ print(json.dumps(value) if not isinstance(value, str) else value)
 # not be able to leave the served directory half-written. The previous build is
 # moved beside the snapshot (a local artifact the export manifest deletes, not
 # shipped content) and the new one is renamed into place LAST.
+# rc 0 = built and swapped · 1 = the build failed · 2 = there was nothing to
+# build (a bundle that deletes dashboard files ships none). 2 is NOT a build:
+# the caller must not then demand the new build stamp at the gate.
 stage_build() { # <stage-tree> <snapshot-dir> <to_sha>
   local stage_tree="$1" snap="$2" to_sha="$3"
   local stage_dash="$stage_tree/cabinet/dashboard"
   local live_dash="$ROOT/cabinet/dashboard"
-  [ -d "$stage_dash" ] || { log "build: the bundle carries no dashboard"; return 0; }
-  command -v npm >/dev/null 2>&1 || { log "build: no node toolchain on this box"; return 1; }
+  [ -d "$stage_dash" ] || { log "build: the bundle carries no dashboard"; return 2; }
 
-  if [ -d "$live_dash/node_modules" ] && [ -f "$live_dash/package-lock.json" ] \
-     && [ -f "$stage_dash/package-lock.json" ] \
-     && cmp -s "$live_dash/package-lock.json" "$stage_dash/package-lock.json"; then
-    # Same lockfile, same dependencies: reuse what is installed rather than
-    # paying a fresh install on every update.
-    ln -s "$live_dash/node_modules" "$stage_dash/node_modules"
+  # THE BUILD SEAM. A fixture install has no node toolchain, and the property
+  # under test in the suite is the gate's reading of the build stamp and the
+  # rename-last swap — not npm. Named `CABINET_UPDATE_TEST_` so it can never be
+  # mistaken for a production knob; the default below is the behaviour, and
+  # test_health_gate_defaults_are_the_contract_legs pins it.
+  local build_cmd
+  build_cmd="${CABINET_UPDATE_TEST_BUILD_CMD:-}"
+  if [ -n "$build_cmd" ]; then
+    ( cd "$stage_dash" && CABINET_BUILD_SOURCE_COMMIT="$to_sha" eval "$build_cmd" ) >>"$LOG" 2>&1 || return 1
   else
-    ( cd "$stage_dash" && npm ci --include=dev --no-audit --no-fund ) >>"$LOG" 2>&1 || return 1
+    command -v npm >/dev/null 2>&1 || { log "build: no node toolchain on this box"; return 1; }
+    if [ -d "$live_dash/node_modules" ] && [ -f "$live_dash/package-lock.json" ] \
+       && [ -f "$stage_dash/package-lock.json" ] \
+       && cmp -s "$live_dash/package-lock.json" "$stage_dash/package-lock.json"; then
+      # Same lockfile, same dependencies: reuse what is installed rather than
+      # paying a fresh install on every update.
+      ln -s "$live_dash/node_modules" "$stage_dash/node_modules"
+    else
+      ( cd "$stage_dash" && npm ci --include=dev --no-audit --no-fund ) >>"$LOG" 2>&1 || return 1
+    fi
+    ( cd "$stage_dash" && CABINET_BUILD_SOURCE_COMMIT="$to_sha" npm run build ) >>"$LOG" 2>&1 || return 1
   fi
-  ( cd "$stage_dash" && CABINET_BUILD_SOURCE_COMMIT="$to_sha" npm run build ) >>"$LOG" 2>&1 || return 1
   [ -d "$stage_dash/.next" ] || { log "build: produced no output"; return 1; }
   mkdir -p "$snap"
   if [ -d "$live_dash/.next" ]; then
@@ -721,11 +805,42 @@ prune_snapshots() {
   done
 }
 
+# The staged trees, under the SAME keep policy as the snapshots. A staged tree
+# is not a way back — the snapshot is — so this is pure disk hygiene, and it is
+# needed because an apply can leave one behind on four different exits: refused,
+# rolled back, killed mid-write, or a resume that never reached the green path.
+# Newest first (`ls -1t`), because the useful one is always the last one.
+prune_stage() {
+  [ -d "$STAGE" ] || return 0
+  local keep="$KEEP" names count old
+  case "$keep" in ''|*[!0-9]*) keep=3 ;; esac
+  names="$(ls -1t "$STAGE" 2>/dev/null)"
+  count="$(printf '%s\n' "$names" | grep -c . || true)"
+  [ "$count" -gt "$keep" ] || return 0
+  printf '%s\n' "$names" | tail -n "$((count - keep))" | while IFS= read -r old; do
+    [ -n "$old" ] || continue
+    rm -rf "${STAGE:?}/$old"
+    log "pruned staged tree ${old:0:8}"
+  done
+}
+
+# Drop the tree this apply unpacked, then bound whatever else is lying around.
+drop_stage() { # <sha>
+  [ -n "${1:-}" ] && [ -d "$STAGE/$1" ] && rm -rf "${STAGE:?}/$1"
+  prune_stage
+  return 0
+}
+
 roll_back_after() { # <snapshot-dir> <to_sha> <from_sha> <reason> <skip_restart>
   local snap="$1" to_sha="$2" from_sha="$3" reason="$4" skip_restart="$5"
   log "$reason — rolling back automatically"
   restore_snapshot "$snap" || log "the automatic rollback did not complete cleanly — see $LOG"
   [ "$skip_restart" = "1" ] || restart_dashboard || true
+  # A5.14: the staged tree does not outlive the apply that unpacked it, on the
+  # way out either. Rollback is the exit most likely to be repeated with a
+  # different bundle, so leaving one here is one whole unpacked export per
+  # distinct failed sha, for ever, on the operator's disk.
+  drop_stage "$to_sha"
   write_state "{\"phase\":\"rolled_back\",\"from_sha\":$(json_escape "$to_sha"),\"to_sha\":$(json_escape "$from_sha"),\"snapshot\":$(json_escape "$(basename "$snap")"),\"reason\":$(json_escape "$reason"),\"finished_at\":$(json_escape "$(now_utc)")}"
   emit_event cabinet_update_rolled_back "$(door_actor "$DOOR")" \
     "{\"from_sha\":$(json_escape "$to_sha"),\"to_sha\":$(json_escape "$from_sha"),\"reason\":$(json_escape "$reason"),\"door\":$(json_escape "$DOOR")}"
@@ -747,6 +862,8 @@ cmd_apply() {
   [ -n "$sha" ] || fail_usage "apply needs --bundle <sha>"
   case "$sha" in *[!0-9a-fA-F]*|'') fail_usage "a bundle id is a hex sha" ;; esac
 
+  # Same as cmd_rollback: a no-op behind the dispatch's lock, and the ONLY lock
+  # on the `CABINET_UPDATE_REEXEC=1` entry point.
   take_lock || refuse_busy "$sha"
 
   mkdir -p "$INBOX" "$APPLIED" "$SNAPSHOTS" "$STAGE"
@@ -829,7 +946,7 @@ for path in json.load(open(sys.argv[1]))["locked_hits"]:
   if [ "$changed_n" = "0" ] && [ "$deleted_n" = "0" ]; then
     log "bundle $sha changes nothing outside the preserve set — recording it and stopping"
     cp "$manifest" "$APPLIED/$sha.manifest.json"
-    rm -rf "${STAGE:?}/$sha"
+    drop_stage "$sha"
     "$PY" "$BUNDLE_PY" stamp-identity --root "$ROOT" --source-commit "$sha" \
       --applied-at "$(now_utc)" ${here:+--from-sha "$here"} >>"$LOG" 2>&1
     write_state "{\"phase\":\"applied\",\"from_sha\":$(json_escape "$here"),\"to_sha\":$(json_escape "$sha"),\"changed\":0,\"deleted\":0,\"skipped_preserved\":$skipped,\"finished_at\":$(json_escape "$(now_utc)"),\"door\":$(json_escape "$DOOR")}"
@@ -867,7 +984,14 @@ for path in json.load(open(sys.argv[1]))["locked_hits"]:
   "$PY" "$BUNDLE_PY" stamp-identity --root "$ROOT" --source-commit "$sha" \
     --applied-at "$(now_utc)" ${here:+--from-sha "$here"} >>"$LOG" 2>&1
 
-  local dashboard_changed=0
+  # THE REBUILD IS CONDITIONAL, AND SO IS THE LEG THAT CHECKS IT. The dashboard
+  # is rebuilt only when the bundle changed one of its files — a full `next
+  # build` on every framework-only update would cost a minute or two and, on a
+  # box with no node toolchain, would fail an update that has nothing to do
+  # with the dashboard. `rebuilt` carries that fact to the gate: demanding the
+  # new build stamp from a build nobody remade is what rolled every
+  # framework-only update back (found in review, 2026-09-07).
+  local dashboard_changed=0 rebuilt=0 build_rc=0
   "$PY" -c '
 import json, sys
 plan = json.load(open(sys.argv[1]))
@@ -875,15 +999,19 @@ touched = plan["changed"] + plan["deleted"]
 sys.exit(0 if any(p.startswith("cabinet/dashboard/") for p in touched) else 1)
 ' "$plan_file" && dashboard_changed=1
   if [ "$dashboard_changed" = "1" ] && [ "$skip_rebuild" = "0" ]; then
-    stage_build "$stage_tree" "$snap" "$sha" \
-      || roll_back_after "$snap" "$sha" "$here" "the build failed" "$skip_restart"
+    stage_build "$stage_tree" "$snap" "$sha"; build_rc=$?
+    case "$build_rc" in
+      0) rebuilt=1 ;;
+      2) log "the plan touched the dashboard but the bundle ships none — nothing to build" ;;
+      *) roll_back_after "$snap" "$sha" "$here" "the build failed" "$skip_restart" ;;
+    esac
   elif [ "$dashboard_changed" = "1" ]; then
     log "rebuild SKIPPED by request — the running build is now older than the code it serves (THIN)"
   fi
 
   [ "$skip_restart" = "1" ] || restart_dashboard || log "the restart did not complete — the gate will say so"
 
-  health_gate "$sha" "$started" "$skip_restart" \
+  health_gate "$sha" "$started" "$skip_restart" "$rebuilt" \
     || roll_back_after "$snap" "$sha" "$here" "the health gate was red" "$skip_restart"
 
   # Pruning only after a green gate: an older snapshot is the only way back if
@@ -893,7 +1021,7 @@ sys.exit(0 if any(p.startswith("cabinet/dashboard/") for p in touched) else 1)
   # The staged tree has done its work. The way back is the snapshot, never
   # this: left behind, it is one whole unpacked export per apply, for ever, on
   # a disk that belongs to the operator.
-  rm -rf "${STAGE:?}/$sha"
+  drop_stage "$sha"
   local built_at owner mtime
   built_at="$("$PY" -c 'import json,sys; print(json.load(open(sys.argv[1])).get("built_at") or "")' "$manifest")"
   owner="$("$PY" -c '

@@ -51,10 +51,38 @@ chat door does.
 
 What `apply` does, in order: verify every file against the manifest → refuse
 outright if any differing path is in the constitutional set → snapshot the
-pre-images → write (each file to a temporary name and rename) → rebuild the
-dashboard in a staging tree and swap the built output in last → restart the
-dashboard → run the health gate → prune old snapshots and the staged tree. A
-red gate rolls the whole thing back automatically and records why.
+pre-images → write (each file to a temporary name and rename) → **rebuild the
+dashboard, but only if the bundle changed a file under
+`cabinet/dashboard/`** — in a staging tree, with the built output swapped in
+last → restart the dashboard → run the health gate → prune old snapshots and
+staged trees. A red gate rolls the whole thing back automatically and records
+why; the staged tree is dropped on the way out of every exit, green or not.
+
+### The health gate, and why the rebuild condition is part of it
+
+The gate has three legs — the dashboard, the receipt ledger, and the
+persistence preflight — and the dashboard leg asks three separate questions of
+`/api/health`:
+
+| Field | Question | Where the value comes from |
+|---|---|---|
+| `source_commit` | which Cabinet is this? | the environment the process was started with (`start-dashboard.sh` reads `egg-manifest.json`, which the apply rewrites *before* it restarts) |
+| `build_commit` | which build is serving? | inlined when the dashboard was built |
+| `started_at` | did it actually restart? | the process's own uptime |
+
+`source_commit` and `started_at` are checked on every apply. **`build_commit`
+is checked only when this apply rebuilt** — and that is the half that has to
+match the rebuild condition above. A bundle that changes no dashboard file
+restarts the same build, so its build stamp is still the previous commit and
+always will be; demanding the new one there rolled every framework-only update
+back automatically, with the improvement undone and a
+`cabinet_update_rolled_back` receipt to show for it (found in review,
+2026-09-07 — the majority bundle shape).
+
+Read the two together: **the rebuild is conditional, so the build-stamp leg is
+conditional.** If a later change makes the rebuild unconditional, the leg
+becomes unconditional with it; if the leg is ever armed for an apply that did
+not rebuild, every framework-only update rolls back again.
 
 ## The refusals, and what each one means
 

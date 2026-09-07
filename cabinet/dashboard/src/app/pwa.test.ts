@@ -17,19 +17,55 @@ describe('GET /api/health', () => {
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(body.service).toBe('cabinet-dashboard')
-    // The closed key set gained two members with the update path (contract §5,
-    // A5.5). Both are still liveness-only — the commit the RUNNING BUILD was
-    // made from (baked at build time, next.config.ts `env`) and this process's
-    // own start time. The update health gate needs both: identity alone passes
-    // an OLD process that survived a failed restart and answers happily as the
-    // dashboard. Neither is config, state or a secret, and the set stays CLOSED
-    // so a third field cannot arrive here unnoticed.
+    // The closed key set gained three members with the update path (contract
+    // §5, A5.5), and they are three DIFFERENT facts:
+    //   source_commit  which cabinet this process was started against (read
+    //                  from its environment at request time)
+    //   build_commit   which build is serving (inlined at `next build`)
+    //   started_at     when this process started (from its own uptime)
+    // Collapsing any two of them is how an update lies about itself: identity
+    // alone passes an OLD process that survived a failed restart, and a
+    // build-only stamp cannot change at all for an update that touched no
+    // dashboard file — which rolled every framework-only update back until it
+    // was found in review. None is config, state or a secret, and the set
+    // stays CLOSED so a fourth field cannot arrive here unnoticed.
     expect(Object.keys(body).sort()).toEqual([
-      'ok', 'service', 'source_commit', 'started_at', 'ts',
+      'build_commit', 'ok', 'service', 'source_commit', 'started_at', 'ts',
     ])
     expect(() => new Date(body.ts).toISOString()).not.toThrow()
     expect(() => new Date(body.started_at).toISOString()).not.toThrow()
     expect(typeof body.source_commit).toBe('string')
+    expect(typeof body.build_commit).toBe('string')
+  })
+
+  it('answers the installed identity at request time, not once per module load', async () => {
+    // The property the update gate stands on. A value captured when this
+    // module was first imported would be the environment of whichever process
+    // happened to load it first — and after an update that restarted nothing,
+    // that is the OLD process. Two calls with two environments must give two
+    // answers.
+    const before = process.env.CABINET_SOURCE_COMMIT
+    try {
+      process.env.CABINET_SOURCE_COMMIT = 'a'.repeat(40)
+      const first = await (await GET()).json()
+      process.env.CABINET_SOURCE_COMMIT = 'b'.repeat(40)
+      const second = await (await GET()).json()
+      expect(first.source_commit).toBe('a'.repeat(40))
+      expect(second.source_commit).toBe('b'.repeat(40))
+    } finally {
+      if (before === undefined) delete process.env.CABINET_SOURCE_COMMIT
+      else process.env.CABINET_SOURCE_COMMIT = before
+    }
+  })
+
+  it('reports a start time that is this process, not this module', async () => {
+    // Derived from process.uptime(), so it is earlier than now and no later
+    // than the process itself. A module-scope `new Date()` would drift to the
+    // first request that reached the route.
+    const body = await (await GET()).json()
+    const started = new Date(body.started_at).getTime()
+    expect(started).toBeLessThanOrEqual(Date.now())
+    expect(Date.now() - started).toBeGreaterThanOrEqual(Math.floor(process.uptime() * 1000) - 1500)
   })
 })
 
