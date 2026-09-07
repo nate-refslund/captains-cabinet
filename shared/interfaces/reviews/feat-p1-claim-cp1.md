@@ -118,3 +118,43 @@ emitting a second completion.
   own those files.
 * The compatibility path (completion with no token when nothing is claimed)
   stays open by contract until every pull carries a claim.
+
+---
+
+## cp2 — re-verification on current master (2026-09-07, later)
+
+Master moved to `97164616` (PRs #367 and #369 landed) after cp1 was written
+against `1d1aec53`. The branch was merged forward and the whole proof was re-run
+on the new base, not carried over.
+
+**Re-run from scratch on a pristine clone of `97164616`:** the RED probe (the
+six pre-change behaviours), the sensor RED pass, the sensor GREEN pass, and the
+full battery. The pre-existing failing set was re-measured on that clone
+verdict-by-verdict rather than by count.
+
+**One defect found in cp1's own sensors, and fixed here.**
+`TestLeasedInProgress::test_renewal_keeps_it_in_progress_past_the_original_expiry`
+passed on PRE-CHANGE bytes as well as after. It asserted only that a renewed
+node is IN_PROGRESS past its original expiry — which the pre-change overlay
+made true of *every* started node, because it never read an expiry at all. A
+sensor green in both directions is a disabled sensor, and this one carried
+amendment A2.6.
+
+It now starts a second node with an identically expired lease and NO renewal,
+and asserts that one is PENDING while the renewed one is IN_PROGRESS. Only an
+overlay that reads the renewal's expiry can separate them; the pre-change
+overlay holds both IN_PROGRESS. Verified red on master bytes
+(`assert <NodeStatus.IN_PROGRESS> is <NodeStatus.PENDING>`), green after.
+
+**One scope over-claim narrowed.** `test_the_script_pins_its_interpreter`
+described itself as A0.3 in general while checking one file. Its docstring now
+names the two dashboard exec strings it does NOT cover and says they are an open
+residual — a checked file must not read as a claim about an unchecked one.
+
+**Method note for the RED pass.** Three sensor modules import
+`framework.missions.claims`, so on pristine bytes they abort at collection with
+an ImportError, which proves nothing about the invariants they carry. The two
+that are invariant-level (`test_session_bridge.py`, `test_compiler.py`) were
+therefore run in a second red tree that keeps the new module and reverts ONLY
+`session_bridge.py` and `compiler.py` to master bytes: 15 failures, each for the
+invariant's own reason rather than for an absent import.

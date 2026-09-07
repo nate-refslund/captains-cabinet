@@ -255,7 +255,15 @@ def test_verified_is_not_fenced_on_the_executors_claim(env):
 
 
 def test_the_script_pins_its_interpreter():
-    """A0.3: an unlocked script never rides whatever `python3` the PATH offers."""
+    """A0.3, for THIS script: no bare `python3` from whatever the PATH offers.
+
+    SCOPE, stated so this cannot be read as covering more than it does. A0.3
+    also names two dashboard exec strings (`actions/gaps.ts`,
+    `lib/capability-gaps.ts`), which are the GAP unit's files, not this one's —
+    widening this sensor to them would make it a red assertion about code no
+    commit on this branch may touch. They are an open residual against A0.3 and
+    are named as one on the PR; a checked file here is not a claim about them.
+    """
     text = SCRIPT.read_text()
     assert 'CABINET_PY="${CABINET_PYTHON:-python3.12}"' in text
     offenders = [

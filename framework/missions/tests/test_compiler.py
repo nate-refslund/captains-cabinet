@@ -911,12 +911,13 @@ class TestLeasedInProgress:
         )
         return graph
 
-    def _start(self, expires_in_s):
+    def _start(self, expires_in_s, task_id="outcome-lease-task-000",
+               claim_id="token-1"):
         moment = claims.utcnow()
         emit("work_item_started", actor="engineering", payload={
-            "task_id": "outcome-lease-task-000",
+            "task_id": task_id,
             "outcome_id": "outcome-lease",
-            "claim_id": "token-1",
+            "claim_id": claim_id,
             "holder": "holder-1",
             "started_at": moment.isoformat(),
             "lease_s": abs(expires_in_s),
@@ -938,8 +939,28 @@ class TestLeasedInProgress:
         assert [n.id for n in graph.ready_tasks()] == ["outcome-lease-task-000"]
 
     def test_renewal_keeps_it_in_progress_past_the_original_expiry(self):
+        """A2.6, stated so the assertion can only pass for the right reason.
+
+        A node held IN_PROGRESS past an expired lease is what the PRE-CHANGE
+        overlay did to EVERY started node, so "the renewed one is still
+        IN_PROGRESS" is true before this unit and after it — a sensor green in
+        both directions is a disabled sensor. The twin below carries an
+        identically expired lease and NO renewal: only an overlay that reads
+        the renewal's expiry can hold one IN_PROGRESS while the other drops to
+        PENDING, and the pre-change overlay holds BOTH.
+        """
         graph = self._graph()
+        graph.add_node(
+            WorkNode(
+                id="outcome-lease-task-001",
+                description="The un-renewed twin",
+                assigned_role="engineering",
+                status=NodeStatus.PENDING,
+                verification_criteria=["done"],
+            )
+        )
         self._start(-1)  # the original lease has already run out
+        self._start(-1, task_id="outcome-lease-task-001", claim_id="token-2")
         emit("work_item_claim_renewed", actor="engineering", payload={
             "task_id": "outcome-lease-task-000",
             "outcome_id": "outcome-lease",
@@ -951,6 +972,7 @@ class TestLeasedInProgress:
         })
         _apply_status_from_events(graph, "outcome-lease")
         assert graph.nodes["outcome-lease-task-000"].status is NodeStatus.IN_PROGRESS
+        assert graph.nodes["outcome-lease-task-001"].status is NodeStatus.PENDING
 
     def test_release_returns_it_to_pending_while_the_lease_still_runs(self):
         graph = self._graph()
