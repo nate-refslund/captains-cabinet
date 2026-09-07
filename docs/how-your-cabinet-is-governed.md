@@ -10,7 +10,10 @@ Every officer session starts from one assembled constitution: a framework
 base (the rules every deployment shares) plus a short addendum from the
 preset you chose at hatch (work, portfolio, …). Addenda can **tighten** the
 base, never relax it. The assembled copy your officers actually read is built
-fresh at every load by `cabinet/scripts/load-preset.sh`.
+fresh at every load by `cabinet/scripts/load-preset.sh`. If that assembly ever
+fails, the officer **does not start** — the launcher refuses rather than boot a
+worker on rules it cannot vouch for, the supervisor keeps retrying, and the
+officer stays visibly down until the assembly succeeds.
 
 ## The authority matrix and the hard ceilings
 
