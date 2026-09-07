@@ -17,8 +17,10 @@ import pytest
 _ROOT = str(Path(__file__).parent.parent.parent.parent)
 sys.path.insert(0, _ROOT)
 
+from cabinet.scripts.lib.work_graph import NodeStatus
 from framework.events.emitter import replay
 from framework.missions import claims
+from framework.missions.compiler import compile_from_yaml
 from framework.missions.session_bridge import get_next_task, format_task_for_session
 
 
@@ -349,6 +351,32 @@ class TestPullClaims:
         assert len(started) == 1
         assert started[0]["payload"]["task_id"] == task["task_id"]
         assert started[0]["payload"]["outcome_id"] == "outcome-001"
+
+    def test_pull_emits_ids_and_a_recompile_overlays_in_progress(self, one_task_root):
+        """A §2 sensor 4, END TO END: the pull's payload is the shape the
+        overlay keys on.
+
+        The two halves are proved apart elsewhere — the started event carries
+        both ids, and an unexpired lease holds a node IN_PROGRESS — but neither
+        proves the SEAM. The overlay matches on ``payload.outcome_id`` and
+        ``payload.task_id`` together (compiler.py); a pull that emitted the
+        right ids under the wrong keys, or the node id where the overlay wants
+        the outcome id, would pass both halves and still never take the task
+        out of ``ready_tasks()``. So this one goes through the real compile.
+
+        RED before this unit: ``get_next_task`` emitted nothing at all, so the
+        recompiled node stays PENDING and stays ready.
+        """
+        task = get_next_task("engineering", cabinet_root=str(one_task_root))
+        assert task is not None
+
+        outcomes_file = one_task_root / "instance" / "config" / "outcomes.yml"
+        missions = compile_from_yaml(
+            outcomes_file, actor="test", roles=None, emit_event=False,
+        )
+        graph = missions[0]["work_graph"]
+        assert graph.nodes[task["task_id"]].status is NodeStatus.IN_PROGRESS
+        assert task["task_id"] not in [node.id for node in graph.ready_tasks()]
 
     def test_second_holder_gets_nothing_while_the_claim_is_live(
         self, one_task_root, monkeypatch,

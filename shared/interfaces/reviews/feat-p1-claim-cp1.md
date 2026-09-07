@@ -158,3 +158,64 @@ that are invariant-level (`test_session_bridge.py`, `test_compiler.py`) were
 therefore run in a second red tree that keeps the new module and reverts ONLY
 `session_bridge.py` and `compiler.py` to master bytes: 15 failures, each for the
 invariant's own reason rather than for an absent import.
+
+---
+
+## cp3 — re-verification on master `c479b5f5` (2026-09-07, later still)
+
+Master moved again (PR #368 landed on top of #367/#369). The branch was merged
+forward and the whole proof re-run on that base: a pristine clone of
+`c479b5f5` for the pre-existing failing set, per-module RED trees for every
+sensor, and the full battery on the branch. Nothing was carried over from cp1
+or cp2.
+
+**Two defects found in the sensor set, both fixed here.**
+
+1. **`TestLiveClaimsAreNotUnassigned` was green in both directions.** Both of
+   its arms passed against MASTER's `supervisor.py` as long as the branch's
+   `compiler.py` was present, because the status overlay already lifts a
+   live-claimed node out of `ready_tasks()` — so the arms were measuring the
+   compiler and asserting nothing about the supervisor's own filter. That is
+   the same disabled-sensor class cp2 found in the renewal arm.
+
+   Armed with `test_the_supervisor_filters_a_claim_the_overlay_cannot_see`.
+   The overlay matches on `(outcome_id, task_id)` TOGETHER; a claim is keyed
+   on the task id ALONE. A claim whose payload names a different outcome is
+   therefore invisible to the overlay and live to the claim plane — which is
+   precisely why push needs a filter of its own rather than trusting the
+   compile. The arm asserts the divergence exists (the node is still in
+   `ready_tasks()`) before asserting the supervisor excludes it, so it cannot
+   quietly revert to measuring the compiler. Red on master bytes:
+   `AssertionError: assert 'outcome-test-task-001' not in {'outcome-test-task-001'}`.
+   The two behavioural arms stay, relabelled in the class docstring as what
+   they are: end-to-end regression guards, not proof of this line.
+
+2. **Contract sensor A §2 #4 had no end-to-end arm.** Its two halves were
+   proved apart — the started event carries both ids, and an unexpired lease
+   holds a node IN_PROGRESS — but nothing crossed the SEAM. A pull that emitted
+   the right ids under the wrong keys would pass both halves and still never
+   take the task out of `ready_tasks()`.
+   `TestPullClaims::test_pull_emits_ids_and_a_recompile_overlays_in_progress`
+   now pulls through `get_next_task` and recompiles the same outcomes file.
+   Red on master `session_bridge.py`:
+   `AssertionError: assert <NodeStatus.PENDING> is <NodeStatus.IN_PROGRESS>`.
+
+**Honestly labelled, not counted as sensors.** Four arms are green in both
+directions BY DESIGN and are named as guards rather than sensors on the PR:
+`test_unexpired_claim_is_in_progress` and `test_completion_after_a_claim_still_wins`
+(the pre-change overlay held every started node IN_PROGRESS, so both were
+already true), `test_a_stale_renewal_cannot_resurrect_a_completed_node` and
+`test_the_legacy_started_shape_keeps_its_old_behaviour` (defences on code paths
+that did not exist before), the three negative arms of the single-holder
+fallback, and `test_the_union_checker_is_not_vacuous` (a meta-test on the 3.9
+checker, exercised against a synthetic offender — green both ways is its
+correct shape).
+
+**Pre-existing failing set re-measured on `c479b5f5`, verdict by verdict.** It
+gained one row against the set proved earlier in the week:
+`cabinet/scripts/tests/test_killswitch_test_fence.py::test_emergency_stop_writers_cannot_reach_an_unfenced_control_plane`,
+which fails on the PRISTINE master clone on this host with
+`assert 'noop-unobservable-redis' == 'noop-sanctioned-resume'` from the
+watchdog suite it re-runs under the officer runtime's environment. It is a
+host/redis-environment failure on master bytes, untouched by this branch, and
+the branch's failing set is identical to master's.

@@ -400,10 +400,45 @@ class TestCli:
 class TestLiveClaimsAreNotUnassigned:
     """A task somebody holds is not unassigned, whatever the ledger says.
 
-    RED before: the supervisor could not see claims at all — there were none —
-    so a push would re-route work already under way and two holders would
-    arrive at the same node.
+    WHICH ARM CARRIES THE INVARIANT, stated because it is not the obvious one.
+    The compiler's status overlay already lifts a live-claimed node out of
+    ``ready_tasks()``, so the two behavioural arms below pass with or without
+    the supervisor's own filter — they are REGRESSION GUARDS on the end-to-end
+    behaviour, not proof of this line. The armed arm is
+    ``test_the_supervisor_filters_a_claim_the_overlay_cannot_see``: the overlay
+    matches on ``(outcome_id, task_id)`` together while a claim is keyed on the
+    task id alone, so a claim naming a different outcome is invisible to the
+    overlay and live to the claim plane. That divergence is the whole reason
+    push needs a filter of its own rather than trusting the compile, and only
+    the supervisor's line can close it.
     """
+
+    def test_the_supervisor_filters_a_claim_the_overlay_cannot_see(
+        self, outcomes_yml, seeded_roles,
+    ):
+        """RED before: the node is routed while somebody holds it."""
+        from framework.missions import claims
+
+        before = find_unassigned_ready_tasks(outcomes_path=outcomes_yml)
+        assert before, "fixture must offer at least one routable task"
+        target = before[0]
+
+        # A live claim the OVERLAY cannot apply: its payload names another
+        # outcome, so `_apply_status_from_events` skips it and the node stays
+        # in ready_tasks(). `live_claims()` is keyed on the task id and sees it.
+        held = claims.claim(target["task_id"], "outcome-somewhere-else", "holder-1")
+        assert held is not None
+        from framework.missions.compiler import compile_from_yaml
+        graph = compile_from_yaml(
+            outcomes_yml, actor="test", roles=None, emit_event=False,
+        )[0]["work_graph"]
+        assert target["task_id"] in {node.id for node in graph.ready_tasks()}, (
+            "the overlay was expected NOT to see this claim — if it does, this "
+            "arm is measuring the compiler again"
+        )
+
+        after = find_unassigned_ready_tasks(outcomes_path=outcomes_yml)
+        assert target["task_id"] not in {row["task_id"] for row in after}
 
     def test_a_live_claim_is_excluded_from_routing(self, outcomes_yml, seeded_roles):
         from framework.missions import claims
