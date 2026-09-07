@@ -144,6 +144,10 @@ def test_copies_marks_emits(hatched):
     assert payload["door"] == "web" and payload["principal"] == "session-1"
     assert payload["criteria_count"] == 1
     assert payload["root"] == str(hatched)
+    # A1.7: the line the operator reads afterwards is "Taking on: <name>", and
+    # the receipt is the only thing that says a tap happened — so the name has
+    # to be ON it, not fetched back out of a file anybody could have edited.
+    assert payload["name"] == "Card acme-001"
 
 
 def test_idempotent_second_call(hatched):

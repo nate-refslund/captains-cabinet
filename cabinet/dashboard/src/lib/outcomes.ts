@@ -69,7 +69,8 @@ export interface LatestRatified {
  *
  * Read off the RECEIPTS, not off the outcomes file: the receipt is what says
  * a tap happened, through which door, and when — the file only says the row is
- * active, which it would also say if somebody had edited it by hand.
+ * active, which it would also say if somebody had edited it by hand. The card's
+ * name rides on the receipt for the same reason.
  */
 export async function latestRatified(
   receipts?: WorkReceipt[]
@@ -83,7 +84,9 @@ export async function latestRatified(
   if (!newest || !newest.outcome_id) return null
   return {
     outcomeId: newest.outcome_id,
-    line: takingOnLine(newest.outcome_id),
+    // The NAME, not the id: A1.7 asks for "Taking on: <name>", and the name
+    // rides on the receipt precisely so this line need not re-read a file.
+    line: takingOnLine(newest.outcome_id, newest.name),
     ts: newest.ts,
     door: newest.door,
     actor: newest.actor,

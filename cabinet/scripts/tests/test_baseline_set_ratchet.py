@@ -258,8 +258,11 @@ class TestTheNamedResidual:
         # line plus a raised ceiling bought it invisibly.
         assert report["surplus_members"]["framework_production_modules"] == [
             "framework/authority/ownership.py",
+            "framework/missions/receipts.py",
             "framework/onboarding/estate.py",
             "framework/onboarding/salience.py",
+            "framework/outcomes/__init__.py",
+            "framework/outcomes/ratify.py",
             "framework/sources/local.py",
         ], "the planted module must NOT be surplus — that is the whole purchase"
 

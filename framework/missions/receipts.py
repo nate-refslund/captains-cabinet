@@ -47,8 +47,11 @@ KINDS = (
     "update_rolled_back",
 )
 
+#: ``name`` is the ratified card's own name — the one field on this surface a
+#: person reads rather than follows, and the reason a home-card line can name
+#: the outcome without going back to a file somebody could have edited.
 _FIELDS = ("outcome_id", "task_id", "claim_id", "holder", "door",
-           "evidence_path")
+           "evidence_path", "name")
 
 
 def _text(value: Any) -> Optional[str]:

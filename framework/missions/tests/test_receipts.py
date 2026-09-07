@@ -51,7 +51,7 @@ def test_shape_of_a_payloadless_row_is_all_absent_never_invented():
     assert row is not None
     assert row["kind"] == "started" and row["actor"] == "coordinator"
     for field in ("outcome_id", "task_id", "claim_id", "holder", "door",
-                  "evidence_path"):
+                  "evidence_path", "name"):
         assert row[field] is None, field
 
 
@@ -68,7 +68,7 @@ def test_empty_ledger_is_an_honest_empty():
 def test_receipts_reads_the_real_ledger_in_order():
     emitter.emit("captain_outcome_ratified", actor="captain", payload={
         "outcome_id": "acme-001", "proposal_id": "acme-001", "door": "web",
-        "principal": "session-1"})
+        "principal": "session-1", "name": "Ship the storefront"})
     emitter.emit("work_item_started", actor="coordinator", payload={
         "outcome_id": "acme-001", "task_id": "acme-001-task-001",
         "holder": "coordinator", "claim_id": "c-1"})
@@ -81,6 +81,8 @@ def test_receipts_reads_the_real_ledger_in_order():
     assert [r["kind"] for r in rows] == ["ratified", "started", "completed"], (
         "role_created is not on this surface and must not appear")
     assert rows[0]["door"] == "web" and rows[0]["actor"] == "captain"
+    # A1.7 — the name a home-card line renders rides on the receipt.
+    assert rows[0]["name"] == "Ship the storefront"
     assert rows[1]["holder"] == "coordinator" and rows[1]["claim_id"] == "c-1"
     assert rows[2]["evidence_path"] == "shared/interfaces/proof.md"
 

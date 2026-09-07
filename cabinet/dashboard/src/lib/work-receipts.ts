@@ -43,6 +43,8 @@ export interface WorkReceipt {
   holder: string | null
   door: string | null
   evidence_path: string | null
+  /** The ratified card's own name, when the receipt carried one. */
+  name?: string | null
 }
 
 export interface WorkReceiptsReading {

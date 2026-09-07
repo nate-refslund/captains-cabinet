@@ -117,6 +117,23 @@ describe('A1.5 — a not-live store must not stop the tap', () => {
     expect(source).toMatch(/^\s*import[^\n]*['"]@\/lib\/local-exec['"]/m)
   })
 
+  it('is a real hazard: the gated transport REFUSES with REDIS_URL unset', async () => {
+    // The PREMISE of this whole section, proved against the real module rather
+    // than assumed. Without this arm the two arms around it are a pair of
+    // assertions about a danger nobody has shown exists — and a control whose
+    // hazard is hypothetical is not a control.
+    vi.resetModules()
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('REDIS_URL', '')
+    vi.stubEnv('MOCK_DATA', '')
+    const real = await vi.importActual<typeof import('@/lib/docker')>('@/lib/docker')
+    // By its NAME, not merely "it threw": a rejection for a missing binary
+    // would prove nothing about the store posture.
+    await expect(real.dockerExec('echo hi')).rejects.toThrow(
+      real.CommandNotExecutedError
+    )
+  })
+
   it('succeeds with REDIS_URL unset on a production build', async () => {
     vi.resetModules()
     vi.stubEnv('NODE_ENV', 'production')

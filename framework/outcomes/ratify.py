@@ -468,6 +468,12 @@ def _ratify_locked(base: Path, pid: str, *, door: str, principal: str,
     payload = {
         "outcome_id": pid,
         "proposal_id": pid,
+        # The card's own name, carried onto the receipt so the line an operator
+        # reads afterwards can say "Taking on: <name>" (A1.7) rather than
+        # "Taking on: <id>". A surface that had to go back to the outcomes file
+        # for it would be reading a file anybody could have edited; the receipt
+        # is the thing that says a tap happened, so the name belongs on it.
+        "name": str(row.get("name") or ""),
         "door": door,
         "principal": principal,
         "proposed_digest": recorded_digest,

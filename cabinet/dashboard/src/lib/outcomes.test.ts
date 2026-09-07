@@ -34,6 +34,7 @@ function receipt(over: Partial<WorkReceipt>): WorkReceipt {
   return {
     ts: null, kind: 'ratified', actor: 'captain', event_id: 'e', outcome_id: null,
     task_id: null, claim_id: null, holder: null, door: null, evidence_path: null,
+    name: null,
     ...over,
   } as WorkReceipt
 }
@@ -93,14 +94,26 @@ describe('the home-card line (A1.7)', () => {
     const rows = [
       receipt({ outcome_id: 'acme-001', door: 'terminal', ts: '2026-09-01T00:00:00Z' }),
       receipt({ kind: 'started', outcome_id: 'acme-001' }),
-      receipt({ outcome_id: 'acme-002', door: 'web', ts: '2026-09-02T00:00:00Z' }),
+      receipt({
+        outcome_id: 'acme-002',
+        name: 'Ship the storefront',
+        door: 'web',
+        ts: '2026-09-02T00:00:00Z',
+      }),
     ]
     const latest = await latestRatified(rows)
     expect(latest).toMatchObject({
       outcomeId: 'acme-002',
-      line: 'Taking on: acme-002',
+      // A1.7 asks for the NAME. A line reading "Taking on: acme-002" is the
+      // id wearing the sentence's clothes.
+      line: 'Taking on: Ship the storefront',
       door: 'web',
     })
+  })
+
+  it('falls back to the id when the receipt carried no name', async () => {
+    const latest = await latestRatified([receipt({ outcome_id: 'acme-002', door: 'web' })])
+    expect(latest?.line).toBe('Taking on: acme-002')
   })
 
   it('is rendered by the live home card', () => {

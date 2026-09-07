@@ -118,6 +118,93 @@ def test_no_manual_ratify_text():
         % offenders)
 
 
+#: Adjacent string literals across a source-line break. Two of the three
+#: surfaces wrote the dead sentence as `"… move the row into "` +
+#: `"instance/config/outcomes.yml …"`, so a LINE-WISE grep sees neither half
+#: and reads as compliance — the sensor would have stayed green through a
+#: straight revert of either file. Collapsing the seam is what makes the arm
+#: above able to fail for the reason it names.
+_SEAM = re.compile(r'(["\'])[ \t]*\n[ \t]*\1')
+
+
+def _seamless(text: str) -> str:
+    return _SEAM.sub("", text)
+
+
+def test_the_seam_collapse_actually_joins_a_split_sentence():
+    """The degenerate end of the arm below: a collapse that joins nothing
+    turns a real hit back into a silent pass."""
+    split = '    "… move the row into "\n    "instance/config/outcomes.yml with"\n'
+    assert _DEAD.search(split) is None, "the line-wise grep cannot see this"
+    assert _DEAD.search(_seamless(split)), "the collapse must expose it"
+
+
+def _oracle_joined() -> str:
+    """The oracle as it looks AFTER the seam collapse — one source literal.
+
+    The healer's own pattern is the single sanctioned copy of the dead
+    sentence in the tree, and collapsing seams fuses its four literals into
+    one, so the line-exact exemption above no longer recognises it. Rebuilt
+    from the healer's constant rather than pasted, so a healer whose text
+    drifts loses its exemption instead of silently keeping it.
+    """
+    para = getattr(genesis, "_STALE_RATIFY_PARAGRAPH", "")
+    return '"' + para.replace("\n", "\\n") + '"' if para else ""
+
+
+def test_no_manual_ratify_text_across_source_line_breaks():
+    offenders = []
+    exempted = 0
+    for path in _sweep_paths():
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        joined = _seamless(text)
+        oracle = _oracle_joined()
+        if oracle:
+            exempted += joined.count(oracle)
+            joined = joined.replace(oracle, "<the healer\'s own pattern>")
+        for match in _DEAD.finditer(joined):
+            fragment = joined[max(0, match.start() - 60):match.end() + 40]
+            offenders.append("%s: …%s…" % (path.relative_to(_REPO), fragment))
+    assert offenders == [], (
+        "these shipped surfaces still tell the operator to ratify by hand "
+        "(the sentence split across source lines): %s" % offenders)
+    # The exemption must have been USED exactly once — the healer's pattern.
+    # Zero would mean the exemption is inert and the arm is only passing
+    # because the thing it exempts has drifted out of recognition.
+    assert exempted == 1, (
+        "the healer's pattern was exempted %d times, expected exactly 1"
+        % exempted)
+
+
+def test_no_rendered_surface_says_move_the_row():
+    """The ARTIFACT half: what these surfaces actually produce.
+
+    A source grep polices what is written down; this polices what an operator
+    is handed. A surface that composed the dead sentence out of pieces, or
+    from data, would pass every grep above and still tell them to open a file.
+    """
+    rendered = {
+        "proposals header":
+            genesis._PROPOSALS_HEADER.format(marker=genesis.GENERATED_MARKER),
+        "advisor action":
+            advisor.detect_aging_drafts(_hatched_with_old_draft(),
+                                        now=None)[0]["action"],
+        "briefing receipt": Path(
+            run_briefing._run_local_render(genesis_fn=lambda: [])
+            ["send"]["receipt_path"]).read_text(encoding="utf-8"),
+    }
+    assert len(rendered) == 3
+    for label, text in rendered.items():
+        assert text.strip(), "%s rendered nothing — this arm checks nothing" % label
+        assert not _DEAD.search(text), "%s still says move the row: %r" % (
+            label, text[:300])
+        assert genesis.RATIFY_HINT in text, (
+            "%s carries no ratify instruction at all" % label)
+
+
 def test_the_sanctioned_phrase_is_present_on_each_surface():
     """POSITIVE arm — the half a negative grep can never supply."""
     hint = getattr(genesis, "RATIFY_HINT", None)
