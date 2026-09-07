@@ -4,7 +4,8 @@ structural-vs-semantic classification, jsonschema cross-check, M4 pin.
 The registry resolves domain payload schemas from per-domain JSON files at
 framework/schemas/domains/<domain>/<name>.v<version>.json. It is LOOKUP-ONLY:
 no runtime registration, no mutation, and it CANNOT extend the central
-VALID_EVENT_TYPES enum — M4 is the mechanical proof (census stays 91/91).
+VALID_EVENT_TYPES enum — M4 is the mechanical proof (the enum is the same
+frozenset before and after a resolve, whatever its size).
 
 Structural validation is the Phase-0 stdlib-interpreter pattern
 (framework/evolution/contracts.py precedent) with a jsonschema reference
@@ -172,15 +173,25 @@ def test_resolve_returns_fresh_copies_mutation_cannot_poison():
 
 def test_m4_central_enum_untouched():
     """M4 mechanical proof: the registry absorbs domain vocabulary WITHOUT
-    growing the central enum — census stays 91/91 (ground @cbf52e49; S0
-    re-verified) and the domain's event types stay disjoint from it."""
+    growing the central enum, and the domain's event types stay disjoint.
+
+    THE PIN IS THE IDENTITY, NOT THE SIZE. This test used to assert the enum
+    held exactly 91 members (ground @cbf52e49), which made it red for a reason
+    it does not name: the enum legitimately grows through the expansion
+    registry — a governance route the registry under test cannot reach — and a
+    size literal cannot tell that apart from the failure M4 exists to catch.
+    It went red on 2026-09-07 when the update path added three receipts
+    (cabinet_update_applied/_refused/_rolled_back) through that registry, none
+    of them via any schema resolve. What M4 actually claims is that a resolve
+    leaves the enum BYTE-IDENTICAL, so that is what is asserted; the count
+    ceiling is owned by cognitive-architecture-contract.yml, which reds on an
+    unratified member and is the sensor for that property."""
     from framework.events.emitter import VALID_EVENT_TYPES
     before = frozenset(VALID_EVENT_TYPES)
-    assert len(before) == 91
     R.resolve("tasks", "task-event", 1)
     R.event_type_known("tasks.status_changed")
     from framework.events.emitter import VALID_EVENT_TYPES as after
-    assert after == before and len(after) == 91
+    assert after == before, "a registry lookup changed the central enum"
     assert R.event_types_for("tasks", "task-event", 1).isdisjoint(after)
 
 
