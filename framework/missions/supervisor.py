@@ -52,6 +52,7 @@ if _FRAMEWORK_ROOT not in sys.path:
     sys.path.insert(0, _FRAMEWORK_ROOT)
 
 from framework.events.emitter import emit, replay
+from framework.missions import claims as _claims
 from framework.missions.compiler import compile_from_yaml
 from framework.missions.session_bridge import _outcomes_path
 from framework.roles.lifecycle import list_roles
@@ -192,10 +193,18 @@ def find_unassigned_ready_tasks(
         role.get("slug") for role in list_roles(status="active") if role.get("slug")
     }
 
+    # A task somebody is actively holding is not unassigned, whatever the
+    # assignment ledger says. Push and pull have to honour ONE claim or the
+    # nudge re-routes work that is already under way; the receiver still claims
+    # for itself through the pull path, so this is a filter, not a handover.
+    held = _claims.live_claims()
+
     decisions: list[dict[str, Any]] = []
     for mission in missions:
         graph = mission["work_graph"]
         for node in graph.ready_tasks():
+            if node.id in held:
+                continue
             if not node.assigned_role:
                 # No officer to route to — Captain may need to add a role
                 # with matching capabilities. Surface that gap later via OVI;

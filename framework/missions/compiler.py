@@ -36,6 +36,7 @@ if _FRAMEWORK_ROOT not in sys.path:
 
 from cabinet.scripts.lib.work_graph import WorkGraph, WorkNode, NodeStatus, verification_is_independent
 from framework.events.emitter import emit, replay
+from framework.missions import claims as _claims
 from framework.roles.lifecycle import list_roles, get_effective_capabilities
 
 try:
@@ -187,6 +188,24 @@ def _match_role_for_task(description: str, roles: list[dict[str, Any]]) -> str |
     return best_role
 
 
+def _sole_role_slug(roles: list[dict[str, Any]]) -> str | None:
+    """The one active role's slug, when the roster holds exactly one.
+
+    SINGLE-HOLDER FALLBACK. Keyword matching answers "which of several holders
+    owns this?" — a question a one-holder roster does not have. Real declared
+    criteria are plain sentences, so on a roster of one they match nothing and
+    the node lands with no owner at all: the operator's own ratified purpose
+    compiles into work nobody is assigned. With exactly one active role there
+    is only one honest answer and this returns it. With two or more the
+    question is real again, no answer is derivable, and the unowned node stays
+    unowned — a recorded gap, never a guess.
+    """
+    slugs = [role.get("slug") for role in roles if role.get("slug")]
+    if len(slugs) == 1:
+        return slugs[0]
+    return None
+
+
 def _infer_dependencies(criteria: list[str]) -> list[tuple[int, int]]:
     """Infer task dependencies from measurable criteria ordering.
 
@@ -240,6 +259,8 @@ def _infer_dependencies(criteria: list[str]) -> list[tuple[int, int]]:
 
 _COMPLETION_EVENT_TYPES: list[str] = [
     "work_item_started",
+    "work_item_claim_renewed",
+    "work_item_claim_released",
     "work_item_completed",
     "work_item_failed",
     "work_item_verified",
@@ -250,14 +271,25 @@ _EVENT_TYPE_TO_STATUS: dict[str, NodeStatus] = {
     # out of ready_tasks() and stops being re-injected before its completion
     # is recorded. Later events (completed/failed/verified) still override it —
     # they come after `started` in the ledger and latest-event-wins.
+    #
+    # IN_PROGRESS IS NOW LEASED. A started event carrying an `expires_at` holds
+    # the node IN_PROGRESS only while that lease runs; past it the node falls
+    # back to PENDING and ready_tasks() resurfaces it, which is the whole of
+    # how a killed holder's task comes back without a daemon. A renewal moves
+    # the expiry; a release ends it early. A started event with NO expires_at
+    # is the legacy hook shape and keeps the old unconditional behaviour.
     "work_item_started": NodeStatus.IN_PROGRESS,
+    "work_item_claim_renewed": NodeStatus.IN_PROGRESS,
+    "work_item_claim_released": NodeStatus.PENDING,
     "work_item_completed": NodeStatus.DONE,
     "work_item_failed": NodeStatus.FAILED,
     "work_item_verified": NodeStatus.DONE,  # verified implies done
 }
 
 
-def _apply_status_from_events(graph: WorkGraph, outcome_id: str) -> int:
+def _apply_status_from_events(
+    graph: WorkGraph, outcome_id: str, now: Any = None
+) -> int:
     """Overlay lifecycle status onto an in-memory work graph by replaying events.
 
     Reads work_item_started / work_item_completed / work_item_failed /
@@ -269,17 +301,26 @@ def _apply_status_from_events(graph: WorkGraph, outcome_id: str) -> int:
     Args:
         graph: the in-memory WorkGraph (mutated in place)
         outcome_id: only events whose payload.outcome_id matches are applied
+        now: the moment leases are measured against (defaults to UTC now)
 
     Returns:
-        Number of nodes whose status was changed.
+        Number of state transitions applied (a node that moves twice counts
+        twice — the historical meaning of this number, kept because callers
+        read it as "did the replay do anything", not as a node count).
     """
     events = replay(event_types=_COMPLETION_EVENT_TYPES)
     if not events:
         return 0
 
+    changed = 0
+
+    # Which nodes are held by a lease, and until when. `None` means a started
+    # event with no expiry (the legacy shape) — unconditionally IN_PROGRESS,
+    # exactly as before leases existed.
+    leases: dict[str, Any] = {}
+
     # Events come back in file order (chronological per day, days concatenated
     # in sorted order). Apply in order so the latest event wins.
-    changed = 0
     for event in events:
         payload = event.get("payload") or {}
         if payload.get("outcome_id") != outcome_id:
@@ -287,7 +328,13 @@ def _apply_status_from_events(graph: WorkGraph, outcome_id: str) -> int:
         task_id = payload.get("task_id")
         if not task_id or task_id not in graph.nodes:
             continue
-        new_status = _EVENT_TYPE_TO_STATUS.get(event["event_type"])
+        event_type = event["event_type"]
+        # A renewal only moves an expiry that a started event opened; it never
+        # opens one of its own. Without this a stale renewal arriving after a
+        # completion would put a DONE node back IN_PROGRESS.
+        if event_type == "work_item_claim_renewed" and task_id not in leases:
+            continue
+        new_status = _EVENT_TYPE_TO_STATUS.get(event_type)
         if new_status is None:
             continue
         node = graph.nodes[task_id]
@@ -295,6 +342,14 @@ def _apply_status_from_events(graph: WorkGraph, outcome_id: str) -> int:
         if status_changed:
             node.status = new_status
             changed += 1
+
+        if event_type == "work_item_started":
+            leases[task_id] = payload.get("expires_at")
+        elif event_type == "work_item_claim_renewed":
+            if payload.get("expires_at"):
+                leases[task_id] = payload["expires_at"]
+        else:
+            leases.pop(task_id, None)
 
         # Track verification flag independently of status. A node may already
         # be DONE from a prior work_item_completed event when a subsequent
@@ -320,6 +375,24 @@ def _apply_status_from_events(graph: WorkGraph, outcome_id: str) -> int:
                 node.verification_passed = False
                 if not status_changed:
                     changed += 1
+
+    # THE LEASE FIX-UP. A node is IN_PROGRESS only while its claim is unexpired.
+    # Past the expiry it drops back to PENDING, so ready_tasks() resurfaces it
+    # and a second holder can take it over — which is how a killed worker's task
+    # comes back with no timer, no daemon and no heartbeat. Deliberately a
+    # fix-up over the FINAL expiry rather than a per-event test: only the last
+    # renewal in the chain decides whether the lease is still running.
+    moment = now or _claims.utcnow()
+    for task_id, expires_at in leases.items():
+        node = graph.nodes[task_id]
+        if node.status is not NodeStatus.IN_PROGRESS:
+            continue
+        if expires_at is None:
+            continue  # legacy started shape — no lease to run out
+        if _claims.is_expired(expires_at, moment):
+            node.status = NodeStatus.PENDING
+            changed += 1
+
     return changed
 
 
@@ -376,7 +449,11 @@ def compile_outcome(
         # owner_role (parent) or assigned_role (convergence) — fall back to
         # capability-keyword matching when neither explicit.
         explicit_owner = crit.get("owner_role") or crit.get("assigned_role")
-        assigned_role = explicit_owner or _match_role_for_task(title, roles)
+        assigned_role = (
+            explicit_owner
+            or _match_role_for_task(title, roles)
+            or _sole_role_slug(roles)
+        )
 
         # acceptance_criteria can be a string (parent) or list (convergence)
         ac = crit.get("acceptance_criteria")

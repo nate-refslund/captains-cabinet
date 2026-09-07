@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,7 @@ from framework.missions.compiler import (
     _apply_status_from_events,
 )
 from framework.events.emitter import emit
+from framework.missions import claims
 from cabinet.scripts.lib.work_graph import WorkGraph, WorkNode, NodeStatus
 
 
@@ -880,3 +882,201 @@ class TestRichCriteria:
         assert "operations" in payload["verifier_roles"]
         assert "low" in payload["risk_levels"]
         assert payload["captain_attention_estimate"] == 0.1
+
+
+# ---------------------------------------------------------------------------
+# Tests: the status overlay is LEASED (A2.6)
+# ---------------------------------------------------------------------------
+
+
+class TestLeasedInProgress:
+    """A started event holds a node IN_PROGRESS only while its claim runs.
+
+    RED before: `work_item_started` overlaid IN_PROGRESS unconditionally and
+    `work_item_claim_released` was not even a registered event type, so a task
+    whose holder was killed stayed IN_PROGRESS for ever and never came back to
+    ready_tasks().
+    """
+
+    def _graph(self):
+        graph = WorkGraph()
+        graph.add_node(
+            WorkNode(
+                id="outcome-lease-task-000",
+                description="Do the thing",
+                assigned_role="engineering",
+                status=NodeStatus.PENDING,
+                verification_criteria=["done"],
+            )
+        )
+        return graph
+
+    def _start(self, expires_in_s):
+        moment = claims.utcnow()
+        emit("work_item_started", actor="engineering", payload={
+            "task_id": "outcome-lease-task-000",
+            "outcome_id": "outcome-lease",
+            "claim_id": "token-1",
+            "holder": "holder-1",
+            "started_at": moment.isoformat(),
+            "lease_s": abs(expires_in_s),
+            "expires_at": (moment + timedelta(seconds=expires_in_s)).isoformat(),
+        })
+
+    def test_unexpired_claim_is_in_progress(self):
+        graph = self._graph()
+        self._start(900)
+        _apply_status_from_events(graph, "outcome-lease")
+        assert graph.nodes["outcome-lease-task-000"].status is NodeStatus.IN_PROGRESS
+        assert graph.ready_tasks() == []
+
+    def test_expired_claim_falls_back_to_pending_and_is_ready_again(self):
+        graph = self._graph()
+        self._start(-1)
+        _apply_status_from_events(graph, "outcome-lease")
+        assert graph.nodes["outcome-lease-task-000"].status is NodeStatus.PENDING
+        assert [n.id for n in graph.ready_tasks()] == ["outcome-lease-task-000"]
+
+    def test_renewal_keeps_it_in_progress_past_the_original_expiry(self):
+        graph = self._graph()
+        self._start(-1)  # the original lease has already run out
+        emit("work_item_claim_renewed", actor="engineering", payload={
+            "task_id": "outcome-lease-task-000",
+            "outcome_id": "outcome-lease",
+            "claim_id": "token-1",
+            "holder": "holder-1",
+            "lease_s": 900,
+            "expires_at": (claims.utcnow() + timedelta(seconds=900)).isoformat(),
+            "renewals": 1,
+        })
+        _apply_status_from_events(graph, "outcome-lease")
+        assert graph.nodes["outcome-lease-task-000"].status is NodeStatus.IN_PROGRESS
+
+    def test_release_returns_it_to_pending_while_the_lease_still_runs(self):
+        graph = self._graph()
+        self._start(900)
+        emit("work_item_claim_released", actor="engineering", payload={
+            "task_id": "outcome-lease-task-000",
+            "outcome_id": "outcome-lease",
+            "claim_id": "token-1",
+            "holder": "holder-1",
+            "reason": "released",
+        })
+        _apply_status_from_events(graph, "outcome-lease")
+        assert graph.nodes["outcome-lease-task-000"].status is NodeStatus.PENDING
+        assert [n.id for n in graph.ready_tasks()] == ["outcome-lease-task-000"]
+
+    def test_completion_after_a_claim_still_wins(self):
+        graph = self._graph()
+        self._start(900)
+        emit("work_item_completed", actor="engineering", payload={
+            "task_id": "outcome-lease-task-000",
+            "outcome_id": "outcome-lease",
+            "claim_id": "token-1",
+            "holder": "holder-1",
+        })
+        _apply_status_from_events(graph, "outcome-lease")
+        assert graph.nodes["outcome-lease-task-000"].status is NodeStatus.DONE
+
+    def test_a_stale_renewal_cannot_resurrect_a_completed_node(self):
+        graph = self._graph()
+        self._start(900)
+        emit("work_item_completed", actor="engineering", payload={
+            "task_id": "outcome-lease-task-000",
+            "outcome_id": "outcome-lease",
+            "claim_id": "token-1",
+        })
+        emit("work_item_claim_renewed", actor="engineering", payload={
+            "task_id": "outcome-lease-task-000",
+            "outcome_id": "outcome-lease",
+            "claim_id": "token-1",
+            "expires_at": (claims.utcnow() + timedelta(seconds=900)).isoformat(),
+        })
+        _apply_status_from_events(graph, "outcome-lease")
+        assert graph.nodes["outcome-lease-task-000"].status is NodeStatus.DONE
+
+    def test_the_legacy_started_shape_keeps_its_old_behaviour(self):
+        """No expires_at, no claim_id — the pre-lease hook shape."""
+        graph = self._graph()
+        emit("work_item_started", actor="engineering", payload={
+            "task_id": "outcome-lease-task-000",
+            "outcome_id": "outcome-lease",
+        })
+        _apply_status_from_events(graph, "outcome-lease")
+        assert graph.nodes["outcome-lease-task-000"].status is NodeStatus.IN_PROGRESS
+
+    def test_the_expiry_fix_up_is_counted_as_a_transition(self):
+        """PENDING → IN_PROGRESS → (lease runs out) → PENDING is two moves."""
+        graph = self._graph()
+        self._start(-1)
+        assert _apply_status_from_events(graph, "outcome-lease") == 2
+
+
+# ---------------------------------------------------------------------------
+# Tests: the single-holder fallback (A2.7)
+# ---------------------------------------------------------------------------
+
+
+class TestSingleHolderFallback:
+    """A roster of one has only one honest answer to "who owns this?".
+
+    RED before: a plain-sentence criterion matched no capability keyword and
+    the node compiled with assigned_role None — so the operator's own ratified
+    purpose produced work nobody was assigned, on the exact roster shape the
+    product ships (one coordinator).
+    """
+
+    OUTCOME = {
+        "id": "outcome-sole",
+        "name": "Keep the lights on",
+        "measurable_criteria": ["Answer every message within a day"],
+        "status": "active",
+    }
+
+    def test_one_role_takes_the_unmatched_node(self):
+        roles = [{"slug": "coordinator", "title": "Coordinator", "capabilities": []}]
+        mission = compile_outcome(dict(self.OUTCOME), roles=roles, emit_event=False)
+        node = mission["work_graph"].nodes["outcome-sole-task-000"]
+        assert node.assigned_role == "coordinator"
+
+    def test_two_roles_leave_it_unowned(self):
+        roles = [
+            {"slug": "coordinator", "title": "Coordinator", "capabilities": []},
+            {"slug": "second", "title": "Second", "capabilities": []},
+        ]
+        mission = compile_outcome(dict(self.OUTCOME), roles=roles, emit_event=False)
+        node = mission["work_graph"].nodes["outcome-sole-task-000"]
+        assert node.assigned_role is None
+
+    def test_zero_roles_leave_it_unowned(self):
+        mission = compile_outcome(dict(self.OUTCOME), roles=[], emit_event=False)
+        node = mission["work_graph"].nodes["outcome-sole-task-000"]
+        assert node.assigned_role is None
+
+    def test_an_explicit_owner_still_wins_on_a_one_role_roster(self):
+        outcome = {
+            "id": "outcome-sole-explicit",
+            "name": "Keep the lights on",
+            "measurable_criteria": [
+                {"title": "Answer messages", "owner_role": "somebody-else"}
+            ],
+            "status": "active",
+        }
+        roles = [{"slug": "coordinator", "title": "Coordinator", "capabilities": []}]
+        mission = compile_outcome(outcome, roles=roles, emit_event=False)
+        node = mission["work_graph"].nodes["outcome-sole-explicit-task-000"]
+        assert node.assigned_role == "somebody-else"
+
+    def test_a_keyword_match_still_wins_on_a_one_role_roster(self):
+        outcome = {
+            "id": "outcome-sole-kw",
+            "name": "Ship",
+            "measurable_criteria": ["Deploy the api endpoint"],
+            "status": "active",
+        }
+        roles = [
+            {"slug": "engineering", "title": "Eng", "capabilities": ["engineering"]},
+        ]
+        mission = compile_outcome(outcome, roles=roles, emit_event=False)
+        node = mission["work_graph"].nodes["outcome-sole-kw-task-000"]
+        assert node.assigned_role == "engineering"

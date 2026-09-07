@@ -390,3 +390,43 @@ class TestCli:
         # dry-run with no prior assignments — should have at least one decision
         assert len(decisions) >= 1
         assert all("task_id" in d for d in decisions)
+
+
+# ---------------------------------------------------------------------------
+# Push honours the same claim the pull takes
+# ---------------------------------------------------------------------------
+
+
+class TestLiveClaimsAreNotUnassigned:
+    """A task somebody holds is not unassigned, whatever the ledger says.
+
+    RED before: the supervisor could not see claims at all — there were none —
+    so a push would re-route work already under way and two holders would
+    arrive at the same node.
+    """
+
+    def test_a_live_claim_is_excluded_from_routing(self, outcomes_yml, seeded_roles):
+        from framework.missions import claims
+
+        before = find_unassigned_ready_tasks(outcomes_path=outcomes_yml)
+        assert before, "fixture must offer at least one routable task"
+        target = before[0]
+
+        held = claims.claim(target["task_id"], target["outcome_id"], "holder-1")
+        assert held is not None
+
+        after = find_unassigned_ready_tasks(outcomes_path=outcomes_yml)
+        assert target["task_id"] not in {row["task_id"] for row in after}
+
+    def test_an_expired_claim_is_routable_again(self, outcomes_yml, seeded_roles):
+        from datetime import timedelta
+
+        from framework.missions import claims
+
+        before = find_unassigned_ready_tasks(outcomes_path=outcomes_yml)
+        target = before[0]
+        past = claims.utcnow() - timedelta(seconds=3600)
+        claims.claim(target["task_id"], target["outcome_id"], "holder-1", now=past)
+
+        after = find_unassigned_ready_tasks(outcomes_path=outcomes_yml)
+        assert target["task_id"] in {row["task_id"] for row in after}
