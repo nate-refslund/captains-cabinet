@@ -52,11 +52,13 @@
 # to run, and a doctor gate would roll back every good update.
 #
 # TWO TEST SEAMS, both env-gated and both named here so neither is mistaken for
-# production behaviour. CABINET_UPDATE_TEST_KILL_AFTER=<n> makes the writer
-# SIGKILL itself after n files, so the resume path can be proven rather than
-# asserted. CABINET_UPDATE_TEST_HOLD_SECONDS=<n> holds the re-exec'd updater
-# before its first write, so "survives the death of the process that spawned
-# it" is a deterministic assertion instead of a race.
+# production behaviour. CABINET_UPDATE_TEST_KILL_AFTER=<n> models the updater
+# DYING mid-write — the writer SIGKILLs itself after n files and this process
+# follows it, deliberately WITHOUT rolling back, because a machine that lost
+# power leaves nobody to roll anything back and only that leaves the resume
+# path to prove. CABINET_UPDATE_TEST_HOLD_SECONDS=<n> holds the re-exec'd
+# updater before its first write, so "survives the death of the process that
+# spawned it" is a deterministic assertion instead of a race.
 #
 # Exit codes: 0 ok / 1 operational failure (gate red, rolled back) / 2 usage
 # / 3 refusal (locked path, digest mismatch, unreadable bundle) / 4 busy.
@@ -452,9 +454,20 @@ PYHEALTH
   # framework/events/emitter.replay and the /receipts page over it), so the
   # gate exercises THAT and the seam below is where a CLI plugs in when one
   # lands. Stated rather than quietly skipped.
+  # Written as explicit ifs, not `${VAR:-default}`: bash ends a parameter
+  # expansion at the FIRST unescaped `}`, so a default containing a brace (a
+  # python dict literal, say) leaks its tail into the command as literal text —
+  # and does so even when the variable IS set, which is the shape of bug that
+  # makes a gate red for a reason nobody can read.
   local receipts_cmd preflight_cmd
-  receipts_cmd="${CABINET_UPDATE_RECEIPTS_CMD:-$PY -c \"import json,sys; from framework.events.emitter import replay; json.dump({'receipts': len(replay())}, sys.stdout)\"}"
-  preflight_cmd="${CABINET_UPDATE_PREFLIGHT_CMD:-$PY cabinet/scripts/state-persistence-preflight.py --repo .}"
+  receipts_cmd="${CABINET_UPDATE_RECEIPTS_CMD:-}"
+  if [ -z "$receipts_cmd" ]; then
+    receipts_cmd="$PY -c 'import sys; from framework.events.emitter import replay; sys.stdout.write(str(len(replay())))'"
+  fi
+  preflight_cmd="${CABINET_UPDATE_PREFLIGHT_CMD:-}"
+  if [ -z "$preflight_cmd" ]; then
+    preflight_cmd="$PY cabinet/scripts/state-persistence-preflight.py --repo ."
+  fi
   if ! ( cd "$ROOT" && eval "$receipts_cmd" ) >>"$LOG" 2>&1; then
     log "gate: receipts leg RED — see $LOG"
     return 1
@@ -734,10 +747,23 @@ for path in json.load(open(sys.argv[1]))["locked_hits"]:
 
   write_state "{\"phase\":\"applying\",\"from_sha\":$(json_escape "$here"),\"to_sha\":$(json_escape "$sha"),\"snapshot\":$(json_escape "$(basename "$snap")"),\"started_at\":$(json_escape "$started"),\"door\":$(json_escape "$DOOR")}"
 
-  local kill_arg=()
-  [ -n "${CABINET_UPDATE_TEST_KILL_AFTER:-}" ] && kill_arg=(--kill-after "$CABINET_UPDATE_TEST_KILL_AFTER")
+  # THE KILL SEAM, and why it does NOT fall through to the rollback below. A
+  # failed write and a DEAD UPDATER are different events with different correct
+  # answers: a write that returns an error can be rolled back by the process
+  # that saw it, while a machine that lost power mid-apply leaves nobody to do
+  # anything. Only the second one exercises the resume path, so the seam models
+  # the second: the helper kills itself after N files and this process follows
+  # it, leaving `state.json` at `applying` with the snapshot on disk for the
+  # next apply or rollback to find.
+  if [ -n "${CABINET_UPDATE_TEST_KILL_AFTER:-}" ]; then
+    "$PY" "$BUNDLE_PY" apply-plan --root "$ROOT" --tree "$stage_tree" --plan "$plan_file" \
+      --kill-after "$CABINET_UPDATE_TEST_KILL_AFTER" >>"$LOG" 2>&1
+    log "test kill seam: the updater is stopping mid-apply, leaving state=applying"
+    kill -9 "$$" 2>/dev/null
+    exit 137
+  fi
   "$PY" "$BUNDLE_PY" apply-plan --root "$ROOT" --tree "$stage_tree" --plan "$plan_file" \
-    "${kill_arg[@]+"${kill_arg[@]}"}" >>"$LOG" 2>&1 \
+    >>"$LOG" 2>&1 \
     || roll_back_after "$snap" "$sha" "$here" "the write failed" "$skip_restart"
 
   "$PY" "$BUNDLE_PY" stamp-identity --root "$ROOT" --source-commit "$sha" \

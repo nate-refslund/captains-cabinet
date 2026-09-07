@@ -181,6 +181,57 @@ def _flatline_notice() -> str:
         return ""
 
 
+def _update_notice(root: "str | None" = None) -> str:
+    """ONE briefing line about the bytes this Cabinet is running, or "".
+
+    An installed Cabinet is an unpacked export with no version control in it,
+    so nothing on the box could ever say "a better version of me is sitting in
+    the inbox". The home card says it on the web door; this is the same
+    sentence on the door the Captain already reads every day.
+
+    Counts and a short commit only — never a changelog line, which is authored
+    text from somewhere else and has no business on a card surface. Reads the
+    updater's own files directly rather than shelling to its CLI: this runs
+    inside the briefing pass, and a briefing must never be able to hang on a
+    subprocess.
+
+    Fail-open in the strong sense: any error, and any install with no updater
+    at all, yields "" — an unaskable question is answered with silence, never
+    with "you are up to date"."""
+    import json
+    from pathlib import Path
+
+    try:
+        base = Path(root or os.environ.get("CABINET_ROOT")
+                    or Path(__file__).resolve().parents[2])
+        inbox = base / ".updates" / "inbox"
+        egg = base / "egg-manifest.json"
+        installed = (json.loads(egg.read_text(encoding="utf-8")).get("source_commit") or ""
+                     if egg.is_file() else "")
+        waiting = []
+        for manifest in (sorted(inbox.glob("*.manifest.json")) if inbox.is_dir() else []):
+            doc = json.loads(manifest.read_text(encoding="utf-8"))
+            sha = doc.get("source_sha") or ""
+            if sha and sha != installed and (inbox / (sha + ".tar.gz")).is_file():
+                waiting.append((doc.get("built_at") or "", sha, len(doc.get("files") or {})))
+        if waiting:
+            _, sha, count = max(waiting)
+            return ("An update is ready to take (%s, %d files) — open the home page "
+                    "and tap Apply" % (sha[:8], count))
+        state = json.loads((base / ".updates" / "state.json").read_text(encoding="utf-8"))
+        if state.get("phase") == "applied" and state.get("to_sha"):
+            return "Updated to %s: %s changes" % (
+                str(state["to_sha"])[:8], state.get("changed", 0))
+        if state.get("phase") == "rolled_back":
+            return ("An update was rolled back: %s"
+                    % (state.get("reason") or "it did not come up healthy"))
+        if state.get("phase") == "applying":
+            return "An update is being taken right now"
+    except Exception:  # noqa: BLE001
+        return ""
+    return ""
+
+
 def _plain_headline(gather: dict, digest: "dict | None") -> str:
     """One plain sentence for the card: counts only, NEVER item payload text
     (untrusted pipe content must not ride the card surface — the full body
@@ -211,6 +262,9 @@ def _plain_headline(gather: dict, digest: "dict | None") -> str:
     notice = _flatline_notice()
     if notice:
         head += f" ⚠️ {notice}"
+    update = _update_notice()
+    if update:
+        head += f" {update}."
     return head
 
 

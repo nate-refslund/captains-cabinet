@@ -17,8 +17,19 @@ describe('GET /api/health', () => {
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(body.service).toBe('cabinet-dashboard')
-    expect(Object.keys(body).sort()).toEqual(['ok', 'service', 'ts'])
+    // The closed key set gained two members with the update path (contract §5,
+    // A5.5). Both are still liveness-only — the commit the RUNNING BUILD was
+    // made from (baked at build time, next.config.ts `env`) and this process's
+    // own start time. The update health gate needs both: identity alone passes
+    // an OLD process that survived a failed restart and answers happily as the
+    // dashboard. Neither is config, state or a secret, and the set stays CLOSED
+    // so a third field cannot arrive here unnoticed.
+    expect(Object.keys(body).sort()).toEqual([
+      'ok', 'service', 'source_commit', 'started_at', 'ts',
+    ])
     expect(() => new Date(body.ts).toISOString()).not.toThrow()
+    expect(() => new Date(body.started_at).toISOString()).not.toThrow()
+    expect(typeof body.source_commit).toBe('string')
   })
 })
 

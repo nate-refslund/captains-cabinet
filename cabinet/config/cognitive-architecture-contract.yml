@@ -2596,6 +2596,39 @@ temporary_allowances:
       +108 measured with cognitive-architecture-census.py at this landing
       (78824 -> 78932); prose counted honestly rather than reformatted into
       comments to duck the budget.
+  - phase: update-path
+    budget: framework_production_noncomment_lines
+    additional: 54
+    owner: cognitive-core-program
+    sunset: '2027-03-31'
+    deletion_gate: >-
+      the receipts read model (`framework/missions/receipts.py`, phase-1 unit 1)
+      lands and carries `update_applied` / `update_refused` /
+      `update_rolled_back` as receipt kinds; `_update_notice` then reads THAT
+      one surface instead of the updater's files and collapses to a projection
+      of it, retiring this row with it.
+    reason: >-
+      ONE BRIEFING LINE, AND THE READER IT NEEDS. An installed Cabinet is an
+      unpacked export with no version control in it: until this landing nothing
+      on the box could say "a better version of me is sitting in the inbox", so
+      every improvement the org made about itself stopped at the repository.
+      The update path (contract of record phase1-contracts-v2-2026-09-07 §5,
+      amendment A5.13) puts that sentence on the two doors the Captain actually
+      uses — the home card and the daily briefing — and this is the briefing
+      half: `run_briefing._update_notice`, which reads the updater's own inbox
+      and state file and returns ONE sentence or the empty string. What the
+      lines buy: (1) it reads FILES, not the updater CLI, because a briefing
+      pass that can hang on a subprocess is a briefing that can fail to arrive;
+      (2) it is fail-open in the strong sense — any error, and any install with
+      no updater at all, yields "", never "you are up to date", which is the
+      degenerate answer this whole leg exists to keep off the Captain's screen;
+      (3) a waiting bundle leads, because it is the only one of the three
+      states he can act on. ZERO new framework modules and ZERO bijection-class
+      mass: every line lands in the briefing composer that already owns the
+      card headline, beside `_flatline_notice`, which is the same shape of
+      one-sentence notice. +54 measured with cognitive-architecture-census.py
+      at this landing (79391 -> 79445); the explanatory docstring is counted
+      honestly rather than reformatted into comments to duck the budget.
 expansions:
   - member: cabinet_update_applied
     member_class: central_event_types

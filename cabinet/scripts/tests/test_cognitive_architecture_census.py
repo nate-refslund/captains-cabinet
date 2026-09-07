@@ -331,7 +331,14 @@ def test_live_allowance_raises_only_its_named_effective_budget(tmp_path: Path):
     assert report["ok"] is True
     assert report["maximums"]["claude_skills"] == 23
     assert report["maximums"]["organ_manifests"] == 5
-    assert report["maximums"]["central_event_types"] == 91
+    # 91 -> 94 (2026-09-07): the update path's three receipts raised the
+    # central_event_types ceiling in the live contract. The arm's meaning is
+    # unchanged — a `claude_skills` allowance moves `claude_skills` and NOTHING
+    # else — so the sibling it checks tracks the contract rather than a number
+    # that was true on the day it was written.
+    assert report["maximums"]["central_event_types"] == yaml.safe_load(
+        CONTRACT.read_text()
+    )["budgets"]["central_event_types"]["maximum"]
 
 
 def test_expired_allowance_fails_even_when_observed_is_within_base_budget(tmp_path: Path):
@@ -1073,7 +1080,18 @@ def test_registered_set_member_is_green(tmp_path: Path):
     report = census.inspect_repository(tree)
 
     assert report["ok"] is True, report["failures"]
-    assert report["surplus_members"][SYNTHETIC_CLASS] == [SYNTHETIC_MEMBER]
+    # The surplus is exactly the registry's rows for this class — the bijection
+    # itself, not a fixed singleton. `_rewrite_contract` APPENDS to the live
+    # rows, so every live expansion member of this class is legitimately in the
+    # surplus too (the update path's three receipts landed 2026-09-07); a
+    # hardcoded `[SYNTHETIC_MEMBER]` would fail for a reason it does not name.
+    live_rows = {
+        row["member"]
+        for row in yaml.safe_load(CONTRACT.read_text())["expansions"]
+        if row["member_class"] == SYNTHETIC_CLASS
+    }
+    assert SYNTHETIC_MEMBER in report["surplus_members"][SYNTHETIC_CLASS]
+    assert set(report["surplus_members"][SYNTHETIC_CLASS]) == live_rows | {SYNTHETIC_MEMBER}
 
 
 def test_expansion_row_naming_an_absent_member_is_red(tmp_path: Path):

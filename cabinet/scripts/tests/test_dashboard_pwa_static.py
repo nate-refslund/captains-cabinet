@@ -17,6 +17,7 @@ Run: python3.12 -m pytest cabinet/scripts/tests/test_dashboard_pwa_static.py -q
 
 from __future__ import annotations
 
+import re
 import struct
 import zlib
 from pathlib import Path
@@ -193,10 +194,22 @@ def test_health_route_is_liveness_only():
     code = "\n".join(
         ln for ln in text.splitlines() if not ln.lstrip().startswith("//")
     )
-    for banned in ("process.env", "redis", "readFile", "cookie"):
+    for banned in ("redis", "readFile", "cookie"):
         assert banned not in code, (
             f"/api/health must stay a config-free liveness boolean ({banned!r})"
         )
+    # THE ONE ENVIRONMENT READ, named rather than banned (update path, A5.5).
+    # The health gate has to know WHICH BYTES answered, or an old process that
+    # survived a failed restart passes an identity probe and a bad update is
+    # recorded as a good one. `CABINET_BUILD_SOURCE_COMMIT` is inlined by the
+    # build (next.config.ts `env`), so it is a constant baked into the bundle,
+    # not configuration read at request time — which is exactly why it can be
+    # trusted to describe the running build. The ban stays for everything else:
+    # any OTHER process.env read here is still a failure.
+    env_reads = re.findall(r"process\.env\.([A-Za-z0-9_]+)", code)
+    assert set(env_reads) <= {"CABINET_BUILD_SOURCE_COMMIT"}, (
+        f"/api/health must stay a config-free liveness boolean ({env_reads!r})"
+    )
 
 
 def test_health_namespace_is_closed_tripwire():
