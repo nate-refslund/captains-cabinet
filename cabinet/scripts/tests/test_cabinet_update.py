@@ -149,6 +149,17 @@ def make_bundle(
     if not empty:
         content = dict(BASE_SHIPPED if shipped is None else shipped)
         content.update(extra or {})
+        # HARNESS GUARD, not a property of the updater. `make_install` symlinks
+        # the LIVE repo `framework/` into the fixture so the REAL emitter
+        # validates the new event types rather than a stub that would accept
+        # anything. The price of that realism is that a fixture bundle shipping
+        # a `framework/...` path would have the real updater write through the
+        # symlink into the repo under test. No fixture ships one today; this is
+        # what keeps that true when the next one is written.
+        for rel in content:
+            assert not rel.startswith("framework/"), (
+                "a fixture bundle may not ship a framework/ path: the install's "
+                "framework/ is a symlink to the repo under test (%s)" % rel)
         for rel, text in content.items():
             _write(tree / rel, text)
         # A bundle is a cut of the same tree, so it carries the boundary script
@@ -202,8 +213,8 @@ def run_updater(
         # The gate's two non-dashboard legs, pointed at commands a fixture
         # install can actually run. `--skip-restart` makes the dashboard leg
         # THIN; the defaults are pinned by their own test below.
-        "CABINET_UPDATE_RECEIPTS_CMD": "true",
-        "CABINET_UPDATE_PREFLIGHT_CMD": "true",
+        "CABINET_UPDATE_TEST_RECEIPTS_CMD": "true",
+        "CABINET_UPDATE_TEST_PREFLIGHT_CMD": "true",
         "CABINET_UPDATE_SKIP_DOCTOR": "1",
     })
     env.update(env_extra or {})
@@ -607,7 +618,7 @@ def test_pruning_happens_only_after_a_green_gate(tmp_path):
                 extra={"cabinet/scripts/hello.sh": "echo hello v5\n"},
                 built_at="2026-09-05T00:00:00Z")
     result = run_updater(root, "apply", "--bundle", "e" * 40, "--skip-rebuild", "--skip-restart",
-                         env_extra={"CABINET_UPDATE_RECEIPTS_CMD": "false"})
+                         env_extra={"CABINET_UPDATE_TEST_RECEIPTS_CMD": "false"})
     assert result.returncode == 1, result.stderr
     assert len(list((root / ".updates" / "snapshots").iterdir())) == 4
     assert (root / "cabinet/scripts/hello.sh").read_text() == "echo hello v4\n"
@@ -630,7 +641,7 @@ def test_gate_red_rolls_back_and_the_gate_is_then_green(tmp_path):
         "cabinet/scripts/fixture-gate.sh": "exit 1\n",
         "cabinet/scripts/hello.sh": "echo hello v2\n",
     })
-    gate_cmd = {"CABINET_UPDATE_RECEIPTS_CMD": "bash cabinet/scripts/fixture-gate.sh"}
+    gate_cmd = {"CABINET_UPDATE_TEST_RECEIPTS_CMD": "bash cabinet/scripts/fixture-gate.sh"}
 
     before = run_updater(root, "status")
     assert before.returncode == 0
@@ -654,7 +665,7 @@ def test_persistence_preflight_red_also_rolls_back(tmp_path):
     root = make_install(tmp_path)
     make_bundle(tmp_path, root, NEW_SHA, extra={"cabinet/scripts/hello.sh": "v2\n"})
     result = run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild", "--skip-restart",
-                         env_extra={"CABINET_UPDATE_PREFLIGHT_CMD": "false"})
+                         env_extra={"CABINET_UPDATE_TEST_PREFLIGHT_CMD": "false"})
     assert result.returncode == 1, result.stderr
     assert (root / "cabinet/scripts/hello.sh").read_text() == "echo hello v1\n"
     assert installed_sha(root) == OLD_SHA
@@ -667,8 +678,16 @@ def test_health_gate_defaults_are_the_contract_legs(tmp_path):
     the "what does the test environment guarantee that production does not"
     question, asked of this file's own fixtures."""
     text = _UPDATER.read_text()
-    assert "CABINET_UPDATE_RECEIPTS_CMD:-" in text
-    assert "CABINET_UPDATE_PREFLIGHT_CMD:-" in text
+    assert "CABINET_UPDATE_TEST_RECEIPTS_CMD:-" in text
+    assert "CABINET_UPDATE_TEST_PREFLIGHT_CMD:-" in text
+    # And they are TEST seams by name. Two env variables that can turn two of
+    # the gate's three legs green are not production knobs, and an un-namespaced
+    # name is how a seam becomes behaviour by being mistaken for one.
+    assert "CABINET_UPDATE_RECEIPTS_CMD" not in text
+    assert "CABINET_UPDATE_PREFLIGHT_CMD" not in text
+    for name in re.findall(r"CABINET_UPDATE_[A-Z_]+", text):
+        if name.endswith(("_CMD", "_KILL_AFTER", "_HOLD_SECONDS")):
+            assert name.startswith("CABINET_UPDATE_TEST_"), name
     assert "state-persistence-preflight.py --repo ." in text
     assert "from framework.events.emitter import replay" in text
     # The dashboard leg checks BOTH the build stamp and the start time.
@@ -756,6 +775,11 @@ def test_a_second_updater_exits_busy(tmp_path):
         refused = [e for e in events(root)
                    if (e.get("event_type") or e.get("type")) == "cabinet_update_refused"]
         assert refused and refused[-1]["payload"]["reason"] == "busy"
+        # And it stopped BEFORE the self-copy. The lock is the first thing an
+        # apply or a rollback takes, ahead of every write this script makes —
+        # including the one it makes to the file it is about to execute from.
+        assert not (root / ".updates" / "run").exists(), \
+            "a refused caller still wrote into .updates/run/"
     finally:
         fcntl.flock(holder.fileno(), fcntl.LOCK_UN)
         holder.close()
@@ -767,8 +791,8 @@ def _launch_detached_apply(root: Path, sha: str, extra_env: dict[str, str]) -> s
         "CABINET_ROOT": str(root),
         "CABINET_EVENT_LOG_DIR": str(root / ".events"),
         "PYTHONDONTWRITEBYTECODE": "1",
-        "CABINET_UPDATE_RECEIPTS_CMD": "true",
-        "CABINET_UPDATE_PREFLIGHT_CMD": "true",
+        "CABINET_UPDATE_TEST_RECEIPTS_CMD": "true",
+        "CABINET_UPDATE_TEST_PREFLIGHT_CMD": "true",
         "CABINET_UPDATE_SKIP_DOCTOR": "1",
     })
     env.update(extra_env)
@@ -853,6 +877,180 @@ def test_without_the_re_exec_the_group_kill_takes_the_updater_with_it(tmp_path):
         launcher.wait(timeout=10)
 
 
+def _length_shifted_updater(root: Path, name: str) -> Path:
+    """A second caller whose bytes are the updater's, SHIFTED in length.
+
+    The hazard being armed for is `cp` over a file another process is
+    executing: cp truncates in place and rewrites, so a running bash reads its
+    next command from a byte offset that now holds different text. A
+    same-length copy would hide that, so the padding below moves every later
+    offset."""
+    text = _UPDATER.read_text()
+    anchor = "set -uo pipefail\n"
+    assert anchor in text, "the updater's preamble moved; this arm must be re-aimed"
+    padding = "".join("# %s padding %d\n" % (name, i) for i in range(400))
+    variant = root / "cabinet" / "scripts" / ("%s-update.sh" % name)
+    variant.write_text(text.replace(anchor, anchor + padding, 1), encoding="utf-8")
+    return variant
+
+
+def test_a_second_caller_cannot_overwrite_the_bytes_a_running_updater_executes(tmp_path):
+    """A5.7 + A5.8: the lock is taken BEFORE the self-copy, not after it.
+
+    `.updates/run/cabinet-update.sh` is the file a running updater is EXECUTING
+    FROM. A second caller that copies itself there before taking the lock
+    truncates that file in place, and the first updater silently continues out
+    of the other version's bytes — measured end to end on a fixture install: a
+    successful apply, then `line 840: way: command not found`, then exit 1, so
+    the web door that spawned it was told the update had FAILED after it had
+    landed.
+
+    The first assertion below is the invariant; the exit code and the finished
+    apply are what that invariant buys."""
+    root = make_install(tmp_path)
+    make_bundle(tmp_path, root, NEW_SHA, extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
+    run_copy = root / ".updates" / "run" / "cabinet-update.sh"
+    helper_copy = root / ".updates" / "run" / "lib" / "update_bundle.py"
+
+    launcher = _launch_detached_apply(root, NEW_SHA, {"CABINET_UPDATE_TEST_HOLD_SECONDS": "15"})
+    try:
+        assert _wait_for(lambda: run_copy.is_file() and run_copy.stat().st_size > 0, 30), \
+            "the first updater never re-exec'd into .updates/run/"
+        before = run_copy.read_bytes()
+        before_helper = helper_copy.read_bytes() if helper_copy.is_file() else b""
+
+        second = _length_shifted_updater(root, "second-caller")
+        result = run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                             "--skip-restart", script=second, timeout=90)
+
+        assert run_copy.read_bytes() == before, (
+            "a second caller overwrote the bytes the running updater executes from")
+        if before_helper:
+            assert helper_copy.read_bytes() == before_helper, (
+                "a second caller overwrote the helper the running updater calls")
+        assert result.returncode == 4, (result.returncode, result.stderr)
+        assert _wait_for(lambda: state(root).get("phase") == "applied", 120), state(root)
+        assert (root / "cabinet/scripts/hello.sh").read_text() == "echo hello v2\n"
+        assert installed_sha(root) == NEW_SHA
+    finally:
+        try:
+            os.killpg(os.getpgid(launcher.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        launcher.wait(timeout=10)
+
+
+def test_a_busy_rollback_leaves_a_receipt_like_every_other_refusal(tmp_path):
+    """A5.7: `a second caller exits busy + cabinet_update_refused{reason: busy}`.
+
+    Apply emitted it; rollback exited 4 in silence. Rollback is the door the
+    Captain reaches for when an update went wrong, so it was the one refusal
+    with no row in the ledger — invisible to every surface that reads receipts
+    rather than exit codes."""
+    root = make_install(tmp_path)
+    make_bundle(tmp_path, root, NEW_SHA, extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
+    assert run_updater(root, "apply", "--bundle", NEW_SHA,
+                       "--skip-rebuild", "--skip-restart").returncode == 0
+
+    holder = open(root / ".updates" / ".lock", "a+")
+    fcntl.flock(holder.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    try:
+        result = run_updater(root, "rollback", "--from", "web", "--skip-restart", timeout=60)
+        assert result.returncode == 4, (result.returncode, result.stderr)
+        refused = [e for e in events(root)
+                   if (e.get("event_type") or e.get("type")) == "cabinet_update_refused"]
+        assert refused, "a busy rollback left no receipt at all"
+        assert refused[-1]["payload"]["reason"] == "busy"
+        # The door survives the pre-parse the lock now happens in front of.
+        assert refused[-1]["payload"]["door"] == "web"
+        assert refused[-1]["actor"] == "captain"
+        # And it rolled nothing back.
+        assert installed_sha(root) == NEW_SHA
+        assert (root / "cabinet/scripts/hello.sh").read_text() == "echo hello v2\n"
+    finally:
+        fcntl.flock(holder.fileno(), fcntl.LOCK_UN)
+        holder.close()
+
+
+def test_the_restarted_dashboard_does_not_inherit_the_updater_lock(tmp_path):
+    """A5.7 is "one updater at a time", not "one updater ever".
+
+    The lock lives on an open file description this process holds on fd 9. The
+    unsupervised restart path starts a DETACHED dashboard, and a detached child
+    inherits every open descriptor — so the dashboard would hold the updater's
+    lock for as long as it lives, and every later update, from the card the
+    Captain taps, would refuse itself as busy for ever.
+
+    The stub below is the unsupervised restart in miniature: a long-lived
+    detached child. What is asserted is not what the stub did but what it left
+    behind — after the updater exits, an outsider must be able to take the
+    lock."""
+    root = make_install(tmp_path)
+    make_bundle(tmp_path, root, NEW_SHA, extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
+    assert run_updater(root, "apply", "--bundle", NEW_SHA,
+                       "--skip-rebuild", "--skip-restart").returncode == 0
+
+    pid_file = root / ".updates" / "stub-child.pid"
+    _write(root / "cabinet/scripts/lib/dashboard.sh", f"""
+cabinet_dash_restart() {{
+  {_PY} -c 'import time; time.sleep(90)' >/dev/null 2>&1 </dev/null &
+  echo $! > "{pid_file}"
+  return 0
+}}
+""")
+    try:
+        result = run_updater(root, "rollback", timeout=90)
+        assert result.returncode == 0, (result.returncode, result.stderr)
+        assert pid_file.is_file(), "the stub restart never ran"
+
+        holder = open(root / ".updates" / ".lock", "a+")
+        try:
+            fcntl.flock(holder.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(holder.fileno(), fcntl.LOCK_UN)
+        except OSError as exc:
+            raise AssertionError(
+                "the restarted process is still holding the updater lock (%s)" % exc)
+        finally:
+            holder.close()
+    finally:
+        try:
+            os.kill(int(pid_file.read_text().strip()), signal.SIGKILL)
+        except (OSError, ValueError):
+            pass
+
+
+def test_the_unpacked_stage_tree_does_not_outlive_a_green_apply(tmp_path):
+    """§5 keep policy: `CABINET_UPDATE_KEEP` bounds the ways back; a staged
+    copy is not one of them.
+
+    Every apply unpacks a full export into `.updates/stage/<sha>/`. Nothing
+    read it again after the gate went green and nothing pruned it, so an
+    install that takes ten updates keeps ten whole trees for ever."""
+    root = make_install(tmp_path)
+    make_bundle(tmp_path, root, NEW_SHA, extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
+    assert run_updater(root, "apply", "--bundle", NEW_SHA,
+                       "--skip-rebuild", "--skip-restart").returncode == 0
+
+    stage = root / ".updates" / "stage"
+    left = sorted(p.name for p in stage.iterdir()) if stage.is_dir() else []
+    assert NEW_SHA not in left, left
+    # The way back is untouched: pruning the stage is not pruning the snapshot.
+    assert len(list((root / ".updates" / "snapshots").iterdir())) == 1
+    assert installed_sha(root) == NEW_SHA
+
+
+def test_a_fixture_bundle_may_not_ship_a_framework_path(tmp_path):
+    """The inverted arm for the harness guard in `make_bundle`.
+
+    Without this the guard is a line nobody has ever seen fire, and a future
+    fixture would reach the LIVE repo tree through the install's `framework/`
+    symlink."""
+    root = make_install(tmp_path)
+    with pytest.raises(AssertionError, match="framework/"):
+        make_bundle(tmp_path, root, NEW_SHA,
+                    extra={"framework/events/emitter.py": "# not on my watch\n"})
+
+
 # ===========================================================================
 # 7. the preserve set is DATA, and the two copies of it agree
 # ===========================================================================
@@ -881,9 +1079,19 @@ def test_the_header_only_interface_set_matches_the_exporter(tmp_path):
     lists of one fact is a rule with a drift date; this is the date."""
     text = (_SCRIPTS_DIR / "egg-export.sh").read_text()
     body = text.split("t_interfaces_header_only()", 1)[1].split("\n}", 1)[0]
-    from_exporter = set(re.findall(r"shared/interfaces/captain-[a-z-]+\.ya?ml", body))
-    assert from_exporter, "the exporter's header-only set could not be read"
-    assert from_exporter == set(update_bundle.HEADER_ONLY_INTERFACES)
+    # Read the transform's OWN two statements, not a guess at how the paths are
+    # spelled: a `captain-`-prefixed regex would be blind to the first
+    # header-only path named anything else, and the constant would go stale
+    # while its pin stayed green.
+    emptied = {"shared/interfaces/" + name
+               for name in re.findall(r'_header_only\s+"\$dir/([^"]+)"', body)}
+    allowed = set(re.findall(r"^\s*(shared/interfaces/[^)\s]+)\)", body, re.M))
+    assert emptied, "the exporter's header-only calls could not be read"
+    assert allowed, "the exporter's fail-closed interface list could not be read"
+    assert emptied == set(update_bundle.HEADER_ONLY_INTERFACES)
+    # And every path it empties is a path it also permits to ship — an emptied
+    # file the fail-closed arm does not name would abort the export.
+    assert emptied <= allowed, sorted(emptied - allowed)
 
 
 def test_preserve_set_is_the_union_of_its_declared_sources(tmp_path):

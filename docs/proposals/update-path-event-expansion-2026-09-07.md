@@ -54,6 +54,37 @@ also do not share a shape: a refusal carries `locked_paths` and no counts, an
 apply carries counts and a snapshot, a rollback carries a reason and a restored
 sha and creates nothing.
 
+## Who reads them (corrected 2026-09-07, round-1 review)
+
+The first spelling of these three rows named `framework/watchdog/receipts.py` as
+the `consumer`. That is false and could never become true: `RECEIPT_CLASSES`
+there is a frozenset of four watchdog/doctor/officer classes and `emit_receipt`
+RAISES on anything else — it is a typed producer seam, not a reader. The census
+could not catch it, and says so about itself: the `consumer` field is "an
+EXISTENCE-AND-DISJOINTNESS check, never a USE check … Any path that exists in
+the tree satisfies it — `.git/config` does, measured"
+(`cabinet/scripts/cognitive-architecture-census.py`). So the label channel was
+closed while the evidence channel stayed open, which is the exact failure class
+this program has paid for most often.
+
+Corrected two ways in the same commit:
+
+1. **The claim is now true.** The three rows name
+   `framework/frontdoor/run_briefing.py`, which reads all three types back by
+   name through `_update_receipt_for` (`emitter.replay(event_types=…)`,
+   selected on the bundle rather than on recency). It is not decoration: a
+   REFUSAL writes no state file at all — it is refused before the first write
+   and leaves a receipt and nothing else — so before this read, a bundle whose
+   diff touches the constitutional set sat in the inbox for ever while the only
+   sentence the Captain ever saw said "ready to take — tap Apply", which did
+   nothing every time he tapped it.
+2. **The claim is now checked.**
+   `test_an_event_type_expansion_names_a_consumer_that_actually_names_it` reads
+   the LIVE contract and requires every `central_event_types` expansion row's
+   consumer file to contain the member's name. An event type is a string, which
+   makes this one class mechanically decidable; it is not a general use check —
+   there cannot be one — but it is the difference between a claim and a grep.
+
 ## Adjudication
 
 Two blind arms authored the phase-1 contracts independently on identical briefs

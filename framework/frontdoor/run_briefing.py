@@ -181,6 +181,44 @@ def _flatline_notice() -> str:
         return ""
 
 
+#: The update path's three receipts, read back below. `state.json` cannot carry
+#: a REFUSAL: a bundle whose diff touches the constitutional set is refused
+#: before anything is written and leaves a receipt and nothing else, so the
+#: outcome the Captain most needs to hear about is the one outcome the state
+#: file has never known about. Registered in framework/events/emitter.py and
+#: declared against this module in the cognitive-architecture contract.
+_UPDATE_RECEIPT_TYPES = (
+    "cabinet_update_applied",
+    "cabinet_update_refused",
+    "cabinet_update_rolled_back",
+)
+
+
+def _update_receipt_for(sha: str, days: int = 30) -> "dict | None":
+    """The newest of the three update receipts ABOUT ``sha``, or None.
+
+    Selected on the BUNDLE, never on recency alone: an earlier refusal of some
+    other commit must not turn a good bundle into a refusal. Bounded to a
+    recent window, and fail-open like everything else on this path — a ledger
+    this cannot read is silence, never a guess."""
+    if not sha:
+        return None
+    try:
+        import datetime as _dt
+
+        from framework.events.emitter import replay
+
+        since = (_dt.datetime.now(_dt.timezone.utc)
+                 - _dt.timedelta(days=days)).isoformat()
+        rows = replay(since=since, event_types=list(_UPDATE_RECEIPT_TYPES))
+        for row in reversed(rows):
+            if (row.get("payload") or {}).get("to_sha") == sha:
+                return row
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
 def _update_notice(root: "str | None" = None) -> str:
     """ONE briefing line about the bytes this Cabinet is running, or "".
 
@@ -216,6 +254,19 @@ def _update_notice(root: "str | None" = None) -> str:
                 waiting.append((doc.get("built_at") or "", sha, len(doc.get("files") or {})))
         if waiting:
             _, sha, count = max(waiting)
+            receipt = _update_receipt_for(sha) or {}
+            kind = receipt.get("event_type") or ""
+            reason = str((receipt.get("payload") or {}).get("reason") or "")
+            if kind == "cabinet_update_refused":
+                return ("An update is waiting but was REFUSED: %s (%s)"
+                        % (reason or "the updater would not take it", sha[:8]))
+            if kind == "cabinet_update_rolled_back":
+                return ("An update to %s was rolled back (%s) and is still in the inbox"
+                        % (sha[:8], reason or "it did not come up healthy"))
+            # A `cabinet_update_applied` receipt for a bundle the install does
+            # not carry is a HALF-LANDED apply — the bytes went in, the identity
+            # stamp did not stick — and the honest sentence there is still that
+            # something is sitting here to be taken.
             return ("An update is ready to take (%s, %d files) — open the home page "
                     "and tap Apply" % (sha[:8], count))
         state = json.loads((base / ".updates" / "state.json").read_text(encoding="utf-8"))

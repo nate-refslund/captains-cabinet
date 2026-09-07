@@ -51,8 +51,14 @@
 # gated: a single-worker install is DEAD on fleet services it was never meant
 # to run, and a doctor gate would roll back every good update.
 #
-# TWO TEST SEAMS, both env-gated and both named here so neither is mistaken for
-# production behaviour. CABINET_UPDATE_TEST_KILL_AFTER=<n> models the updater
+# FOUR TEST SEAMS, every one env-gated and every one carrying TEST in its name
+# so a reader never mistakes one for production behaviour — two of them
+# (RECEIPTS_CMD, PREFLIGHT_CMD) can turn two of the health gate's three legs
+# green, which is not a thing a production knob should be able to do.
+# CABINET_UPDATE_TEST_RECEIPTS_CMD and CABINET_UPDATE_TEST_PREFLIGHT_CMD
+# replace the gate's two non-dashboard legs with a command a fixture install
+# can actually run; the defaults below them are the contract's legs and are
+# pinned by their own arm. CABINET_UPDATE_TEST_KILL_AFTER=<n> models the updater
 # DYING mid-write — the writer SIGKILLs itself after n files and this process
 # follows it, deliberately WITHOUT rolling back, because a machine that lost
 # power leaves nobody to roll anything back and only that leaves the resume
@@ -172,8 +178,28 @@ json_escape() { "$PY" -c 'import json,sys; sys.stdout.write(json.dumps(sys.argv[
 # file description bash holds on fd 9, not on the python process: the child's
 # exit closes only its copy of the descriptor, the description stays open in
 # this shell, and the lock is held for the life of the update.
+# An ALREADY-HELD lock, inherited across the re-exec. The lock is taken in the
+# dispatch below, before the self-copy, and rides the open file description
+# through `exec` — the descriptor survives, so the process that arrives here
+# after the exec is already the holder. Re-asserting on that SAME descriptor
+# succeeds and changes nothing. Re-OPENING the file would be the bug: a second
+# open is a second description, closing the first one drops the lock, and the
+# race the early lock exists to close is handed straight back.
+lock_is_inherited() {
+  [ "${CABINET_UPDATE_LOCK_HELD:-0}" = "1" ] || return 1
+  "$PY" - <<'PYHELD' 9<&9
+import fcntl, sys
+try:
+    fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except Exception:
+    sys.exit(1)
+sys.exit(0)
+PYHELD
+}
+
 take_lock() {
   mkdir -p "$UPD" || return 1
+  lock_is_inherited && return 0
   exec 9>>"$LOCK" || return 1
   "$PY" - <<'PYLOCK' 9<&9
 import fcntl, sys
@@ -185,13 +211,71 @@ sys.exit(0)
 PYLOCK
 }
 
+# The door and the bundle, read BEFORE the option parse, because the lock is
+# now taken in front of everything and a refusal has to say which door it came
+# from. Deliberately forgiving: anything malformed leaves the default here and
+# is refused properly by the real parse a moment later.
+preparse_door() {
+  local prev="" arg normalized
+  for arg in "$@"; do
+    if [ "$prev" = "--from" ]; then
+      normalized="$(normalize_door "$arg")" && { printf '%s\n' "$normalized"; return 0; }
+      break
+    fi
+    prev="$arg"
+  done
+  printf 'terminal\n'
+}
+
+preparse_bundle() {
+  local prev="" arg
+  for arg in "$@"; do
+    if [ "$prev" = "--bundle" ]; then
+      case "$arg" in
+        ''|*[!0-9a-fA-F]*) : ;;
+        *) printf '%s\n' "$arg"; return 0 ;;
+      esac
+      break
+    fi
+    prev="$arg"
+  done
+  printf '\n'
+}
+
+# ONE busy refusal for both doors. Rollback used to exit 4 in silence, which
+# made the door the Captain reaches for when an update went wrong the only
+# refusal on this path that left no row in the ledger — invisible to every
+# surface that reads receipts rather than exit codes.
+refuse_busy() { # <to_sha>
+  echo "cabinet-update: another update is running" >&2
+  emit_event cabinet_update_refused "$(door_actor "$DOOR")" \
+    "{\"to_sha\":$(json_escape "${1:-}"),\"reason\":\"busy\",\"locked_paths\":[],\"door\":$(json_escape "$DOOR")}"
+  exit "$EXIT_BUSY"
+}
+
 # ---- re-exec into .updates/run/ under a new session -------------------------
+# Copy through a unique name and RENAME into place. `cp` truncates its target
+# and rewrites it, and the target here is the file a running updater is
+# EXECUTING FROM: bash reads its next command from a byte offset, so a rewrite
+# underneath it makes it continue out of the other version's bytes — measured,
+# and measured end to end (a successful apply that then reported failure to the
+# door that spawned it). rename(2) swaps the directory entry and leaves the
+# running process on the inode it already opened. The lock makes this
+# unreachable in the first place; this is the half that does not depend on the
+# lock being right.
+install_run_copy() { # <source> <destination>
+  local src="$1" dst="$2" tmp
+  tmp="$dst.$$.tmp"
+  cp "$src" "$tmp" || { rm -f "$tmp"; return 1; }
+  chmod +x "$tmp" 2>/dev/null || true
+  mv -f "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
+}
+
 reexec_detached() {
   mkdir -p "$RUN_DIR/lib" || return 1
-  cp "$SCRIPT_PATH" "$RUN_DIR/cabinet-update.sh" || return 1
-  cp "$BUNDLE_PY" "$RUN_DIR/lib/update_bundle.py" || return 1
-  [ -f "$DASH_LIB" ] && cp "$DASH_LIB" "$RUN_DIR/lib/dashboard.sh"
-  chmod +x "$RUN_DIR/cabinet-update.sh" 2>/dev/null || true
+  install_run_copy "$SCRIPT_PATH" "$RUN_DIR/cabinet-update.sh" || return 1
+  install_run_copy "$BUNDLE_PY" "$RUN_DIR/lib/update_bundle.py" || return 1
+  [ -f "$DASH_LIB" ] && install_run_copy "$DASH_LIB" "$RUN_DIR/lib/dashboard.sh"
   export CABINET_UPDATE_REEXEC=1
   export CABINET_ROOT="$ROOT"
   export CABINET_UPDATE_LIB="$RUN_DIR/lib"
@@ -460,11 +544,11 @@ PYHEALTH
   # and does so even when the variable IS set, which is the shape of bug that
   # makes a gate red for a reason nobody can read.
   local receipts_cmd preflight_cmd
-  receipts_cmd="${CABINET_UPDATE_RECEIPTS_CMD:-}"
+  receipts_cmd="${CABINET_UPDATE_TEST_RECEIPTS_CMD:-}"
   if [ -z "$receipts_cmd" ]; then
     receipts_cmd="$PY -c 'import sys; from framework.events.emitter import replay; sys.stdout.write(str(len(replay())))'"
   fi
-  preflight_cmd="${CABINET_UPDATE_PREFLIGHT_CMD:-}"
+  preflight_cmd="${CABINET_UPDATE_TEST_PREFLIGHT_CMD:-}"
   if [ -z "$preflight_cmd" ]; then
     preflight_cmd="$PY cabinet/scripts/state-persistence-preflight.py --repo ."
   fi
@@ -494,7 +578,25 @@ restart_dashboard() {
   [ -f "$DASH_LIB" ] || { log "restart: no dashboard library at $DASH_LIB"; return 1; }
   # shellcheck disable=SC1090
   . "$DASH_LIB"
-  cabinet_dash_restart "$ROOT" "taking an update"
+  # fd 9 CLOSED, in a subshell, before the restart runs. The lock lives on an
+  # open file description this process holds on fd 9, and the unsupervised
+  # restart path starts a DETACHED dashboard — which inherits every open
+  # descriptor and would then hold the updater's lock for as long as it lives.
+  # Every later update, from the card the Captain taps, would refuse itself as
+  # busy for ever. "One updater at a time" is not "one updater ever".
+  #
+  # It is a subshell with `exec` and NOT `cabinet_dash_restart ... 9>&-`,
+  # because the second one does not work on the bash this ships against (3.2 on
+  # macOS): a per-command redirection SAVES the original descriptor by duping
+  # it to a high fd, and that duplicate is inherited by the detached child —
+  # measured, the child holds the same lock on fd 10. `exec` inside a subshell
+  # closes without saving, so there is nothing left to inherit.
+  # The env flag goes with the descriptor. It says "the lock you inherited is
+  # yours"; a process that no longer has the descriptor must not be told it
+  # still holds the lock, or an updater spawned from the restarted dashboard
+  # would trust an fd 9 that belongs to something else entirely.
+  ( exec 9>&-; unset CABINET_UPDATE_LOCK_HELD
+    cabinet_dash_restart "$ROOT" "taking an update" )
 }
 
 # ---- restore ----------------------------------------------------------------
@@ -540,7 +642,7 @@ cmd_rollback() {
     esac
   done
   case "$want" in *[!0-9A-Za-z_-]*) fail_usage "snapshot stamps are [0-9A-Za-z_-] only" ;; esac
-  take_lock || { echo "cabinet-update: another update is running" >&2; exit "$EXIT_BUSY"; }
+  take_lock || refuse_busy ""
   local snap_name before after
   snap_name="${want:-$(newest_snapshot)}"
   { [ -n "$snap_name" ] && [ -d "$SNAPSHOTS/$snap_name" ]; } || {
@@ -645,12 +747,7 @@ cmd_apply() {
   [ -n "$sha" ] || fail_usage "apply needs --bundle <sha>"
   case "$sha" in *[!0-9a-fA-F]*|'') fail_usage "a bundle id is a hex sha" ;; esac
 
-  take_lock || {
-    echo "cabinet-update: another update is running" >&2
-    emit_event cabinet_update_refused "$(door_actor "$DOOR")" \
-      "{\"to_sha\":$(json_escape "$sha"),\"reason\":\"busy\",\"locked_paths\":[],\"door\":$(json_escape "$DOOR")}"
-    exit "$EXIT_BUSY"
-  }
+  take_lock || refuse_busy "$sha"
 
   mkdir -p "$INBOX" "$APPLIED" "$SNAPSHOTS" "$STAGE"
 
@@ -732,6 +829,7 @@ for path in json.load(open(sys.argv[1]))["locked_hits"]:
   if [ "$changed_n" = "0" ] && [ "$deleted_n" = "0" ]; then
     log "bundle $sha changes nothing outside the preserve set — recording it and stopping"
     cp "$manifest" "$APPLIED/$sha.manifest.json"
+    rm -rf "${STAGE:?}/$sha"
     "$PY" "$BUNDLE_PY" stamp-identity --root "$ROOT" --source-commit "$sha" \
       --applied-at "$(now_utc)" ${here:+--from-sha "$here"} >>"$LOG" 2>&1
     write_state "{\"phase\":\"applied\",\"from_sha\":$(json_escape "$here"),\"to_sha\":$(json_escape "$sha"),\"changed\":0,\"deleted\":0,\"skipped_preserved\":$skipped,\"finished_at\":$(json_escape "$(now_utc)"),\"door\":$(json_escape "$DOOR")}"
@@ -792,6 +890,10 @@ sys.exit(0 if any(p.startswith("cabinet/dashboard/") for p in touched) else 1)
   # the next apply is the one that goes wrong.
   cp "$manifest" "$APPLIED/$sha.manifest.json"
   prune_snapshots
+  # The staged tree has done its work. The way back is the snapshot, never
+  # this: left behind, it is one whole unpacked export per apply, for ever, on
+  # a disk that belongs to the operator.
+  rm -rf "${STAGE:?}/$sha"
   local built_at owner mtime
   built_at="$("$PY" -c 'import json,sys; print(json.load(open(sys.argv[1])).get("built_at") or "")' "$manifest")"
   owner="$("$PY" -c '
@@ -827,6 +929,14 @@ case "$CMD" in
   apply|rollback)
     [ -f "$BUNDLE_PY" ] || { echo "cabinet-update: the helper is missing: $BUNDLE_PY" >&2; exit 1; }
     if [ "${CABINET_UPDATE_REEXEC:-0}" != "1" ]; then
+      # THE LOCK COMES FIRST — ahead of the self-copy, not after it. The copy
+      # writes the very file a first updater is executing from, so a second
+      # caller that copied before locking corrupted a run that was already
+      # under way. The lock rides the open file description through the exec
+      # below, so the process on the other side is still the holder.
+      DOOR="$(preparse_door "$@")"
+      take_lock || refuse_busy "$(preparse_bundle "$@")"
+      export CABINET_UPDATE_LOCK_HELD=1
       reexec_detached "$CMD" "$@"
     fi
     if [ -n "${CABINET_UPDATE_TEST_HOLD_SECONDS:-}" ]; then

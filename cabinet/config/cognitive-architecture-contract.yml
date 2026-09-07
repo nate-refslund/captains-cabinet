@@ -2598,7 +2598,7 @@ temporary_allowances:
       comments to duck the budget.
   - phase: update-path
     budget: framework_production_noncomment_lines
-    additional: 54
+    additional: 88
     owner: cognitive-core-program
     sunset: '2027-03-31'
     deletion_gate: >-
@@ -2626,9 +2626,19 @@ temporary_allowances:
       states he can act on. ZERO new framework modules and ZERO bijection-class
       mass: every line lands in the briefing composer that already owns the
       card headline, beside `_flatline_notice`, which is the same shape of
-      one-sentence notice. +54 measured with cognitive-architecture-census.py
-      at this landing (79391 -> 79445); the explanatory docstring is counted
+      one-sentence notice. +88 measured with cognitive-architecture-census.py
+      at this landing (79391 -> 79479); the explanatory docstrings are counted
       honestly rather than reformatted into comments to duck the budget.
+      RAISED 54 -> 88 on 2026-09-07 (round-1 review) for the fourth thing the
+      lines buy: (4) a REFUSAL has no state file to be read out of — a bundle
+      whose diff touches the constitutional set is refused before anything is
+      written and leaves a receipt and nothing else — so `_update_receipt_for`
+      reads the three `cabinet_update_*` types back off the ledger and the
+      waiting-bundle sentence says REFUSED, or rolled back, instead of
+      inviting the Captain to tap Apply on a bundle that will refuse itself
+      every time. That read is also what makes this module a truthful
+      `consumer` for the three expansion rows below; the first spelling named
+      a typed watchdog seam that raises on anything outside four classes.
 expansions:
   - member: cabinet_update_applied
     member_class: central_event_types
@@ -2649,11 +2659,21 @@ expansions:
       succeeded and a later rollback read as one story. Different pairing: the
       rollback receipt has nothing to pair with inside a fidelity vocabulary,
       so folding one in would leave the other homeless.
-    consumer: framework/watchdog/receipts.py
+    consumer: framework/frontdoor/run_briefing.py
     provenance: >-
       per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; contract
       of record phase1-contracts-v2-2026-09-07 §5, two blind arms (Fable 5.1,
-      Opus 5) adjudicated in the document named above
+      Opus 5) adjudicated in the document named above. CONSUMER CORRECTED
+      2026-09-07 (round-1 review): the first spelling named
+      framework/watchdog/receipts.py, whose RECEIPT_CLASSES frozenset holds
+      four watchdog classes and whose emit_receipt RAISES on anything else — it
+      could not consume this member and never will. The census's consumer field
+      is an existence-and-disjointness check by its own docstring, so the gate
+      passed on a false claim. It now names the surface that reads these three
+      types back by name (run_briefing._update_receipt_for, over
+      emitter.replay), and
+      test_an_event_type_expansion_names_a_consumer_that_actually_names_it
+      checks the LIVE contract for use rather than existence.
   - member: cabinet_update_refused
     member_class: central_event_types
     gate_date: '2026-09-07'
@@ -2672,11 +2692,21 @@ expansions:
       nobody watching — and it must aggregate on the commit, not on the
       Captain, or the successful retry lands on a different story from the
       refusal it answers.
-    consumer: framework/watchdog/receipts.py
+    consumer: framework/frontdoor/run_briefing.py
     provenance: >-
       per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; contract
       of record phase1-contracts-v2-2026-09-07 §5, two blind arms (Fable 5.1,
-      Opus 5) adjudicated in the document named above
+      Opus 5) adjudicated in the document named above. CONSUMER CORRECTED
+      2026-09-07 (round-1 review): the first spelling named
+      framework/watchdog/receipts.py, whose RECEIPT_CLASSES frozenset holds
+      four watchdog classes and whose emit_receipt RAISES on anything else — it
+      could not consume this member and never will. The census's consumer field
+      is an existence-and-disjointness check by its own docstring, so the gate
+      passed on a false claim. It now names the surface that reads these three
+      types back by name (run_briefing._update_receipt_for, over
+      emitter.replay), and
+      test_an_event_type_expansion_names_a_consumer_that_actually_names_it
+      checks the LIVE contract for use rather than existence.
   - member: cabinet_update_rolled_back
     member_class: central_event_types
     gate_date: '2026-09-07'
@@ -2695,11 +2725,21 @@ expansions:
       payload would be the one vocabulary none of them can filter. The payloads
       do not share a shape either: a rollback carries a reason and a restored
       sha and creates nothing, where an apply carries counts and a snapshot.
-    consumer: framework/watchdog/receipts.py
+    consumer: framework/frontdoor/run_briefing.py
     provenance: >-
       per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; contract
       of record phase1-contracts-v2-2026-09-07 §5, two blind arms (Fable 5.1,
-      Opus 5) adjudicated in the document named above
+      Opus 5) adjudicated in the document named above. CONSUMER CORRECTED
+      2026-09-07 (round-1 review): the first spelling named
+      framework/watchdog/receipts.py, whose RECEIPT_CLASSES frozenset holds
+      four watchdog classes and whose emit_receipt RAISES on anything else — it
+      could not consume this member and never will. The census's consumer field
+      is an existence-and-disjointness check by its own docstring, so the gate
+      passed on a false claim. It now names the surface that reads these three
+      types back by name (run_briefing._update_receipt_for, over
+      emitter.replay), and
+      test_an_event_type_expansion_names_a_consumer_that_actually_names_it
+      checks the LIVE contract for use rather than existence.
   - member: framework/onboarding/salience.py
     member_class: framework_production_modules
     gate_date: '2026-07-28'

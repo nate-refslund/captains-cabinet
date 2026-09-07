@@ -53,8 +53,8 @@ What `apply` does, in order: verify every file against the manifest → refuse
 outright if any differing path is in the constitutional set → snapshot the
 pre-images → write (each file to a temporary name and rename) → rebuild the
 dashboard in a staging tree and swap the built output in last → restart the
-dashboard → run the health gate → prune old snapshots. A red gate rolls the
-whole thing back automatically and records why.
+dashboard → run the health gate → prune old snapshots and the staged tree. A
+red gate rolls the whole thing back automatically and records why.
 
 ## The refusals, and what each one means
 
@@ -65,6 +65,14 @@ whole thing back automatically and records why.
 | 2 | usage |
 | 3 | refused before the first write — nothing was touched |
 | 4 | another update is running |
+
+Exit 4 is a refusal like any other and leaves a `cabinet_update_refused`
+receipt with `reason: busy` — from `rollback` as well as from `apply`. **One
+updater at a time, and the lock is the first thing either command takes**,
+ahead of every write it makes, including the copy of itself it runs from
+(`.updates/run/`). Copying over a script another process is executing makes
+that process continue out of the new file's bytes, so the lock comes first and
+the copy lands by rename rather than in place.
 
 Exit 3 covers: a per-file digest mismatch; an absent, empty or unreadable
 bundle; **any** differing path inside the constitutional set; and a preserve
@@ -109,6 +117,17 @@ reason.
 `state.json` stays at `applying` with its snapshot on disk, and the tree is
 neither version. The next `apply` or `rollback` restores that snapshot **first**
 and says so. Nothing else runs until it has.
+
+## Where the Captain hears about it
+
+Two surfaces, both derived and neither hand-maintained: the home card
+(`Update ready — N files changed`, then `Updated to <sha>`, with Roll back) and
+one line on the daily briefing. The briefing line reads the inbox and the state
+file directly — a briefing must never be able to hang on a subprocess — and
+reads the three `cabinet_update_*` receipts back off the ledger for the one
+state the files cannot carry: a REFUSAL writes no state at all, so without that
+read a bundle refused for touching the constitutional set would sit in the
+inbox for ever behind a sentence saying "ready to take".
 
 ## First bootstrap
 
