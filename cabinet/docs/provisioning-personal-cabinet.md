@@ -148,6 +148,8 @@ From Work Cabinet, invoke `mcp__cabinet__presence` on `personal`. Expected: `sta
 
 From Work Cabinet, invoke `mcp__cabinet__send_message` with `to_cabinet=personal`. Check that the message lands in Redis stream `cabinet:inbox:personal` and Personal Cabinet's CoS picks it up.
 
+Then invoke `mcp__cabinet__request_handoff` the same way. The queued row carries `kind=handoff_request`, `context_slug`, `reason` and a `content` line rendered from the last two — `content` is what makes it deliverable at all, because the relay delivers every inbox row by calling `send_message` on the peer and that call refuses an empty content. On the receiving side the row arrives on `cabinet:triggers:<role>` still carrying `kind` and `context_slug`, so the coach can tell a handoff from an ordinary message.
+
 ### Step 10 — Create the Captain-facing context
 
 Edit `/opt/founders-cabinet-personal/instance/config/contexts/` to add real personal contexts (beyond the placeholder `personal.yml`). Example: `sleep.yml`, `training.yml`, `mindfulness.yml` — whatever slicing makes sense for how you think about your life.
@@ -168,6 +170,8 @@ Before declaring Personal Cabinet live:
 
 - **Personal Cabinet won't boot.** Check `bash load-preset.sh` output for schema errors. `CABINET_MODE=multi` with invalid peers.yml aborts — that's intentional. Fix peers.yml and retry.
 - **Trust policy blocks legitimate calls.** Confirm `consented_by_captain: true` AND the tool name is in `allowed_tools`. The hook's error message names exactly what's wrong.
+- **A peer's call is refused with `tool_not_allowed_for_peer`.** Over the HTTP transport the receiving Cabinet resolves the bearer token to the peer it belongs to and allows only the tools listed for THAT peer in its own `peers.yml`. `allowed_tools` binds both directions, so each side must list every tool it expects the other to call — a peer entry with no list may call nothing.
+- **A relayed message is refused with `sender_mismatch`.** The `from_cabinet` field in a request body is a label, not authentication: the receiver uses the peer id the bearer token proved, and refuses a body that names a different origin. Usual cause is a peer id that differs between the two `peers.yml` files, or two peers sharing one `shared_secret_ref` value (which authenticates nobody — each peer needs its own secret).
 - **split-cabinet moved too many / too few rows.** Re-run dry-run with the migrated state to confirm. If you need to undo: `split-cabinet.sh --target-cabinet main --capacity <cap> --apply` restamps them back.
 
 ## Rollback

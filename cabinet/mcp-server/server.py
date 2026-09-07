@@ -16,7 +16,7 @@ Transport selection:
                                    stdio NOT replacing it. Both transports serve
                                    the identical tool surface.
 
-HTTP bearer auth (fail-closed):
+HTTP bearer auth (fail-closed) — authentication BINDS AN IDENTITY:
     Every HTTP request must carry:
         Authorization: Bearer <secret>
     The secret is read from the env var named by `shared_secret_ref` in
@@ -26,6 +26,38 @@ HTTP bearer auth (fail-closed):
     up — "no secret yet" never means "open to all". The listener also binds
     loopback (127.0.0.1) by default; real cross-host federation is the explicit
     CABINET_MCP_HOST opt-out, paired with peer secrets.
+
+    A match does not merely ADMIT the caller — it NAMES it.
+    `authenticate_bearer()` returns the id of the peer whose secret matched
+    (None on no/ambiguous match); `verify_bearer()` is the bool wrapper for
+    call sites that only need admit/deny. Three consequences, all enforced
+    below:
+
+      1. Tool permission is per-peer. An authenticated peer may call ONLY the
+         tools listed in ITS peers.yml `allowed_tools`. The list bounds both
+         directions for that peer: which tools we may call ON it, and which
+         tools it may call ON us. An unlisted or unknown tool name is refused
+         (status=refused, reason=tool_not_allowed_for_peer). A peer with no
+         allowed_tools may call nothing — fail-closed, as everywhere else here.
+      2. Sender identity is proven, not claimed. `from_cabinet` /
+         `_relay_origin_cabinet` in a request body are labels a caller types;
+         on an authenticated transport the effective origin is the
+         AUTHENTICATED peer id, and a body claiming a different origin is
+         refused (status=refused, reason=sender_mismatch) rather than quietly
+         relabelled. Without this, any peer holding a valid token could write
+         into an officer's trigger stream wearing another Cabinet's name.
+      3. The authenticated id is not forgeable over the wire. It reaches tool
+         handlers as the reserved argument `_authenticated_peer`, which
+         handle() STRIPS from every inbound argument dict before dispatch and
+         re-injects only from the transport's own auth result.
+
+    Two peers configured with the SAME secret value make the caller
+    unidentifiable; that is refused (401) rather than guessed. Give each peer
+    its own secret.
+
+    stdio is the local, unauthenticated transport: no bearer, no peer id, so
+    none of the three rules above apply and behaviour is unchanged. Trust
+    there comes from the process boundary, not from a token.
 
     To share a secret with a peer, both sides set the same env var name
     in shared_secret_ref and populate it in their .env files. Secret is
@@ -183,6 +215,23 @@ def _envelope_enforce(site: str, stream: str, fields: dict) -> "tuple[bool, list
     return (False, [])
 
 
+def _flat_fields(fields: dict) -> list:
+    """Flatten an XADD field dict into redis-cli argv order (k1 v1 k2 v2 ...).
+
+    The A6 probe / A12 gate and the XADD that follows them MUST see the same
+    field set: a probe that judges a different envelope than the one written is
+    a sensor pointed at the wrong artifact. Deriving the argv from the single
+    dict makes that structural instead of a convention two edits can break
+    (it also stops the two `int(time.time())` calls from disagreeing by a
+    second). Values are str()-ed because redis-cli argv is text.
+    """
+    argv: list = []
+    for key, value in fields.items():
+        argv.append(key)
+        argv.append(str(value))
+    return argv
+
+
 # ---------------------------------------------------------------
 # Config readers (PyYAML not available; regex-based stdlib substitutes)
 # ---------------------------------------------------------------
@@ -333,60 +382,107 @@ def peer_by_id(peer_id: str) -> dict[str, Any] | None:
 # Bearer auth helpers (HTTP transport only)
 # ---------------------------------------------------------------
 
-def _get_all_valid_secrets() -> list[str]:
-    """Collect valid bearer secrets from all peers with a shared_secret_ref.
-    A request is authed if it matches ANY peer's secret — the specific peer
-    is not identified at the auth layer (tool-level consent checks handle that)."""
-    secrets: list[str] = []
+# Reserved tools/call argument carrying the AUTHENTICATED peer id (never a
+# claimed one). A remote caller can NEVER supply it: handle() strips the key
+# from every inbound argument dict and re-injects it only from the transport's
+# own auth result. Handlers read it to bind a claimed identity to a proven one.
+AUTH_PEER_PARAM = "_authenticated_peer"
+
+
+def _peer_secrets() -> list[tuple[str, str]]:
+    """(peer_id, secret) for every peer whose shared_secret_ref env var is set.
+
+    Identity binding starts here: the secret is the only thing that proves
+    WHICH peer is calling, so the peer id travels with it instead of being
+    dropped on the floor."""
+    pairs: list[tuple[str, str]] = []
     for peer in read_peers():
         ref = peer.get("shared_secret_ref", "")
-        if ref:
+        pid = peer.get("id", "")
+        if ref and pid:
             val = os.environ.get(ref, "").strip()
             if val:
-                secrets.append(val)
-    return secrets
+                pairs.append((pid, val))
+    return pairs
 
 
-def verify_bearer(auth_header: str | None) -> bool:
-    """Return True ONLY if auth_header matches a configured peer secret.
+def _get_all_valid_secrets() -> list[str]:
+    """Back-compat shim: the secret VALUES only, identity discarded.
 
-    FAIL-CLOSED security posture:
-    - When peer secrets ARE configured: Bearer token must match one of them
-      (hmac.compare_digest to prevent timing attacks). Missing or wrong token
-      → False → caller returns 401.
-    - When NO peer secrets are configured (fresh Cabinet, no shared_secret_ref
-      set in peers.yml or env vars): DENY every request (return False → 401)
-      with a loud warning on stderr. An unauthenticated HTTP transport reaches
-      the Captain's org control plane, so "no secret yet" must never mean "open
-      to all" — the operator sets shared_secret_ref + its env var before the
-      HTTP surface serves anything. (This closes a latent open door: the prior
-      behavior ACCEPTED all requests in this state, which — paired with an
-      all-interfaces bind — was reachable from the network.)
+    Prefer _peer_secrets(). Discarding the peer id is precisely the defect the
+    identity-binding work fixed — a token that says "some peer" cannot support
+    a per-peer permission check or a sender-identity check."""
+    return [secret for _pid, secret in _peer_secrets()]
 
-    Returns False (not 401 directly) — caller decides HTTP response code.
+
+def authenticate_bearer(auth_header: str | None) -> str | None:
+    """Resolve an Authorization header to the peer id it authenticates.
+
+    Returns the peer id on success, None on failure — the caller decides the
+    HTTP response code.
+
+    FAIL-CLOSED posture (unchanged) plus IDENTITY BINDING (the point):
+    - NO peer secrets configured (fresh Cabinet, no shared_secret_ref set in
+      peers.yml or no env var): deny every request, loud on stderr. An
+      unauthenticated HTTP transport reaches the Captain's org control plane,
+      so "no secret yet" must never mean "open to all".
+    - Missing header, wrong scheme, or no matching secret: None.
+    - Exactly ONE peer's secret matches (hmac.compare_digest, so the compare
+      is constant-time): return that peer's id. The caller is now IDENTIFIED,
+      not merely admitted, and the per-peer checks downstream have something
+      real to check against.
+    - Two or more DISTINCT peers share the matching secret: None. An ambiguous
+      token cannot bind an identity, and a receiver that picked one would let
+      either peer speak as the other. Refuse, and say so on stderr.
+
+    Every configured secret is compared even after a match, so the work done
+    does not depend on which peer is calling.
     """
-    valid_secrets = _get_all_valid_secrets()
-    if not valid_secrets:
-        # Fail closed: no secrets configured → refuse every request and tell the
+    pairs = _peer_secrets()
+    if not pairs:
+        # Fail closed: no secrets configured -> refuse every request and tell the
         # operator how to enable auth. Never an open door.
         sys.stderr.write(
             "[cabinet-mcp] WARNING: HTTP transport has no shared_secret_ref secrets "
             "configured — refusing all requests (fail-closed). Set shared_secret_ref "
             "+ its env var in peers.yml to enable bearer auth.\n"
         )
-        return False
+        return None
 
     # Secrets are configured — enforce bearer token.
     if not auth_header:
-        return False
+        return None
     if not auth_header.startswith("Bearer "):
-        return False
-    provided = auth_header[len("Bearer "):]
+        return None
+    provided = auth_header[len("Bearer "):].encode()
     import hmac
-    for secret in valid_secrets:
-        if hmac.compare_digest(provided.encode(), secret.encode()):
-            return True
-    return False
+    matched: list[str] = []
+    for pid, secret in pairs:
+        if hmac.compare_digest(provided, secret.encode()) and pid not in matched:
+            matched.append(pid)
+    if len(matched) == 1:
+        return matched[0]
+    if len(matched) > 1:
+        sys.stderr.write(
+            "[cabinet-mcp] WARNING: bearer token matches multiple peers "
+            f"({', '.join(sorted(matched))}) — refusing the request. An ambiguous "
+            "secret cannot bind a caller identity; give each peer its own "
+            "shared_secret_ref value.\n"
+        )
+    return None
+
+
+def verify_bearer(auth_header: str | None) -> bool:
+    """Bool wrapper over authenticate_bearer(): True iff the header
+    authenticates SOME configured peer.
+
+    Kept for call sites that genuinely need only the admit/deny bit. Anything
+    that ACTS on who the caller is — per-peer tool permission, sender identity —
+    must call authenticate_bearer() and use the returned peer id; a bool cannot
+    tell two peers apart, which is how a token from peer A ended up able to
+    speak as peer B.
+    """
+    return authenticate_bearer(auth_header) is not None
 
 
 # ---------------------------------------------------------------
@@ -499,7 +595,11 @@ def tool_send_message(params: dict) -> dict:
     stream `cabinet:inbox:<to_cabinet>` — the target Cabinet's consumer
     reads it the same way officers read Redis Channel triggers.
 
-    Input schema: {to_cabinet, from_agent, content, [reply_to]}
+    Input schema: {to_cabinet, from_agent, content, [reply_to],
+                   [kind], [context_slug]}
+    `kind`/`context_slug` are relay-carried handoff metadata: on the
+    self-delivery path they ride into the local trigger so the receiving
+    officer can tell a handoff request from a chat message.
     Output: {status, message_id}
     Enforcement: peers.yml consented_by_captain must be true AND 'send_message'
     must be in the target's allowed_tools; this is pre-tool-use hook territory
@@ -520,7 +620,34 @@ def tool_send_message(params: dict) -> dict:
     # below would reject (cabinet not in its own peer list) and the relay would lose
     # the message. Detect self-delivery here and route to a local trigger stream.
     if to_cabinet == this_cabinet_id():
-        from_cabinet = params.get("from_cabinet") or params.get("_relay_origin_cabinet") or "unknown"
+        # Sender identity: PROVEN beats CLAIMED. `from_cabinet` and
+        # `_relay_origin_cabinet` are fields in the request body — a label the
+        # caller typed, not authentication. When the transport authenticated the
+        # caller (bearer token -> peer id, injected as AUTH_PEER_PARAM by
+        # handle(), never accepted from the wire), the effective origin IS that
+        # proven id and a body naming a different origin is REFUSED, not quietly
+        # relabelled: accepting it would let any peer holding a valid token write
+        # into an officer's trigger stream wearing another Cabinet's name, and
+        # that stream is read and acted on by the officer.
+        # stdio (local, no bearer, no peer id) keeps the claim-only behaviour —
+        # trust there is the process boundary, not a token.
+        authed_peer = params.get(AUTH_PEER_PARAM) or ""
+        claimed_from = params.get("from_cabinet") or params.get("_relay_origin_cabinet") or ""
+        if authed_peer:
+            if claimed_from and claimed_from != authed_peer:
+                sys.stderr.write(
+                    "[cabinet-mcp] send_message REFUSED sender_mismatch "
+                    f"authenticated_peer={authed_peer} claimed_from_cabinet={claimed_from}\n"
+                )
+                return {
+                    "status": "refused",
+                    "reason": "sender_mismatch",
+                    "authenticated_peer": authed_peer,
+                    "claimed_from_cabinet": claimed_from,
+                }
+            from_cabinet = authed_peer
+        else:
+            from_cabinet = claimed_from or "unknown"
         # Default delivery target: CoS — coordinates cross-Cabinet inbound by design
         # (matches "Officer → Officer (Redis push)" pattern in CLAUDE.md). Future
         # extension: honor an explicit `to_role` param when relays carry it.
@@ -556,6 +683,15 @@ def tool_send_message(params: dict) -> dict:
             )
         if roster and target_role != "cos" and target_role not in roster:
             return {"status": "refused", "reason": "unknown_target_role", "to_role": target_role}
+        # Handoff metadata carried in by the relay. A request_handoff row queues
+        # kind='handoff_request' + context_slug beside its content; the relay
+        # forwards them as send_message arguments. Without them the receiving
+        # officer sees a handoff request as an ordinary chat message and cannot
+        # tell the two apart. Both are peer-supplied VALUES, exactly like
+        # content and from_agent — never key parts, so they cannot reach the
+        # stream NAME (that remains target_role, validated above).
+        kind = str(params.get("kind") or "")
+        in_context_slug = str(params.get("context_slug") or "")
         # A6 report-only probe — beside, never around, the XADD (fail-open).
         _sd_fields = {
             "source": "cross-cabinet",
@@ -565,6 +701,10 @@ def tool_send_message(params: dict) -> dict:
             "reply_to": str(reply_to or ""),
             "ts": str(int(time.time())),
         }
+        if kind:
+            _sd_fields["kind"] = kind
+        if in_context_slug:
+            _sd_fields["context_slug"] = in_context_slug
         _envelope_report(
             "server.send_message.self_delivery",
             f"cabinet:triggers:{target_role}",
@@ -585,12 +725,7 @@ def tool_send_message(params: dict) -> dict:
                 [
                     "redis-cli", "-h", REDIS_HOST, "-p", REDIS_PORT,
                     "XADD", f"cabinet:triggers:{target_role}", "*",
-                    "source", "cross-cabinet",
-                    "from_cabinet", from_cabinet,
-                    "from_agent", from_agent,
-                    "content", content,
-                    "reply_to", str(reply_to or ""),
-                    "ts", str(int(time.time())),
+                    *_flat_fields(_sd_fields),
                 ],
                 capture_output=True, text=True, timeout=5,
             )
@@ -638,11 +773,7 @@ def tool_send_message(params: dict) -> dict:
             [
                 "redis-cli", "-h", REDIS_HOST, "-p", REDIS_PORT,
                 "XADD", f"cabinet:inbox:{to_cabinet}", "*",
-                "from_cabinet", this_cabinet_id(),
-                "from_agent", from_agent,
-                "content", content,
-                "reply_to", str(reply_to or ""),
-                "ts", str(int(time.time())),
+                *_flat_fields(_po_fields),
             ],
             capture_output=True, text=True, timeout=5,
         )
@@ -662,6 +793,13 @@ def tool_request_handoff(params: dict) -> dict:
     mechanic as send_message but with a structured reason + expectation
     that the peer's CoS routes it to the right coach.
 
+    Queue row (cabinet:inbox:<peer>): from_cabinet, from_agent,
+    kind='handoff_request', context_slug, reason, content, ts. `content` is
+    rendered from reason + context_slug and is NOT optional — the relay
+    delivers every inbox row by re-calling send_message on the peer, and that
+    handler refuses an empty content, so a contentless handoff row is an
+    undeliverable one.
+
     Input: {to_cabinet, context_slug, reason, [from_agent]}
     Output: {status, handoff_id}
     """
@@ -679,6 +817,13 @@ def tool_request_handoff(params: dict) -> dict:
     if "request_handoff" not in peer.get("allowed_tools", []):
         return {"status": "refused", "reason": "request_handoff_not_in_peer_allowed_tools"}
 
+    # A handoff row travels to the peer through cabinet-mcp-relay.py, which
+    # re-calls send_message on the destination — and that handler REFUSES an
+    # empty `content`. A row queued with only kind/context_slug/reason could
+    # therefore NEVER be delivered: it was posted, rejected, and left in the
+    # inbox forever. Render a content line from the structured fields (which
+    # stay alongside it, so the receiver still knows this is a handoff).
+    content = f"[handoff request] context '{context_slug}': {reason}"
     # A6 report-only probe — beside, never around, the XADD (fail-open).
     _ho_fields = {
         "from_cabinet": this_cabinet_id(),
@@ -686,6 +831,7 @@ def tool_request_handoff(params: dict) -> dict:
         "kind": "handoff_request",
         "context_slug": context_slug,
         "reason": reason,
+        "content": content,
         "ts": str(int(time.time())),
     }
     _envelope_report(
@@ -708,12 +854,7 @@ def tool_request_handoff(params: dict) -> dict:
             [
                 "redis-cli", "-h", REDIS_HOST, "-p", REDIS_PORT,
                 "XADD", f"cabinet:inbox:{to_cabinet}", "*",
-                "from_cabinet", this_cabinet_id(),
-                "from_agent", from_agent,
-                "kind", "handoff_request",
-                "context_slug", context_slug,
-                "reason", reason,
-                "ts", str(int(time.time())),
+                *_flat_fields(_ho_fields),
             ],
             capture_output=True, text=True, timeout=5,
         )
@@ -1049,6 +1190,12 @@ TOOLS: list[dict[str, Any]] = [
                 "from_agent": {"type": "string"},
                 "content": {"type": "string"},
                 "reply_to": {"type": "string"},
+                # Handoff metadata the relay forwards from a queued
+                # request_handoff row; declared so a peer that validates this
+                # schema does not reject a legitimate relayed handoff.
+                "kind": {"type": "string"},
+                "context_slug": {"type": "string"},
+                "reason": {"type": "string"},
             },
             "required": ["to_cabinet", "from_agent", "content"],
             "additionalProperties": False,
@@ -1061,7 +1208,9 @@ TOOLS: list[dict[str, Any]] = [
         "description": (
             "Ask a peer Cabinet to take ownership of a context. Typical use: Work "
             "Cabinet hands a personal-state conversation to Personal Cabinet. Same "
-            "queue mechanic as send_message; queued with kind='handoff_request'. "
+            "queue mechanic as send_message; queued with kind='handoff_request' "
+            "plus a content line rendered from reason + context_slug (the relay "
+            "delivers inbox rows via send_message, which refuses empty content). "
             "Peer consent + allowed_tools enforcement applies."
         ),
         "inputSchema": {
@@ -1132,7 +1281,15 @@ def make_tool_result(payload: Any) -> dict:
     return {"content": [{"type": "text", "text": json.dumps(payload, indent=2, sort_keys=True, default=str)}]}
 
 
-def handle(req: dict) -> dict | None:
+def handle(req: dict, authenticated_peer: str | None = None) -> dict | None:
+    """Dispatch one JSON-RPC request. Shared by both transports.
+
+    `authenticated_peer` is the peer id the TRANSPORT proved (HTTP bearer ->
+    authenticate_bearer()); None means an unauthenticated local transport
+    (stdio), where the per-peer rules below do not apply and behaviour is
+    unchanged. It is a parameter rather than a body field precisely so a
+    caller cannot set it.
+    """
     method = req.get("method", "")
     rid = req.get("id")
 
@@ -1169,7 +1326,41 @@ def handle(req: dict) -> dict | None:
     if method == "tools/call":
         params = req.get("params", {})
         name = params.get("name", "")
-        args = params.get("arguments", {}) or {}
+        raw_args = params.get("arguments", {}) or {}
+        args = dict(raw_args) if isinstance(raw_args, dict) else {}
+        # A caller may NEVER supply its own authenticated identity. Strip the
+        # reserved key from inbound arguments on EVERY transport, then re-inject
+        # it below from the transport's auth result alone. (Stripping on stdio
+        # too is deliberate: one rule, no transport-shaped exception to forget.)
+        args.pop(AUTH_PEER_PARAM, None)
+        if authenticated_peer is not None:
+            # Receiver-side tool permission. peers.yml `allowed_tools` bounds
+            # BOTH directions for a peer: which tools we may call on it (checked
+            # in tool_send_message / tool_request_handoff and in the relay), and
+            # — here — which tools it may call on US. Until this check existed,
+            # any peer holding a valid token could call every tool on the
+            # surface, so allowed_tools described an intention rather than a
+            # boundary. Fail-closed: no entry, no list, or a name not in the
+            # list = refused, and an unknown tool name is unlisted by
+            # construction (it is also never disclosed to the caller).
+            peer = peer_by_id(authenticated_peer) or {}
+            allowed = peer.get("allowed_tools")
+            if not isinstance(allowed, list) or name not in allowed:
+                sys.stderr.write(
+                    "[cabinet-mcp] tools/call REFUSED tool_not_allowed_for_peer "
+                    f"peer={authenticated_peer} tool={name}\n"
+                )
+                return {
+                    "jsonrpc": "2.0",
+                    "id": rid,
+                    "result": make_tool_result({
+                        "status": "refused",
+                        "reason": "tool_not_allowed_for_peer",
+                        "tool": name,
+                        "peer": authenticated_peer,
+                    }),
+                }
+            args[AUTH_PEER_PARAM] = authenticated_peer
         tool = get_tool(name)
         if not tool:
             return {
@@ -1249,9 +1440,15 @@ class CabinetMCPHandler(BaseHTTPRequestHandler):
 
     Security model:
     - Only POST /mcp is accepted; all other paths return 404.
-    - Bearer token checked against shared_secret_ref env vars from peers.yml.
-    - Missing/wrong Bearer → 401 with structured JSON body.
-    - Tool dispatch is identical to stdio path (same `handle()` function).
+    - Bearer token checked against shared_secret_ref env vars from peers.yml,
+      and RESOLVED TO THE PEER IT BELONGS TO (authenticate_bearer). A token
+      that matches no peer, or matches two, authenticates nobody.
+    - Missing/wrong/ambiguous Bearer → 401 with structured JSON body.
+    - Tool dispatch is the same `handle()` the stdio path uses, called with the
+      authenticated peer id: that id gates which tools this peer may call
+      (peers.yml allowed_tools) and overrides any sender identity claimed in
+      the request body (see tool_send_message). The caller cannot supply it —
+      handle() strips AUTH_PEER_PARAM from inbound arguments.
     - All errors return structured JSON, never crash the server.
     """
 
@@ -1271,15 +1468,17 @@ class CabinetMCPHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "not_found", "path": self.path})
             return
 
-        # --- Bearer auth ---
+        # --- Bearer auth: resolve the caller to a PEER ID, not just a yes/no ---
         auth_header = self.headers.get("Authorization")
-        if not verify_bearer(auth_header):
+        authenticated_peer = authenticate_bearer(auth_header)
+        if authenticated_peer is None:
             self._send_json(401, {
                 "error": "unauthorized",
                 "message": "Missing or invalid Authorization: Bearer <secret>",
             })
             sys.stderr.write(
-                f"[cabinet-mcp-http] 401 from {self.client_address[0]} — bad/missing bearer\n"
+                f"[cabinet-mcp-http] 401 from {self.client_address[0]} — "
+                "bearer missing, wrong, or not resolvable to a single peer\n"
             )
             return
 
@@ -1306,9 +1505,9 @@ class CabinetMCPHandler(BaseHTTPRequestHandler):
                 pass
             return
 
-        # --- Dispatch ---
+        # --- Dispatch (carrying the proven identity, never a claimed one) ---
         try:
-            resp = handle(req)
+            resp = handle(req, authenticated_peer=authenticated_peer)
         except Exception as exc:
             self._send_json(500, {"jsonrpc": "2.0", "id": req.get("id"), "error": {"code": -32603, "message": str(exc)}})
             return
