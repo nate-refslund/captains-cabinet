@@ -44,9 +44,14 @@ fi
 
 OFFICER="${OFFICER_NAME:-${CABINET_OFFICER:-unknown}}"
 
+# A0.3: pin the interpreter. `python3` on the deployment box is 3.9.6 and
+# python3.12 is installed beside it, so a bare token here does not name an
+# interpreter — it names whatever PATH answers with. The shell still expands
+# this, so an operator overrides with one variable. (The module stays
+# 3.9-correct regardless: the schg-locked hook imports it and cannot be pinned.)
 CABINET_ROOT="$CABINET_ROOT" OFFICER="$OFFICER" \
 NEED="$NEED" KIND="$KIND" EVIDENCE="$EVIDENCE" TOUCHES="$TOUCHES" \
-python3 - <<'PY'
+"${CABINET_PYTHON:-python3.12}" - <<'PY'
 import os, sys
 sys.path.insert(0, os.environ["CABINET_ROOT"])
 from framework.learning.capability_gaps import record_gap

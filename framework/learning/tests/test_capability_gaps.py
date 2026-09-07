@@ -608,3 +608,61 @@ class TestKeyedDedupUnderConcurrency:
         assert len(recorded) == 2, [e["payload"]["gap_id"] for e in recorded]
         assert _events("capability_gap_merged") == []
         assert len(project_gaps(product_slug="testprod")) == 2
+
+
+# ---------------------------------------------------------------------------
+# The coupling this module carries into the pull path, made loud
+# ---------------------------------------------------------------------------
+
+class TestLedgerDirectoryCoupling:
+    """`_gaps_lock` resolves its directory through the emitter's own resolver.
+
+    The lock is only a lock if it sits where the ledger sits: two writers
+    holding two different lock files serialize nothing. This module therefore
+    imports `framework.events.emitter._event_log_dir` — a PRIVATE name — and a
+    rename there breaks `capability_gaps` at IMPORT time, on a module the
+    schg-locked hook imports on every officer tick.
+
+    The import stays hard on purpose: a `try/except ImportError` fallback that
+    guessed a directory would put the lock somewhere the ledger is not, which
+    is a silent fail-open on a concurrency control — strictly worse than an
+    import error a test can see. So the coupling is pinned here instead, with
+    the fix in the failure text. Promoting `_event_log_dir` to a public
+    accessor is an `emitter.py` change and `emitter.py` belongs to the claim
+    unit at this commit; whoever lands that updates this test and the import
+    together.
+    """
+
+    def test_the_lock_file_lands_in_the_ledger_directory(self, event_log_dir):
+        record_gap("no holder on the roster for task-009 of outcome-a",
+                   kind="skill", recorded_by="supervisor",
+                   dedup_key="holder:outcome-a:task-009")
+
+        from framework.learning.capability_gaps import _GAPS_LOCK_NAME
+
+        lock = event_log_dir / _GAPS_LOCK_NAME
+        assert lock.exists(), sorted(p.name for p in event_log_dir.iterdir())
+        # ...the SAME directory the projection replays, not merely a plausible
+        # one: the ledger the gap was written to is right beside it.
+        assert list(event_log_dir.glob("events-*.jsonl")), \
+            sorted(p.name for p in event_log_dir.iterdir())
+
+    def test_the_private_emitter_symbol_this_module_imports_still_exists(self):
+        """Fires in the case that matters: the rename landed WITH its import fix.
+
+        A rename with no fix is already loud — `capability_gaps` fails at
+        import and every test in this file errors. The silent case is the good
+        citizen who renames `_event_log_dir` to a public accessor, updates the
+        import in `capability_gaps.py`, and leaves this file's docstring
+        describing a coupling that no longer exists. Then THIS goes red and
+        says so.
+        """
+        import framework.events.emitter as emitter
+
+        assert hasattr(emitter, "_event_log_dir"), (
+            "framework/events/emitter.py no longer exports `_event_log_dir`. "
+            "framework/learning/capability_gaps.py imports it at module scope "
+            "for `_gaps_lock`, so this rename breaks the pull path at import "
+            "time. Update that import in the SAME commit — and if the rename "
+            "made it public, point this test at the public name."
+        )

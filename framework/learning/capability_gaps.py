@@ -413,6 +413,20 @@ def _gaps_lock():
     lock's scope is exactly the dedupe's scope. Advisory `flock`, POSIX only —
     the same premise framework/attention/feed.py records. Ordering is always
     gaps-lock → ledger-lock (emitter), never the reverse.
+
+    ORDERING FOR THE LOCK THAT HAS NOT LANDED YET. A3.1 says keyed records are
+    taken "under the claims lock"; `framework/missions/claims.py` does not
+    exist at this commit, so this purpose-built lock beside the ledger provides
+    the atomicity A3.1 exists for. When U2 lands its claims lock, the pull path
+    will hold it while calling into here (U3b's `observe_holder_gaps` runs
+    inside `get_next_task`), so the acquisition order is fixed now, in the only
+    direction that is deadlock-free with a single writer path:
+
+        claims-lock → gaps-lock → ledger-lock
+
+    Nothing in this module ever takes a claims lock, so this module cannot
+    invert it on its own; the rule binds whoever adds a call in the other
+    direction, and belongs in claims.py's docstring too when it lands.
     """
     log_dir = _event_log_dir()
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -433,6 +447,18 @@ def _live_gap_with_id(gap_id: str, product_slug: str) -> dict[str, Any] | None:
     A closed one answers None on purpose: the condition recurring after it was
     closed is a NEW observation and re-opens the gap, which the projection
     already handles (a second `capability_gap_recorded` rebuilds the row).
+
+    RECORDED, so U3b's producer does not surprise the Captain: for a KEYED gap
+    this makes a decline non-final in the projection. A Captain declines a
+    standing condition; the next observer tick re-records it and `/gaps` shows
+    it open again — occasional for a free-text gap, continuous for a keyed one
+    whose subject persists. The decline still BINDS where it matters:
+    `can_install` reads the decision out of the event ledger
+    (`_latest_decision_for`), not out of the projected status, so a re-opened
+    row grants nothing. The behaviour predates keys (`gap_id_for(need)` is
+    equally stable); keys only make it regular. If the Captain should be able
+    to silence a standing condition, that is a `resolve`/mute decision for
+    U3b's producer, not a change to this projection.
     """
     for g in project_gaps(product_slug=product_slug):
         if g["gap_id"] != gap_id:
@@ -487,6 +513,16 @@ def record_gap(need: str, kind: str | None = None, evidence: str = "",
     keyed gap is not a merge TARGET (two subjects whose needs read alike —
     `…task-001` and `…task-002` — would otherwise collapse into one) and a keyed
     record never runs the scan, so it cannot be merged INTO one either.
+
+    RECORDED CONSEQUENCE (A3.1 mandates no emit on re-observation, so this is
+    the contract's shape, not a defect): a keyed gap's `hit_count` stays 1 for
+    its whole life. `project_gaps` ranks by `-hit_count` — frequency = priority
+    for free-text gaps — so a standing condition observed on every tick sorts
+    BELOW a free-text gap seen twice. Nothing keyed is emitted today; when
+    U3b's producer starts emitting keyed gaps, the `/gaps` ranking is the call
+    to make then (rank keyed rows by `last_seen`/age, or accept the order).
+    Deliberately not pre-empted here: a ranking rule with no producer is a
+    guess about a surface nobody has looked at yet.
 
     Returns the gap dict (new, keyed-existing, or merged-into).
     """
