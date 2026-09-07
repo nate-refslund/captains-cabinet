@@ -25,7 +25,10 @@ Behavior:
 - Skips peers where send_message is not in allowed_tools.
 - For each peer, XRANGE the local cabinet:inbox:<peer_id>, POST each entry to the
   peer's /mcp endpoint as a tools/call cabinet.send_message JSON-RPC request,
-  XDEL on HTTP 200 success.
+  XDEL on HTTP 200 success. Every row is delivered as send_message, so a row
+  needs a non-empty `content` (the receiver refuses an empty one); a
+  request_handoff row carries kind/context_slug/reason too and those ride
+  along, so the receiver can tell a handoff from a chat message.
 - Idempotent: re-running the relay re-attempts unsent entries. Per-message ids
   carry the original Redis stream ID so dedup is the peer's responsibility.
 - Bearer auth via the env var named in shared_secret_ref. Missing env var = skip
@@ -293,6 +296,44 @@ def parse_xrange_entry(stream_lines: list[str]) -> list[tuple[str, dict[str, str
     return entries
 
 
+# Structured fields a queued row may carry beside `content`. request_handoff
+# writes kind='handoff_request' + context_slug + reason; forwarding them keeps
+# the handoff distinguishable from a chat message all the way to the receiving
+# officer's trigger. Absent fields are omitted rather than sent empty, so an
+# ordinary send_message row stays byte-identical to what it was before.
+HANDOFF_PASSTHROUGH_FIELDS = ("kind", "context_slug", "reason")
+
+
+def build_send_payload(peer_id: str, stream_id: str, fields: dict[str, str]) -> dict[str, Any]:
+    """Build the JSON-RPC tools/call send_message payload for one inbox row.
+
+    Pure — no Redis, no HTTP — so the producer→relay→receiver contract is
+    testable end to end without a live bus. `content` is taken verbatim from
+    the row: the receiver refuses an empty one, which is exactly how a
+    contentless row must fail (loudly at the producer's gate, not silently
+    here by inventing text the sender never wrote).
+    """
+    arguments: dict[str, Any] = {
+        "to_cabinet": peer_id,
+        "from_agent": fields.get("from_agent", "unknown"),
+        "content": fields.get("content", ""),
+        "reply_to": fields.get("reply_to") or None,
+        "_relay_origin_id": stream_id,
+        "_relay_origin_cabinet": fields.get("from_cabinet", THIS_CABINET_ID),
+        "_relay_origin_ts": fields.get("ts", ""),
+    }
+    for name in HANDOFF_PASSTHROUGH_FIELDS:
+        value = fields.get(name)
+        if value:
+            arguments[name] = value
+    return {
+        "jsonrpc": "2.0",
+        "id": stream_id,
+        "method": "tools/call",
+        "params": {"name": "send_message", "arguments": arguments},
+    }
+
+
 def drain_peer(peer_id: str, peer: dict[str, Any]) -> int:
     """Drain cabinet:inbox:<peer_id> by posting to the peer. Returns delivered count."""
     if not peer.get("consented_by_captain"):
@@ -311,23 +352,7 @@ def drain_peer(peer_id: str, peer: dict[str, Any]) -> int:
 
     delivered = 0
     for stream_id, fields in entries:
-        payload = {
-            "jsonrpc": "2.0",
-            "id": stream_id,
-            "method": "tools/call",
-            "params": {
-                "name": "send_message",
-                "arguments": {
-                    "to_cabinet": peer_id,
-                    "from_agent": fields.get("from_agent", "unknown"),
-                    "content": fields.get("content", ""),
-                    "reply_to": fields.get("reply_to") or None,
-                    "_relay_origin_id": stream_id,
-                    "_relay_origin_cabinet": fields.get("from_cabinet", THIS_CABINET_ID),
-                    "_relay_origin_ts": fields.get("ts", ""),
-                },
-            },
-        }
+        payload = build_send_payload(peer_id, stream_id, fields)
         ok, err = post_to_peer(peer, payload)
         if not ok:
             log(f"deliver-fail peer={peer_id} id={stream_id} err={err}")
