@@ -182,8 +182,22 @@ _UPDATE_EVENT_TYPES = (
 )
 
 
+#: An emitter whose LEDGER IS BROKEN, which is a different thing from one of an
+#: older vintage. The recorder catches every exception, on purpose (nothing may
+#: cost the record) — and round 1 reported all of them, on all four surfaces, as
+#: "this install's ledger does not know the event kind yet, and the next update
+#: files it". A full disk is not filed by the next update, or by any update.
+_FAULTY_EMITTER = '''\
+def emit(event_type, actor, payload=None, parent_id=None):
+    raise OSError(28, "No space left on device", "events-2026-09-08.jsonl")
+'''
+
+
 def stub_emitter_source(vintage: str) -> str:
-    """`vintage` is "old" (an egg cut before the update path) or "new"."""
+    """`vintage` is "old" (an egg cut before the update path), "new", or
+    "faulty" (a current emitter whose ledger will not take a write)."""
+    if vintage == "faulty":
+        return _FAULTY_EMITTER
     types = ["officer_session_started"]
     if vintage == "new":
         types.extend(_UPDATE_EVENT_TYPES)
@@ -2273,3 +2287,309 @@ def test_the_ingest_is_idempotent_by_id_not_only_by_the_rename(tmp_path):
     rows = [e for e in events(root)
             if (e.get("payload") or {}).get("deferred_record_id") == "held-0001"]
     assert len(rows) == 1, rows
+
+
+# ===========================================================================
+# 14. A5.15 — the durable record is not allowed to eat the durable record
+#
+# Found in review, round 1, driven against these bytes: `record_refusal` read
+# `state.json`, the updater it had lost the lock to finished and wrote
+# `applied`, and the refusal then wrote its own stale copy of the document back
+# — leaving `phase: applying` with a snapshot name over an apply that had
+# SUCCEEDED. The next apply or rollback reads exactly that as an interrupted
+# apply and restores the snapshot, silently undoing it. The `phase != applying`
+# guard the refusal carries is check-then-act on unsynchronised state, so it
+# cannot be the thing that closes this; the read and the write have to be one
+# indivisible step.
+#
+# The interleaving is DRIVEN, not waited for. The loser is told to stop between
+# its read and its write and to proceed as soon as the winner's write is
+# visible — which, unlocked, is immediately. Under a lock the winner cannot get
+# in at all, and the loser proceeds on its deadline instead, so both directions
+# are deterministic rather than timing-dependent.
+# ===========================================================================
+
+_LOSER_SRC = '''\
+import json, pathlib, sys, time
+
+root = pathlib.Path(sys.argv[1])
+entry = sys.argv[2]
+sys.path.insert(0, str(root / "cabinet" / "scripts" / "lib"))
+import update_bundle as ub
+
+if entry == "record_refusal":
+    # The ledger half is not part of the interleaving under test, and stubbing
+    # it leaves exactly ONE read-modify-write in this process to instrument.
+    ub.record_event = lambda *a, **k: {"recorded": "stub"}
+
+state_path = root / ".updates" / "state.json"
+signal = root / ".updates" / "LOSER-HAS-READ"
+original = ub.read_state
+
+
+def read_then_wait(install_root):
+    document = original(install_root)
+    signal.write_text("read\\n", encoding="utf-8")
+    deadline = time.time() + 6.0
+    while time.time() < deadline:
+        try:
+            if json.loads(state_path.read_text(encoding="utf-8"))["phase"] == "applied":
+                break
+        except Exception:
+            pass
+        time.sleep(0.02)
+    return document
+
+
+ub.read_state = read_then_wait
+if entry == "record_refusal":
+    ub.record_refusal(root, "b" * 40, "busy", [], "terminal", "system")
+else:
+    ub.record_event(root, "cabinet_update_refused", "system", {"reason": "busy"})
+'''
+
+
+@pytest.mark.parametrize("entry", ["record_refusal", "record_event"])
+def test_a_losing_updaters_state_write_cannot_revert_the_winners(tmp_path, entry):
+    """Both writers of `state.json`, against a winner that lands mid-window.
+
+    `record_refusal` and `record_event -> update_state` are the two
+    read-modify-writes a LOSER performs — by definition while the winner holds
+    the updater lock and is writing the same file. Whichever one is
+    instrumented, the document the winner wrote must survive, and the refusal
+    must still be recorded: losing either is a durable record destroyed by the
+    thing that was supposed to make records durable."""
+    root = make_install(tmp_path)
+    upd = root / ".updates"
+    upd.mkdir(parents=True, exist_ok=True)
+    (upd / "state.json").write_text(json.dumps({
+        "phase": "applying", "from_sha": OLD_SHA, "to_sha": NEW_SHA,
+        "snapshot": "20260908T195800Z-" + OLD_SHA[:8],
+        "started_at": "2026-09-08T19:58:00Z", "door": "web",
+    }), encoding="utf-8")
+
+    loser_py = tmp_path / "loser.py"
+    loser_py.write_text(_LOSER_SRC, encoding="utf-8")
+    env = dict(os.environ, CABINET_EVENT_LOG_DIR=str(root / ".events"),
+               PYTHONDONTWRITEBYTECODE="1")
+    loser = subprocess.Popen([_PY, str(loser_py), str(root), entry],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             text=True, env=env)
+    try:
+        deadline = time.time() + 30
+        while not (upd / "LOSER-HAS-READ").is_file():
+            assert time.time() < deadline, "the loser never reached its read"
+            assert loser.poll() is None, ("the loser died before its read: %s"
+                                          % loser.communicate()[1])
+            time.sleep(0.02)
+
+        # The winner finishes and writes the whole document, through the same
+        # seam cabinet-update.sh uses (`write-state`).
+        winner = subprocess.run(
+            [_PY, str(root / "cabinet" / "scripts" / "lib" / "update_bundle.py"),
+             "write-state", "--root", str(root), "--state", json.dumps({
+                 "phase": "applied", "from_sha": OLD_SHA, "to_sha": NEW_SHA,
+                 "changed": 3, "deleted": 0,
+                 "finished_at": "2026-09-08T19:58:03Z", "door": "web"})],
+            capture_output=True, text=True, env=env, timeout=60)
+        assert winner.returncode == 0, winner.stderr
+        out, err = loser.communicate(timeout=60)
+        assert loser.returncode == 0, err
+    finally:
+        if loser.poll() is None:
+            loser.kill()
+
+    final = state(root)
+    assert final.get("phase") == "applied", (
+        "the loser wrote its stale copy back over the winner: %s" % final)
+    assert "snapshot" not in final, (
+        "a completed apply is carrying a snapshot name again, which the next "
+        "run restores from: %s" % final)
+    if entry == "record_refusal":
+        assert (final.get("last_refusal") or {}).get("reason") == "busy", final
+
+
+# ===========================================================================
+# 15. A5.16 — a broken ledger is a FAULT, and never reads as version skew
+#
+# The recorder catches everything, deliberately: no failure of the ledger may
+# cost the record. Round 1 then reported every one of those failures, on all
+# four surfaces, as the benign bootstrap-ordering condition — "this install's
+# ledger does not know the event kind yet, and the next update files it". Two
+# very different facts wearing one sentence, and the reassuring one is the
+# wrong one: no update files a full disk. The `why` was computed and dropped.
+# ===========================================================================
+
+def test_a_broken_ledger_is_named_as_a_fault_on_every_surface(tmp_path):
+    """An emitter that raises OSError, not one of an older vintage.
+
+    The record still has to be held — that half is not in question — but the
+    operator has to be able to tell "wait for the next update" from "go and
+    look at the disk", and only one of those two is ever true."""
+    root = make_install(tmp_path, emitter="faulty")
+    make_bundle(tmp_path, root, NEW_SHA,
+                extra={"cabinet/scripts/hello.sh": "echo hello v2\n"}, corrupt=True)
+
+    result = run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                         "--skip-restart")
+    assert result.returncode == 3, (result.returncode, result.stderr)
+
+    # Unchanged: the record is kept, whatever went wrong.
+    held = deferred_events(root)
+    assert len(held) == 1 and held[0]["event_type"] == "cabinet_update_refused"
+
+    document = state(root)
+    assert "No space left on device" in (document.get("ledger_error") or ""), document
+    report = status_json(root)
+    assert report["event_fallback"] is True
+    assert "No space left on device" in (report.get("ledger_error") or ""), report
+
+    # The operator's log, which is the only surface a terminal apply has.
+    assert "ledger fault" in result.stderr.lower(), result.stderr
+    assert "No space left on device" in result.stderr, result.stderr
+    assert "does not know the event kind yet" not in result.stderr, result.stderr
+
+    human = run_updater(root, "status")
+    assert human.returncode == 0, human.stderr
+    assert "ledger fault" in human.stdout, human.stdout
+    assert "No space left on device" in human.stdout, human.stdout
+
+
+def test_version_skew_is_still_reported_as_version_skew(tmp_path):
+    """The inverse arm, and the one that keeps the fix from being a relabel.
+
+    A fault field set on every fallback would be green above and would have
+    turned the ordinary, self-healing bootstrap case into an alarm nobody can
+    act on."""
+    root = make_install(tmp_path, emitter="old")
+    make_bundle(tmp_path, root, NEW_SHA,
+                extra={"cabinet/scripts/hello.sh": "echo hello v2\n"}, corrupt=True)
+
+    result = run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                         "--skip-restart")
+    assert result.returncode == 3, (result.returncode, result.stderr)
+    assert len(deferred_events(root)) == 1
+
+    assert (state(root).get("ledger_error") or "") == "", state(root)
+    assert (status_json(root).get("ledger_error") or "") == ""
+    assert "does not know the event kind yet" in result.stderr, result.stderr
+    assert "ledger fault" not in result.stderr.lower(), result.stderr
+    # The reason travels even when it is only skew: "which type, on which
+    # install" is the first question anyone asks about a held record.
+    assert "Unknown event type" in result.stderr, result.stderr
+
+
+def test_a_ledger_that_starts_working_clears_the_fault(tmp_path):
+    """The field is a fact about the last attempt, not a sticky alarm.
+
+    A fault that outlived the fault would put "go and look at the disk" on the
+    card for ever, which is the same defect as the wrong label — one surface
+    saying something the box can no longer measure."""
+    root = make_install(tmp_path, emitter="faulty")
+    make_bundle(tmp_path, root, NEW_SHA,
+                extra={"cabinet/scripts/hello.sh": "echo hello v2\n"}, corrupt=True)
+    assert run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                       "--skip-restart").returncode == 3
+    assert "No space left on device" in (state(root).get("ledger_error") or "")
+
+    install_stub_emitter(root, "new")
+    second = "c" * 40
+    make_bundle(tmp_path, root, second,
+                extra={"cabinet/scripts/hello.sh": "echo hello v3\n"}, corrupt=True)
+    assert run_updater(root, "apply", "--bundle", second, "--skip-rebuild",
+                       "--skip-restart").returncode == 3
+    assert (state(root).get("ledger_error") or "") == "", state(root)
+    assert "cabinet_update_refused" in event_types(root)
+
+
+# ===========================================================================
+# 16. A5.16 — the ingest window: a record appended WHILE the replay runs
+#
+# Found in review, round 1. The replay read `events.jsonl`, emitted every row
+# in it, and renamed the file at the end — so a fallback append that landed
+# between the read and the rename was retired into `events.ingested-*.jsonl`
+# having never been replayed, and nothing ever reads that file again. Narrow
+# (it needs a concurrent hold inside the window) and silent, which is the
+# combination this unit exists to remove: the one guarantee it makes is that
+# no record is ever lost.
+# ===========================================================================
+
+_MIDINGEST_SRC = '''\
+import json, pathlib, sys
+
+root = pathlib.Path(sys.argv[1])
+sys.path.insert(0, str(root / "cabinet" / "scripts" / "lib"))
+import update_bundle as ub
+
+LATE = {"id": "held-late", "event_type": "cabinet_update_refused",
+        "actor": "system", "ts": "2026-09-09T00:00:00Z",
+        "payload": {"to_sha": "c" * 40, "reason": "busy", "locked_paths": [],
+                    "door": "terminal"}}
+
+original = ub._installed_emit
+
+
+def emit_and_append(install_root):
+    """The emitter, plus one concurrent fallback append on the first row.
+
+    This is the window: another updater refusing while the replay is running
+    holds its record through `_append_deferred`, which is an O_APPEND write to
+    whatever `events.jsonl` is at that moment."""
+    emit = original(install_root)
+    appended = []
+
+    def wrapper(event_type, actor, payload=None):
+        if not appended:
+            appended.append(True)
+            ub._append_deferred(install_root, LATE)
+        return emit(event_type, actor, payload)
+
+    return wrapper
+
+
+ub._installed_emit = emit_and_append
+print(json.dumps(ub.ingest_deferred_events(root)))
+'''
+
+
+def test_a_record_appended_during_the_ingest_is_not_swept_away_unreplayed(tmp_path):
+    """The record held mid-replay still reaches the ledger, on the next pass."""
+    root = make_install(tmp_path, emitter="new")
+    bundle_py = root / "cabinet" / "scripts" / "lib" / "update_bundle.py"
+    first = {"id": "held-0001", "event_type": "cabinet_update_refused",
+             "actor": "system", "ts": "2026-09-08T20:58:00Z",
+             "payload": {"to_sha": NEW_SHA, "reason": "busy", "locked_paths": [],
+                         "door": "terminal"}}
+    pending = root / ".updates" / "events.jsonl"
+    pending.parent.mkdir(parents=True, exist_ok=True)
+    pending.write_text(json.dumps(first) + "\n", encoding="utf-8")
+
+    driver = tmp_path / "midingest.py"
+    driver.write_text(_MIDINGEST_SRC, encoding="utf-8")
+    env = dict(os.environ, CABINET_EVENT_LOG_DIR=str(root / ".events"),
+               PYTHONDONTWRITEBYTECODE="1")
+    run = subprocess.run([_PY, str(driver), str(root)], capture_output=True,
+                         text=True, env=env, timeout=60)
+    assert run.returncode == 0, run.stderr
+    assert json.loads(run.stdout)["ingested"] == 1, run.stdout
+
+    # The record that arrived mid-replay is still HELD, and the state file
+    # still says so — an ingest that ends with a sidecar on disk has not
+    # cleared the fallback.
+    assert [row["id"] for row in deferred_events(root)] == ["held-late"], \
+        "the mid-ingest record was swept into the retired file, unreplayed"
+    assert status_json(root)["event_fallback"] is True
+
+    second = subprocess.run([_PY, str(bundle_py), "ingest-events", "--root", str(root)],
+                            capture_output=True, text=True, env=env, timeout=60)
+    assert second.returncode == 0, second.stderr
+    assert json.loads(second.stdout)["ingested"] == 1, second.stdout
+
+    replayed = [e for e in events(root)
+                if (e.get("payload") or {}).get("deferred_record_id") == "held-late"]
+    assert len(replayed) == 1, replayed
+    # And the first record is still exactly once, not once per pass.
+    once = [e for e in events(root)
+            if (e.get("payload") or {}).get("deferred_record_id") == "held-0001"]
+    assert len(once) == 1, once
+    assert status_json(root)["event_fallback"] is False

@@ -53,8 +53,10 @@ FIVE DECISIONS, and why each is shaped the way it is.
    can read it, and an event the INSTALLED emitter will not accept — the
    measured case: an install cut before the update path existed does not know
    the type of the event announcing it — is held in `.updates/events.jsonl` and
-   replayed exactly once by the next apply. Neither path can raise: losing the
-   record of what the updater did is worse than any error it could report.
+   replayed by the next apply, at most once per COMPLETED replay and at least
+   once across a crash (the boundary is stated where the replay is written, and
+   the choice is deliberate). Neither path can raise: losing the record of what
+   the updater did is worse than any error it could report.
 
 Read-only except for `apply-plan` and `restore` (the two content writers, which
 take an explicit snapshot directory) and the state/record writers named in 5,
@@ -66,6 +68,7 @@ Interpreter: python3.12 (this module is not on the locked hook's import path).
 from __future__ import annotations
 
 import argparse
+import contextlib
 import fnmatch
 import hashlib
 import json
@@ -74,6 +77,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -575,17 +579,27 @@ def restore(install_root: Path, snapshot_dir: Path) -> dict[str, Any]:
 # events.jsonl` instead of losing it, and the next apply — running with the
 # newer emitter already in place — replays it into the ledger exactly once.
 #
-# WHY EXACTLY-ONCE IS BY ID AND NOT BY THE FILENAME. Renaming the sidecar after
-# a successful ingest is the cheap half and it is not enough: a torn write, a
+# WHY ONCE IS BY ID AND NOT BY THE FILENAME. Renaming the sidecar after a
+# successful ingest is the cheap half and it is not enough: a torn write, a
 # partial ingest, or an operator restoring a copy of the file replays every row
 # in it a second time. Each held record therefore carries its own id, the
 # ingested ids are appended to a marker before the rename, and a row whose id
 # is already in the marker is skipped. The rename is hygiene; the marker is the
 # property.
+#
+# AND IT IS AT-LEAST-ONCE AT THE CRASH BOUNDARY — stated rather than glossed,
+# because "exactly once" is a claim a reader will build on. The marker id is
+# written AFTER the emit, so a crash in between replays that one row on the
+# next pass and the ledger carries it twice. The other order was considered and
+# rejected: marking first turns the same crash into a record that never reaches
+# the ledger at all and can no longer be found, and this module's one guarantee
+# is that no record is lost. A duplicate is visible, deduplicable by
+# `deferred_record_id`, and recoverable; a hole is neither.
 
 DEFERRED_EVENTS_REL = ".updates/events.jsonl"
 INGESTED_IDS_REL = ".updates/events.ingested"
 STATE_REL = ".updates/state.json"
+STATE_LOCK_REL = ".updates/.state.lock"
 
 #: Fields that survive a whole-document state write. `last_refusal` is here
 #: because every other write to the state file REPLACES it: without the carry
@@ -598,6 +612,72 @@ def _utc_now() -> str:
     from datetime import datetime, timezone
 
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+#: Re-entrancy for `_state_lock`. flock(2) conflicts between two open file
+#: DESCRIPTIONS, including two in the same process, so a nested acquire would
+#: block against itself for the whole timeout. Nothing nests today; this is
+#: what keeps that from becoming a fifteen-second hang the first time it does.
+_STATE_LOCK_DEPTH = 0
+
+
+@contextlib.contextmanager
+def _state_lock(install_root: Path, timeout: float = 15.0):
+    """Make the read-modify-write of `state.json` one indivisible step.
+
+    A LOCK OF ITS OWN, not `.updates/.lock`: the caller that needs this most is
+    the busy refusal, which runs precisely BECAUSE it could not take the
+    updater lock. A refusal that had to hold that lock to write itself down
+    could never be written at all — the record would be lost in exactly the
+    case it exists for.
+
+    Found in review 2026-09-08: `record_refusal` read the document, the updater
+    it lost to finished and wrote `applied`, and the refusal wrote its stale
+    copy back — `phase: applying` plus a snapshot name over an apply that had
+    SUCCEEDED, which the next run reads as an interrupted apply and restores
+    from, undoing it. The `phase != applying` guard is check-then-act, so it
+    goes inside this too rather than beside it.
+
+    FAIL-OPEN and bounded. A lock that cannot be taken — a read-only
+    `.updates/`, a holder that never exits — must not cost the write: a state
+    file that never got written is how an interrupted apply becomes
+    unrecoverable, which is the same reason cabinet-update.sh keeps a direct
+    write behind its helper. So this waits `timeout` seconds and then proceeds
+    unlocked rather than hanging or raising."""
+
+    global _STATE_LOCK_DEPTH
+    if _STATE_LOCK_DEPTH:
+        yield
+        return
+    import fcntl
+
+    handle = None
+    try:
+        path = install_root / STATE_LOCK_REL
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = os.open(path, os.O_WRONLY | os.O_CREAT, 0o644)
+    except OSError:
+        handle = None
+    if handle is not None:
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(0.01)
+    _STATE_LOCK_DEPTH += 1
+    try:
+        yield
+    finally:
+        _STATE_LOCK_DEPTH -= 1
+        if handle is not None:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+            finally:
+                os.close(handle)
 
 
 def read_state(install_root: Path) -> dict[str, Any]:
@@ -624,22 +704,27 @@ def _write_state_document(install_root: Path, document: dict[str, Any]) -> dict[
 
 
 def write_state(install_root: Path, document: dict[str, Any]) -> dict[str, Any]:
-    """Replace the state document, carrying `CARRIED_STATE_FIELDS` forward."""
+    """Replace the state document, carrying `CARRIED_STATE_FIELDS` forward.
 
-    previous = read_state(install_root)
-    merged = dict(document)
-    for field in CARRIED_STATE_FIELDS:
-        if field not in merged and field in previous:
-            merged[field] = previous[field]
-    return _write_state_document(install_root, merged)
+    Under `_state_lock`: the carry is a read of the previous document, so this
+    is a read-modify-write like every other writer here and races the same way."""
+
+    with _state_lock(install_root):
+        previous = read_state(install_root)
+        merged = dict(document)
+        for field in CARRIED_STATE_FIELDS:
+            if field not in merged and field in previous:
+                merged[field] = previous[field]
+        return _write_state_document(install_root, merged)
 
 
 def update_state(install_root: Path, **fields: Any) -> dict[str, Any]:
     """Merge fields into the state document without disturbing the rest."""
 
-    document = read_state(install_root)
-    document.update(fields)
-    return _write_state_document(install_root, document)
+    with _state_lock(install_root):
+        document = read_state(install_root)
+        document.update(fields)
+        return _write_state_document(install_root, document)
 
 
 def deferred_events_path(install_root: Path) -> Path:
@@ -664,7 +749,10 @@ def _append_deferred(install_root: Path, event: dict[str, Any]) -> None:
 
 
 def read_deferred_events(install_root: Path) -> list[dict[str, Any]]:
-    path = deferred_events_path(install_root)
+    return _read_event_rows(deferred_events_path(install_root))
+
+
+def _read_event_rows(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
         return []
     rows: list[dict[str, Any]] = []
@@ -695,6 +783,27 @@ def _installed_emit(install_root: Path):
     from framework.events.emitter import emit  # noqa: PLC0415  (deliberately late)
 
     return emit
+
+
+def _is_version_skew(exc: BaseException) -> bool:
+    """Is this the failure the NEXT UPDATE fixes by construction?
+
+    Exactly two are, and they are the two A5.16 was written for: an emitter
+    that does not know this event type yet (measured 2026-09-08 —
+    `ValueError: Unknown event type: cabinet_update_refused`, because the
+    emitter that knows the update events arrives WITH the update) and an
+    install whose `framework/` has not arrived at all (`ImportError`).
+
+    Everything else is a FAULT — a full disk, a permission, a ledger that will
+    not open — and no update files it. The recorder catches all of them alike,
+    which is correct and must stay that way: nothing may cost the record. What
+    is not correct is telling the operator that a broken disk is a version
+    number, which is what one sentence for both cases did. This is the whole of
+    the difference, in one place, so no surface can classify it differently."""
+
+    if isinstance(exc, ImportError):
+        return True
+    return isinstance(exc, ValueError) and "unknown event type" in str(exc).lower()
 
 
 def record_event(
@@ -729,9 +838,16 @@ def record_event(
         _append_deferred(install_root, event)
         outcome["recorded"] = "fallback"
         outcome["why"] = "%s: %s" % (type(exc).__name__, exc)
+        outcome["fault"] = not _is_version_skew(exc)
     try:
+        # `ledger_error` is the discriminator every surface reads, and it is a
+        # fact about the LAST attempt rather than an alarm that sticks: a
+        # ledger that starts working clears it, because a card still saying "go
+        # and look at the disk" about a disk that is fine is the same defect as
+        # the wrong label the other way.
         update_state(install_root,
-                     event_fallback=deferred_events_path(install_root).is_file())
+                     event_fallback=deferred_events_path(install_root).is_file(),
+                     ledger_error=outcome["why"] if outcome.get("fault") else "")
     except OSError as exc:
         outcome["state_error"] = str(exc)
     return outcome
@@ -768,19 +884,23 @@ def record_refusal(
         "locked_paths": list(paths),
         "door": door,
     })
-    document = read_state(install_root)
-    document["last_refusal"] = refusal
-    if document.get("phase") != "applying":
-        document["phase"] = "refused"
-        document.update(refusal)
-    _write_state_document(install_root, document)
+    # One indivisible step, guard included: the winner may land between a read
+    # and a write here, and a `phase` decided on a document that is already
+    # stale is how a busy refusal reverted a completed apply (round-1 review).
+    with _state_lock(install_root):
+        document = read_state(install_root)
+        document["last_refusal"] = refusal
+        if document.get("phase") != "applying":
+            document["phase"] = "refused"
+            document.update(refusal)
+        _write_state_document(install_root, document)
     outcome["refusal"] = refusal
     outcome["phase"] = document.get("phase")
     return outcome
 
 
 def ingest_deferred_events(install_root: Path) -> dict[str, Any]:
-    """Replay held records into the ledger, at most once each (A5.16).
+    """Replay held records into the ledger, once each (A5.16).
 
     Runs on the next successful apply, AFTER the new tree is in place, so the
     emitter it reaches is the one that arrived with the update. Idempotent by
@@ -788,15 +908,31 @@ def ingest_deferred_events(install_root: Path) -> dict[str, Any]:
     so an ingest interrupted halfway does not replay what it already did, and a
     sidecar that comes back carrying the same rows is skipped rather than
     duplicated. Nothing here raises — a replay that cannot happen today leaves
-    the sidecar exactly where it was for the apply after this one."""
+    the sidecar exactly where it was for the apply after this one.
+
+    THE BATCH IS TAKEN AWAY BEFORE IT IS READ. `_append_deferred` appends to
+    whatever `events.jsonl` is at that moment, so draining the file in place
+    and renaming it at the end retires every record that arrived while the
+    drain ran — unreplayed, into a file nothing reads again (found in review,
+    round 1). Renaming first means a concurrent hold opens a fresh sidecar; a
+    batch this run could not finish keeps its `events.draining-*` name and is
+    picked up by the next ingest rather than stranded.
+
+    AT-LEAST-ONCE AT THE CRASH BOUNDARY, deliberately. The marker id is written
+    after the emit, so a crash between the two replays that row next time and
+    the ledger carries it twice; marking first would instead lose it for good.
+    "Once each" here means once per completed replay — a duplicate is visible
+    and deduplicable by `deferred_record_id`, and losing a record is the one
+    thing this path exists to prevent."""
 
     report = {"ingested": 0, "already_recorded": 0, "failed": 0, "pending": 0}
     path = deferred_events_path(install_root)
-    if not path.is_file():
-        return report
-    rows = read_deferred_events(install_root)
-    report["pending"] = len(rows)
-    if not rows:
+    upd = path.parent
+    # A drain that could not finish kept its working name. Picked up here
+    # rather than stranded: the rows in it were held for a reason and the id
+    # marker is what keeps them from being replayed twice.
+    sources = sorted(upd.glob("events.draining-*.jsonl")) if upd.is_dir() else []
+    if not sources and not path.is_file():
         return report
 
     marker = install_root / INGESTED_IDS_REL
@@ -805,11 +941,33 @@ def ingest_deferred_events(install_root: Path) -> dict[str, Any]:
         done = {line.strip() for line in
                 marker.read_text(encoding="utf-8", errors="replace").splitlines()
                 if line.strip()}
+    # BEFORE the rename, deliberately: an install that cannot replay anything
+    # today must leave the sidecar exactly where it was, under the name the
+    # next apply looks for.
     try:
         emit = _installed_emit(install_root)
     except Exception as exc:  # noqa: BLE001
         report["error"] = "%s: %s" % (type(exc).__name__, exc)
         return report
+
+    # RENAME FIRST, then drain what was renamed (found in review, round 1).
+    # Draining `events.jsonl` in place and renaming it at the end retires
+    # every record appended while the drain was running — `_append_deferred`
+    # is an O_APPEND write to whatever `events.jsonl` is at that moment, and
+    # nothing ever reads `events.ingested-*.jsonl` again. Taking the batch
+    # away first means a concurrent hold opens a FRESH sidecar, which the next
+    # ingest finds.
+    if path.is_file():
+        batch = upd / ("events.draining-%s-%d.jsonl" % (_utc_now(), os.getpid()))
+        try:
+            os.replace(path, batch)
+        except OSError as exc:
+            report["error"] = "%s: %s" % (type(exc).__name__, exc)
+            return report
+        sources.append(batch)
+
+    rows = [row for source in sources for row in _read_event_rows(source)]
+    report["pending"] = len(rows)
 
     for row in rows:
         if row["id"] in done:
@@ -839,9 +997,22 @@ def ingest_deferred_events(install_root: Path) -> dict[str, Any]:
     if not report["failed"]:
         # Kept rather than deleted: a person looking for what happened during
         # the bootstrap hop should be able to find the records themselves.
-        os.replace(path, path.parent / ("events.ingested-%s.jsonl" % _utc_now()))
+        stamp, pid = _utc_now(), os.getpid()
+        for index, source in enumerate(sources):
+            try:
+                os.replace(source, upd / ("events.ingested-%s-%d-%02d.jsonl"
+                                          % (stamp, pid, index)))
+            except OSError:
+                pass
+        # MEASURED, not assumed: a record held while this ran is still on disk,
+        # and clearing the flag over it would be the same silent loss one
+        # rename further along.
+        held = deferred_events_path(install_root).is_file()
+        fields: dict[str, Any] = {"event_fallback": held}
+        if not held:
+            fields["ledger_error"] = ""
         try:
-            update_state(install_root, event_fallback=False)
+            update_state(install_root, **fields)
         except OSError:
             pass
     return report

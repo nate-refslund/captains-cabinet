@@ -175,23 +175,33 @@ describe('a refused bundle', () => {
     expect(line).toContain('Update refused')
   })
 
-  it('a refusal of some OTHER bundle never silences the one that is waiting', () => {
-    const line = updateHeadline({
-      ...BASE, phase: 'applied', latest: WAITING,
-      last_refusal: { ...LOCKED_REFUSAL, bundle: 'e'.repeat(40) },
-      last: { phase: 'applied', to_sha: 'c'.repeat(40), changed: 3 },
+  // BOTH PHASES, and `refused` is the half that matters. `state.json.phase`
+  // is written only by the updater and nothing moves it out of `refused`
+  // except a later apply — so `refused` is the phase this screen sits in for
+  // every bundle that arrives after a constitutional refusal. Written with
+  // `applied` alone (round 1) these two arms were VACUOUS: they passed over a
+  // card that showed the OLD refusal over EVERY future bundle and withdrew
+  // Apply with it, bricking the only no-terminal door until someone ran the
+  // CLI. A refusal is scoped to the sha it is about, whatever the phase says.
+  for (const phase of ['applied', 'refused']) {
+    it(`a refusal of some OTHER bundle never silences the one that is waiting (phase: ${phase})`, () => {
+      const line = updateHeadline({
+        ...BASE, phase, latest: WAITING,
+        last_refusal: { ...LOCKED_REFUSAL, bundle: 'e'.repeat(40) },
+        last: { phase, to_sha: 'c'.repeat(40), changed: 3 },
+      })
+      expect(line).toBe('Update ready — 12 files changed (bbbbbbbb)')
     })
-    expect(line).toBe('Update ready — 12 files changed (bbbbbbbb)')
-  })
 
-  it('busy is about timing, not about the bundle, so it does not stick to it', () => {
-    const line = updateHeadline({
-      ...BASE, phase: 'applied', latest: WAITING,
-      last_refusal: { ...LOCKED_REFUSAL, reason: 'busy', paths: [] },
-      last: { phase: 'applied', to_sha: 'c'.repeat(40), changed: 3 },
+    it(`busy is about timing, not about the bundle, so it does not stick to it (phase: ${phase})`, () => {
+      const line = updateHeadline({
+        ...BASE, phase, latest: WAITING,
+        last_refusal: { ...LOCKED_REFUSAL, reason: 'busy', paths: [] },
+        last: { phase, to_sha: 'c'.repeat(40), changed: 3 },
+      })
+      expect(line).toBe('Update ready — 12 files changed (bbbbbbbb)')
     })
-    expect(line).toBe('Update ready — 12 files changed (bbbbbbbb)')
-  })
+  }
 
   it('an apply in flight still leads — it is the live state', () => {
     const line = updateHeadline({
@@ -217,5 +227,23 @@ describe('refusalToShow', () => {
 
   it('is null while an apply is in flight', () => {
     expect(refusalToShow({ ...BASE, phase: 'applying', last_refusal: LOCKED_REFUSAL })).toBeNull()
+  })
+
+  // The degenerate end of the sha scope. Nothing is waiting, so there is no
+  // other sentence to be wrong about: the last thing that happened is still
+  // the last thing that happened, and silence there would lose the only
+  // record the Captain has of a refusal that named files.
+  it('still speaks when nothing at all is waiting', () => {
+    expect(refusalToShow({ ...BASE, phase: 'refused', latest: null,
+                           last_refusal: LOCKED_REFUSAL })).toEqual(LOCKED_REFUSAL)
+  })
+
+  // The blocking defect of round 1, stated as the property rather than as the
+  // sentence: a stale refusal must not follow bytes it has never seen.
+  it('is null for a bundle it is not about, even while the phase still says refused', () => {
+    expect(refusalToShow({
+      ...BASE, phase: 'refused', latest: WAITING,
+      last_refusal: { ...LOCKED_REFUSAL, bundle: 'f'.repeat(40) },
+    })).toBeNull()
   })
 })

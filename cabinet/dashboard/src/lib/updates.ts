@@ -82,6 +82,7 @@ export interface UpdateState {
   ts?: string
   last_refusal?: UpdateRefusal
   event_fallback?: boolean
+  ledger_error?: string
 }
 
 export interface UpdateStatus {
@@ -97,6 +98,10 @@ export interface UpdateStatus {
   /** A record is held outside the ledger because this install's emitter
    *  does not know the event kind yet (A5.16). */
   event_fallback?: boolean
+  /** Non-empty when the ledger did not DECLINE the record but FAILED to take
+   *  it — a full disk, a permission. The next update files version skew; it
+   *  files none of these, so the two must not read the same on any surface. */
+  ledger_error?: string
 }
 
 /**
@@ -119,17 +124,28 @@ function refusalIsAboutTheBundle(refusal: UpdateRefusal): boolean {
  * on its own. An apply in flight outranks it: that is the live state, and a
  * busy refusal recorded a second ago is a note about a request, not about what
  * the box is doing now.
+ *
+ * SCOPED TO THE SHA, and `phase` is not part of the scope. Round 1 returned
+ * early on `phase === 'refused'`, which reads as harmless and is not: nothing
+ * moves that phase except a later apply, so after ONE constitutional refusal
+ * the card showed that refusal's headline and files over every bundle that
+ * arrived afterwards and withdrew Apply with them — and Apply is the only
+ * no-terminal way to take the update that would have cleared the phase. The
+ * door this whole leg exists to open, bricked by the record of one refusal.
+ * The same three lines are `run_briefing._update_refusal_line`, deliberately:
+ * two surfaces reading one state file must not be able to disagree.
  */
 export function refusalToShow(status: UpdateStatus | null): UpdateRefusal | null {
   if (!status || status.phase === 'applying') return null
   const refusal = status.last_refusal
   if (!refusal || !refusal.bundle) return null
-  if (status.phase === 'refused') return refusal
-  // The phase has moved on, but this bundle is still sitting in the inbox
-  // carrying a verdict. Offering it as "ready" again is the defect measured on
-  // 2026-09-08: a button that cannot work, with nothing saying why.
-  if (status.latest && status.latest.sha === refusal.bundle
-      && refusalIsAboutTheBundle(refusal)) {
+  // Nothing is waiting, so there is no other sentence for this to be wrong
+  // about: the last thing that happened is still the last thing that happened.
+  if (!status.latest) return refusal
+  // Something IS waiting. It speaks only about the bundle it is a verdict on:
+  // offering a refused bundle as "ready" is a button that cannot work, and
+  // refusing one nobody has judged is a button withdrawn for no reason.
+  if (status.latest.sha === refusal.bundle && refusalIsAboutTheBundle(refusal)) {
     return refusal
   }
   return null

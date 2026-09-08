@@ -1345,7 +1345,22 @@ budgets:
     # (framework_production_modules unchanged at 253: the helper lives in the
     # existing frontdoor module, and every other file the unit touches is under
     # cabinet/, outside this budget's path). observed == maximum, zero headroom.
-    maximum: 66660
+    #
+    # 66660 -> 66667 (+7 measured 2026-09-09 via cognitive-architecture-census.py,
+    # 81398 -> 81405 against the effective ceiling): U5b round 2, closing the two
+    # things the independent review found on this same line. Four of the seven
+    # are the ledger-FAULT arm — a record held because the ledger raised (a full
+    # disk, a permission) is not a record held because the emitter is one
+    # version behind, and only the second is filed by the next update; round 1
+    # told the Captain the reassuring one about both, on all four surfaces. Two
+    # are `_update_state`, one reader for the state file where there were three
+    # open-and-parse sites, which is what keeps the three sentences on this line
+    # from disagreeing about the same document. One is the `busy` filter growing
+    # a second clause so this line and the card's `refusalToShow` scope a
+    # refusal to its bundle identically — the round-1 defect was precisely the
+    # two surfaces disagreeing. RAISED VISIBLY, same reason as every row above.
+    # observed == maximum, zero headroom.
+    maximum: 66667
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

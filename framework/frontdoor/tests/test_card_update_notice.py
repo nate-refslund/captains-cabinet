@@ -314,3 +314,59 @@ def test_a_refusal_of_some_other_bundle_never_silences_the_waiting_one(tmp_path,
                   "last_refusal": {"bundle": "e" * 40, "reason": "busy", "paths": [],
                                    "ts": "2026-09-08T18:00:00Z", "door": "web"}})
     assert run_briefing._update_notice(str(root)).startswith("An update is ready to take")
+
+
+def test_a_busy_refusal_of_the_waiting_bundle_does_not_speak_over_it(tmp_path,
+                                                                     monkeypatch):
+    """PARITY with the card, and the second half of the round-1 defect.
+
+    `lib/updates.refusalToShow` and this helper read the same state file and
+    must not be able to disagree about it — a card offering Apply under a
+    briefing line that says the bundle was refused is two surfaces calling the
+    same fact differently, which is the failure the shared helper on each side
+    exists to prevent. `busy` means another updater held the lock: it is a fact
+    about timing, never a verdict on these bytes, and `phase` does not change
+    that. Round 1 filtered `busy` only once the phase had moved on, so for the
+    whole window where the phase still said `refused` this line announced a
+    refusal of a bundle nothing had judged."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _waiting(root)
+    _state(root, {"phase": "refused", "bundle": NEW, "reason": "busy", "paths": [],
+                  "ts": "2026-09-08T18:58:00Z", "door": "web"})
+    assert run_briefing._update_notice(str(root)).startswith("An update is ready to take")
+
+
+def test_a_ledger_fault_is_named_rather_than_reported_as_version_skew(tmp_path,
+                                                                      monkeypatch):
+    """A5.16, round 2, on the door the Captain reads every day.
+
+    A held record has two possible causes and only one of them heals itself.
+    "The next update files it" is true of an emitter that does not know the
+    event type yet and false of a full disk, and round 1 said it about both."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _waiting(root)
+    _state(root, {"phase": "applied", "to_sha": NEW, "changed": 2,
+                  "event_fallback": True,
+                  "ledger_error": "OSError: [Errno 28] No space left on device: "
+                                  "events-2026-09-08.jsonl"})
+    line = run_briefing._update_notice(str(root))
+    assert "ledger fault" in line, line
+    assert "No space left on device" in line, line
+
+
+def test_a_held_record_with_no_fault_does_not_raise_an_alarm(tmp_path, monkeypatch):
+    """The inverse, and the arm that stops the fix being a blanket relabel.
+
+    The ordinary bootstrap case — a record held because the emitter is one
+    version behind — is not something to interrupt the Captain about: the
+    waiting bundle is still the sentence he can act on."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _waiting(root)
+    _state(root, {"phase": "applied", "to_sha": NEW, "changed": 2,
+                  "event_fallback": True})
+    line = run_briefing._update_notice(str(root))
+    assert line.startswith("An update is ready to take"), line
+    assert "fault" not in line, line

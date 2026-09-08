@@ -93,7 +93,13 @@ describe('UpdateCard on a refusal', () => {
     expect(html).not.toContain('>Apply<')
   })
 
-  it('keeps Apply when the refusal was timing rather than content', () => {
+  // RE-AIMED, round 2. This arm used to demand the words "Update refused" over
+  // a bundle whose only refusal was `busy` — timing, which says nothing about
+  // these bytes. Reading a refusal over a bundle it is not a verdict on is the
+  // same defect as withdrawing Apply for one, one surface further along: the
+  // retry that is the right thing to do about `busy` is exactly what the card
+  // was talking the operator out of.
+  it('a busy refusal neither withdraws Apply nor speaks over the bundle', () => {
     const busy: UpdateStatus = {
       ...WAITING,
       phase: 'refused',
@@ -101,7 +107,27 @@ describe('UpdateCard on a refusal', () => {
     }
     const html = renderToStaticMarkup(
       <UpdateCard status={busy} headline={updateHeadline(busy)!} />)
-    expect(html).toContain('Update refused')
+    expect(html).not.toContain('Update refused')
+    expect(html).toContain('Update ready')
+    expect(html).toContain('>Apply<')
+  })
+
+  // THE BLOCKING DEFECT of round 1, as the card sees it. `phase` stays
+  // `refused` until some later apply moves it, so this is the state every
+  // bundle cut after a constitutional refusal arrives into — the Captain's
+  // ceremony, then the next bundle. The card was showing the OLD refusal's
+  // headline and files over it and withdrawing Apply, which is the only
+  // no-terminal way to take the update that would clear the phase.
+  it('offers the NEXT bundle even while the phase still says refused', () => {
+    const next: UpdateStatus = {
+      ...REFUSED,
+      latest: { ...WAITING.latest!, sha: 'f'.repeat(40), short: 'ffffffff', file_count: 7 },
+    }
+    const html = renderToStaticMarkup(
+      <UpdateCard status={next} headline={updateHeadline(next)!} />)
+    expect(html).toContain('Update ready — 7 files changed (ffffffff)')
+    expect(html).not.toContain('Update refused')
+    expect(html).not.toContain('cabinet/scripts/start-officer-mac.sh')
     expect(html).toContain('>Apply<')
   })
 
@@ -110,5 +136,25 @@ describe('UpdateCard on a refusal', () => {
     const html = renderToStaticMarkup(
       <UpdateCard status={held} headline={updateHeadline(held)!} />)
     expect(html).toContain('held')
+    // and the benign sentence, because this one IS benign: the emitter that
+    // knows the update events arrives with the update.
+    expect(html).toContain('does not know the update events yet')
+  })
+
+  // A5.16, round 2. The recorder holds the record whatever went wrong — that
+  // half is right and stays. What was wrong is that a full disk and a ledger
+  // one version behind produced the SAME sentence, and it was the reassuring
+  // one: "the next update files it". No update files a full disk.
+  it('calls a broken ledger a fault rather than a version it will grow out of', () => {
+    const faulty: UpdateStatus = {
+      ...REFUSED,
+      event_fallback: true,
+      ledger_error: 'OSError: [Errno 28] No space left on device: events-2026-09-08.jsonl',
+    }
+    const html = renderToStaticMarkup(
+      <UpdateCard status={faulty} headline={updateHeadline(faulty)!} />)
+    expect(html).toContain('ledger fault')
+    expect(html).toContain('No space left on device')
+    expect(html).not.toContain('does not know the update events yet')
   })
 })

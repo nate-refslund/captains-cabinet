@@ -65,6 +65,24 @@ arms are known to fail when the property is absent. A 26th arm
 in both directions by design: it is a guard against over-reach, not a new
 property, and is labelled as such rather than counted as a sensor.
 
+**CORRECTED 2026-09-09 (independent review, round 1 → cp2).** That count was
+wrong in the direction that matters: **four** of the 29 arms pass unchanged on
+master bytes, not one. Re-measured here, master sources swapped in under the
+PR's tests, the four are
+`test_a_refusal_of_some_other_bundle_never_silences_the_waiting_one`
+(briefing — the one named above), and in `updates.test.ts`
+`a refusal of some OTHER bundle never silences the one that is waiting`,
+`busy is about timing, not about the bundle, so it does not stick to it`, and
+`an apply in flight still leads — it is the live state`.
+
+The middle two were not guards, they were **sensors aimed away from the
+control**: both were written on the `phase: 'applied'` branch, which already
+worked, while the property they name was broken on the `phase: 'refused'`
+branch — where it bricked the card for every bundle published after a
+constitutional refusal. Round 2 re-aims them over both phases (see cp2). An
+arm counted as a sensor is an arm nobody re-reads; that is what this
+correction is for.
+
 ## Budget
 
 `framework_production_noncomment_lines` 66638 → 66660 (+22, measured, effective

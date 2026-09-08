@@ -21,6 +21,7 @@ inbox, and for reading a refusal.
 | Log | `<root>/.updates/update.log` |
 | Receipts | `cabinet_update_applied` / `_refused` / `_rolled_back` in the ledger |
 | Held records | `<root>/.updates/events.jsonl` — receipts this install's ledger would not take yet, replayed by the next apply |
+| State lock | `<root>/.updates/.state.lock` — held for the read-modify-write of `state.json` only, so a busy refusal cannot write a stale copy back over the updater that beat it |
 
 ## Publishing a bundle (the producer side)
 
@@ -128,16 +129,32 @@ and no number of taps will do it. The same bundle is never offered as "Update
 ready" again — `last_refusal` survives later state writes, so an unrelated
 apply landing in between does not resurrect the offer.
 
+**A refusal is scoped to the bundle it is a verdict on, and `phase` is not part
+of that scope.** Nothing moves `phase` out of `refused` except a later apply,
+so a refusal that spoke for as long as the phase said `refused` would speak
+over every bundle published afterwards — including the one cut right after the
+Captain's ceremony — and would withdraw Apply with it, which is the only
+no-terminal way to take the update that clears the phase. So: nothing waiting,
+the refusal is the last thing that happened and it speaks; something waiting,
+it speaks only about the same sha, and only when it is a verdict on those bytes.
+The card (`lib/updates.refusalToShow`) and the briefing line
+(`run_briefing._update_refusal_line`) are the same three rules written twice on
+purpose — two surfaces reading one state file must not be able to disagree.
+
 Two deliberate exceptions, both about not letting one durability feature eat
 another:
 
 - a **busy** refusal never takes `phase` from an interrupted apply. `phase:
   applying` plus a snapshot name is the only marker saying a tree is
   half-written and which snapshot puts it back; the busy refusal is recorded in
-  `last_refusal` beside it and leaves it alone.
+  `last_refusal` beside it and leaves it alone. The read of `state.json` and
+  the write back are held under `.updates/.state.lock`, because the updater
+  that a busy refusal lost to is writing that same file: unlocked, the refusal
+  could put `phase: applying` and a snapshot name back over an apply that had
+  already SUCCEEDED, and the next run would restore from it.
 - **busy** does not stick to a bundle either. It is a fact about timing, not
-  about those bytes, so once the phase has moved on the card offers the bundle
-  normally again.
+  about those bytes, so the card offers the bundle normally — whatever the
+  phase says.
 
 Before 2026-09-08 none of this existed: the first real apply on the installed
 Cabinet refused exactly as designed and left `phase: idle, last: null` behind,
@@ -155,12 +172,34 @@ record is appended to `<root>/.updates/events.jsonl` with
 `state.json.event_fallback` set and a line on the log saying so. Nothing is
 dropped and nothing crashes.
 
+**Held is not the same as broken.** Two very different things put a record in
+that file, and only one of them heals itself:
+
+| `status` says | what happened | what to do |
+|---|---|---|
+| `held: a record is waiting … for a newer ledger` | the emitter is one version behind and does not know the event type yet | nothing — the next apply files it |
+| `held: ledger fault: <why>` (`ledger_error` in `status --json`) | the ledger **failed** — a full disk, a permission, a file that will not open | look at the ledger; no update fixes this one |
+
 The next successful apply replays those records into the ledger **after the new
 tree is in place**, once each — idempotent on the record's own id, which the
 replayed ledger row carries as `deferred_record_id` — and renames the sidecar
-to `events.ingested-<ts>.jsonl` rather than deleting it. Replaying before the
-health gate is deliberate: a rollback undoes the bytes, and must not also undo
-the record that they were there.
+to `events.ingested-<ts>-<pid>-<n>.jsonl` rather than deleting it. Replaying
+before the health gate is deliberate: a rollback undoes the bytes, and must not
+also undo the record that they were there.
+
+The batch is renamed to `events.draining-<ts>-<pid>.jsonl` **before** it is
+read, so a record held by another updater while the replay runs lands in a
+fresh `events.jsonl` and is picked up next time instead of being retired
+unreplayed. A drain that could not finish keeps that name and the next ingest
+folds it back in.
+
+**"Once each" means once per completed replay.** The record's id goes into the
+marker *after* its row reaches the ledger, so a crash between the two replays
+that one row on the next pass and the ledger carries it twice — deliberate, and
+the other order is worse: marking first turns the same crash into a record that
+never reaches the ledger at all. A duplicate is visible and deduplicable by
+`deferred_record_id`; a hole is neither, and no record being lost is the one
+guarantee this path makes.
 
 **A constitutional-set refusal is not a bug.** Those bytes are changed by a
 deliberate ceremony — unlock, apply, lock again in the same sitting — not by an
@@ -221,12 +260,18 @@ take — tap Apply", over a bundle that had already been turned down.
 `status` says `held: a record is waiting in .updates/events.jsonl for a newer
 ledger`, and `status --json` says `event_fallback: true`. The file is one JSON
 object per line — `{id, event_type, actor, payload, ts}` — and needs nothing
-done to it: the next apply files it. `events.ingested-<ts>.jsonl` beside it is
-what has already been filed, kept so the bootstrap hop is readable afterwards,
-and `events.ingested` (no suffix) is the list of record ids already in the
-ledger — the thing that makes a second pass over the same records a no-op
-rather than a duplicate. Neither is content: nothing ships them and nothing
-reads them but the updater.
+done to it: the next apply files it. When `status` says `held: ledger fault:
+<why>` instead (`ledger_error` in `status --json`), the record is held for the
+other reason and waiting will not clear it — that is the ledger itself failing,
+and the `why` names the exception the emitter raised.
+
+`events.ingested-<ts>-<pid>-<n>.jsonl` beside it is what has already been
+filed, kept so the bootstrap hop is readable afterwards; `events.draining-*` is
+a batch a replay is working on or could not finish, which the next ingest
+drains; and `events.ingested` (no suffix) is the list of record ids already in
+the ledger — the thing that makes a second pass over the same records a no-op
+rather than a duplicate. None of them is content: nothing ships them and
+nothing reads them but the updater.
 
 ## First bootstrap
 

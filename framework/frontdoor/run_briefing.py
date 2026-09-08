@@ -230,22 +230,35 @@ def _update_receipt_for(sha: str, days: int = 30) -> "dict | None":
 # Apply", over a bundle that had already been turned down. So the state file is
 # asked first and the ledger stays as the second channel.
 #
-# TWO FILTERS, each one a sentence this must not produce. A refusal of some
-# OTHER bundle never silences the one that is waiting; and `busy` is about
-# timing rather than about these bytes, so once the phase has moved on it stops
-# following them. Counts only, never the path text on a card surface — the
-# files themselves are named on the home card, which is where the decision is
-# made. Fail-open like everything else on this path: any error is silence.
-def _update_refusal_line(base, waiting_sha: str = "") -> str:
+# SCOPED TO THE BUNDLE IN FRONT OF HIM, and `phase` is not part of the scope.
+# Nothing is waiting: the refusal is the last thing that happened and it
+# speaks. Something is waiting: it speaks only if it is a verdict ON THOSE
+# BYTES — the same sha, and a reason that is about the bundle rather than about
+# timing (`busy` means another updater held the lock, which says nothing about
+# what is in the inbox). Round 1 let `busy` through for as long as the phase
+# still said `refused`, which is the whole window after any refusal, so this
+# line announced a refusal of a bundle nothing had judged. These are the three
+# lines of `lib/updates.refusalToShow` in Python: two surfaces reading one
+# state file must not be able to disagree about it, and a card offering Apply
+# under a briefing line that says the bundle was refused is exactly that.
+# Counts only, never the path text on a card surface — the files themselves are
+# named on the home card, which is where the decision is made. Fail-open like
+# everything else on this path: any error is silence.
+def _update_state(base) -> dict:
+    """The updater's state document, or {} — the one reader for it here."""
     import json
     try:
-        state = json.loads((base / ".updates" / "state.json").read_text(encoding="utf-8"))
+        return json.loads((base / ".updates" / "state.json").read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
-        return ""
+        return {}
+
+
+def _update_refusal_line(base, waiting_sha: str = "") -> str:
+    state = _update_state(base)
     record = state if state.get("phase") == "refused" else (state.get("last_refusal") or {})
     bundle = str(record.get("bundle") or "")
-    if not bundle or (waiting_sha and bundle != waiting_sha) or (
-            state.get("phase") != "refused" and record.get("reason") == "busy"):
+    if not bundle or (waiting_sha and (bundle != waiting_sha
+                                       or record.get("reason") == "busy")):
         return ""
     paths = [str(entry) for entry in (record.get("paths") or [])]
     if paths:
@@ -297,6 +310,16 @@ def _update_notice(root: "str | None" = None) -> str:
         refused = _update_refusal_line(base, max(waiting)[1] if waiting else "")
         if refused:
             return refused
+        # A5.16 — a ledger FAULT, which is not the same thing as a ledger one
+        # version behind. Both hold the record on disk; only the second is
+        # filed by the next update, and round 1 told the Captain that both
+        # were. A full disk announced as a version number is a fault nobody
+        # ever goes back to look at, so it leads the waiting bundle: the
+        # records of what this box did are not being written down.
+        fault = str(_update_state(base).get("ledger_error") or "")
+        if fault:
+            return ("Update records are not reaching the ledger — ledger fault: %s"
+                    % fault)
         if waiting:
             _, sha, count = max(waiting)
             receipt = _update_receipt_for(sha) or {}
@@ -314,7 +337,7 @@ def _update_notice(root: "str | None" = None) -> str:
             # something is sitting here to be taken.
             return ("An update is ready to take (%s, %d files) — open the home page "
                     "and tap Apply" % (sha[:8], count))
-        state = json.loads((base / ".updates" / "state.json").read_text(encoding="utf-8"))
+        state = _update_state(base)
         if state.get("phase") == "applied" and state.get("to_sha"):
             return "Updated to %s: %s changes" % (
                 str(state["to_sha"])[:8], state.get("changed", 0))

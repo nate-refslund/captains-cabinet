@@ -188,10 +188,35 @@ emit_event() {
 
 # A held record is REPORTED, every time. The alternative — a quiet sidecar —
 # is a second silent channel, which is the defect this exists to close.
+#
+# TWO SENTENCES, because there are two facts (A5.16, round 2). An emitter that
+# does not know the event type yet is filed by the next update, by
+# construction. A ledger that will not take a write — a full disk, a
+# permission — is not filed by any update, and round 1 said "the next update
+# replays it" about both. The recorder decides which (`fault` in its JSON) and
+# carries the reason (`why`); this line only says what it was told, so the
+# classification cannot drift between the surfaces that read it.
 report_held() { # <kind> <recorder-json>
   case "$2" in
-    *'"fallback"'*)
-      log "NOTE: $1 is held in $UPD/events.jsonl — this install's ledger does not know the event kind yet; the next update replays it"
+    *'"fallback"'*) : ;;
+    *) return 0 ;;
+  esac
+  local parsed why
+  parsed="$(printf '%s' "$2" | "$PY" -c '
+import json, sys
+try:
+    doc = json.load(sys.stdin)
+except Exception:
+    doc = {}
+sys.stdout.write(("fault " if doc.get("fault") else "skew ") + str(doc.get("why") or ""))
+' 2>/dev/null)"
+  why="${parsed#* }"
+  case "$parsed" in
+    fault*)
+      log "LEDGER FAULT: $1 is held in $UPD/events.jsonl and the ledger REFUSED it — ledger fault: ${why:-the emitter raised}. This is not a version difference and no update fixes it; the ledger itself needs looking at"
+      ;;
+    *)
+      log "NOTE: $1 is held in $UPD/events.jsonl — this install's ledger does not know the event kind yet (${why:-no reason given}); the next update replays it"
       ;;
   esac
   return 0
@@ -553,9 +578,12 @@ report = {
     # a refused bundle from being offered as "ready" again; it outlives the
     # phase, because a refusal is still true after the next thing happens.
     # `event_fallback` says a record is held outside the ledger because this
-    # install's emitter does not know the event kind yet.
+    # install's emitter does not know the event kind yet. `ledger_error` is the
+    # discriminator: non-empty means the ledger did not merely decline the type,
+    # it FAILED, and no update files that.
     "last_refusal": state.get("last_refusal"),
     "event_fallback": bool(state.get("event_fallback")),
+    "ledger_error": state.get("ledger_error") or "",
 }
 if as_json:
     json.dump(report, sys.stdout, indent=2, sort_keys=True)
@@ -576,7 +604,10 @@ else:
                                       refusal.get("reason") or ""))
         for path in refusal.get("paths") or []:
             print("            %s" % path)
-    if report["event_fallback"]:
+    if report["ledger_error"]:
+        print("held      : ledger fault: %s" % report["ledger_error"])
+        print("            a record is waiting in .updates/events.jsonl; no update files this")
+    elif report["event_fallback"]:
         print("held      : a record is waiting in .updates/events.jsonl for a newer ledger")
     print("snapshots : %d" % len(snapshots))
 PYSTATUS

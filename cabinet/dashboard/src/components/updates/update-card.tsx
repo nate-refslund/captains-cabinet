@@ -93,12 +93,21 @@ export default function UpdateCard({
               Nothing was applied.
             </p>
           )}
-          {status.event_fallback && (
+          {/* A5.16. Two causes, one of which heals itself and one of which
+              does not, so they get two sentences. Round 1 gave a full disk
+              the reassuring one. */}
+          {status.ledger_error ? (
+            <p className="mt-2 text-xs text-amber-300">
+              The record of this is held on disk — ledger fault:{' '}
+              {status.ledger_error}. No update files this one; the ledger
+              itself needs looking at.
+            </p>
+          ) : status.event_fallback ? (
             <p className="mt-2 text-xs text-zinc-500">
               The record of this is held on disk — this Cabinet&apos;s ledger does
               not know the update events yet, and the next update files it.
             </p>
-          )}
+          ) : null}
           {applied && (status.last?.skipped_preserved?.length ?? 0) > 0 && (
             <p className="mt-2 text-xs text-amber-300">
               Kept your own copy of {status.last?.skipped_preserved?.length} file(s)
