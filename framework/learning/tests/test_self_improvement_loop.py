@@ -369,16 +369,22 @@ class TestProposalGate:
         assert replay(event_types=["role_evolved"]) == []
 
     def test_skeleton_proposal_held_for_captain(self, tmp_path, monkeypatch):
-        """A proposal with <TODO:> placeholders must NOT auto-apply, gate or no gate."""
+        """A skeleton pattern must NOT auto-apply, gate or no gate.
+
+        Since §6 it never reaches the loop as a proposal at all — the
+        generator records a capability gap and writes no file — so the claim
+        is now "nothing applied AND nothing written", asserted with the gate
+        BYPASSED so the hold cannot be credited to the validation gate.
+        """
         _seed_eval_failures("skeleton_role", "missing_skill", 4)
 
-        summary = sil.run_loop()
+        summary = sil.run_loop(skip_evals=True)
 
-        # The pattern detector found the cluster; evolution drafted a skeleton.
-        assert summary["proposals"]["generated"] >= 1
-        # Skeletons stay pending_captain regardless of gate verdict.
+        assert summary["proposals"]["generated"] == 0
         assert summary["proposals"]["auto_applied"] == 0
-        assert summary["proposals"]["pending_captain"] >= 1
+        assert summary["proposals"]["gaps_recorded"] >= 1
+        assert list((tmp_path / "instance" / "roles" / "proposals").glob("*.yml")) == []
+        assert replay(event_types=["role_evolved"]) == []
 
     def test_skip_evals_bypasses_gate(self, tmp_path, monkeypatch):
         """--skip-evals applies even when the gate would fail."""
@@ -600,3 +606,69 @@ class TestStructuralGapsAreCountedNotProposed:
         # Not "skipped" either: that count means a gap this pass could not
         # route, and a structural kind was never routable in the first place.
         assert gaps["skipped"] == 0, gaps
+
+
+# ---------------------------------------------------------------------------
+# 8. No skeleton proposals (phase-1 unit U6, contract §6)
+# ---------------------------------------------------------------------------
+
+
+class TestNoSkeletonProposals:
+    """A pattern with no concrete candidate becomes a gap, not a form.
+
+    Red on the pre-change tree for the reason the invariant names: neither
+    report key exists (KeyError), and a fresh root ends the pass with a
+    skeleton yml on disk plus a `role_charter_changed` event.
+    """
+
+    def test_fresh_root_skipped_skeleton_zero(self, tmp_path):
+        _seed_eval_failures("u6_fresh_role", "missing_skill", 4)
+
+        summary = sil.run_loop()
+
+        proposals = summary["proposals"]
+        assert proposals["skipped_skeleton"] == 0
+        assert proposals["gaps_recorded"] >= 1
+        assert proposals["generated"] == 0
+        assert list((tmp_path / "instance" / "roles" / "proposals").glob("*.yml")) == []
+        assert replay(event_types=["role_charter_changed"]) == []
+        # The structural kinds are surfaced, never an ask the Captain can only
+        # answer with a shrug (§3: never propose_gap, never notify).
+        assert summary["capability_gaps"]["surfaced"] >= 1
+        assert summary["capability_gaps"]["proposed_to_captain"] == 0
+
+    def test_report_skipped_skeleton_is_zero(self):
+        """Degenerate end: zero patterns ⇒ both keys present, both zero."""
+        summary = sil.run_loop()
+
+        assert "skipped_skeleton" in summary["proposals"]
+        assert "gaps_recorded" in summary["proposals"]
+        assert summary["proposals"]["skipped_skeleton"] == 0
+        assert summary["proposals"]["gaps_recorded"] == 0
+        assert summary["proposals"]["generated"] == 0
+
+    def test_dry_run_previews_the_gap_it_would_record(self, event_log_dir):
+        """The preview must not report a skeleton the live loop never skips."""
+        _seed_eval_failures("u6_dry_role", "missing_skill", 4)
+        sizes_before = {f.name: f.stat().st_size
+                        for f in sorted(event_log_dir.glob("events-*.jsonl"))}
+
+        summary = sil.run_loop(dry_run=True)
+
+        detail = summary["proposals"]["detail"]
+        assert [r["status"] for r in detail] == ["would_record_gap"]
+        assert summary["proposals"]["skipped_skeleton"] == 0
+        assert summary["proposals"]["gaps_recorded"] == 0
+        assert {f.name: f.stat().st_size
+                for f in sorted(event_log_dir.glob("events-*.jsonl"))} == sizes_before
+        assert replay(event_types=["capability_gap_recorded"]) == []
+
+    def test_report_only_previews_the_gap_it_would_record(self):
+        _seed_eval_failures("u6_report_role", "missing_skill", 4)
+
+        summary = sil.run_loop(report_only=True)
+
+        detail = summary["proposals"]["detail"]
+        assert [r["status"] for r in detail] == ["would_record_gap"]
+        assert summary["would_apply"]["proposals"] == []
+        assert summary["proposals"]["skipped_skeleton"] == 0

@@ -283,6 +283,50 @@ def _update_notice(root: "str | None" = None) -> str:
     return ""
 
 
+# A gap of kind `authority` or `information` names a permission nobody here can
+# grant itself and a fact nobody here can look up. Both are recorded
+# SURFACE-ONLY — never proposed, never DM'd (capability_gaps.py
+# STRUCTURAL_KINDS) — so before this line the whole delivery path for them was
+# a page the Captain had to think to visit. A3.3: the card says it too.
+#
+# COUNTS ONLY, never the need text: gap rows are written by whatever hit the
+# wall, and the card surface does not carry payload text from elsewhere (the
+# same rule `_plain_headline` states for pipe items). The third kind, `skill`,
+# is deliberately absent: a missing holder resolves itself the moment a role
+# appears and is not something to ask him for.
+#
+# Fail-open in the strong sense: any error, and any install whose ledger this
+# cannot read, yields "" — silence, never "nothing needs you", which is the one
+# sentence a surface that cannot count must never produce.
+def _gaps_notice() -> str:
+    """ONE briefing line about gaps only the Captain can close, or ""."""
+    try:
+        from framework.learning.capability_gaps import STATUS_OPEN, project_gaps
+
+        authority = 0
+        information = 0
+        for gap in project_gaps():
+            if gap.get("status") != STATUS_OPEN:
+                continue
+            if gap.get("kind") == "authority":
+                authority += 1
+            elif gap.get("kind") == "information":
+                information += 1
+    except Exception:  # noqa: BLE001
+        return ""
+    if authority and information:
+        return ("%d thing%s waiting on a permission only you can give and %d on a "
+                "fact only you have — see the gaps page"
+                % (authority, " is" if authority == 1 else "s are", information))
+    if authority:
+        return ("%d thing%s waiting on a permission only you can give — see the "
+                "gaps page" % (authority, " is" if authority == 1 else "s are"))
+    if information:
+        return ("%d thing%s waiting on a fact only you have — see the gaps page"
+                % (information, " is" if information == 1 else "s are"))
+    return ""
+
+
 def _plain_headline(gather: dict, digest: "dict | None") -> str:
     """One plain sentence for the card: counts only, NEVER item payload text
     (untrusted pipe content must not ride the card surface — the full body
@@ -316,6 +360,9 @@ def _plain_headline(gather: dict, digest: "dict | None") -> str:
     update = _update_notice()
     if update:
         head += f" {update}."
+    gaps = _gaps_notice()
+    if gaps:
+        head += f" {gaps}."
     return head
 
 
