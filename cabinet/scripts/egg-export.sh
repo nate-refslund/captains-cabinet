@@ -329,9 +329,15 @@ EOF
 # class R145 (docs/plans) and R162 (framework/docs) already archive rather
 # than reword. The ratified constitutional record + design history stay with
 # the source deployment's private archive; the public egg ships none of it.
-# Every entry is rm -f'd (flat-file only by contract — a subdirectory would
-# abort the loop under set -e; the manifest's expect-absent glob + the test's
-# leftover-pin guard that invariant). test_amendment_doc_lint.py still globs
+# Every entry is rm -rf'd. It was rm -f until 2026-09-08, on a "flat files
+# only by contract" assumption that nothing enforced: the first amendment
+# PACKAGE to arrive as a directory (CG-36's germline bundle — a doc plus its
+# diffs and verify.sh) made `rm -f` print "is a directory" and abort the whole
+# export under set -e. The policy was always "nothing from docs/proposals/
+# ships"; -rf is what implements it, and the leftover pin in
+# test_egg_export.py::test_proposals_all_archived (the stub is the ONLY thing
+# left) is what proves it for files and directories alike.
+# test_amendment_doc_lint.py still globs
 # germline-amendment-*.md against the LIVE tree (that lint no longer ships,
 # per the LANE-C fix in the manifest), so the amendments keep their in-repo
 # lint; they simply never ride the egg.
@@ -340,7 +346,7 @@ t_proposals_archive() {
   [ -d "$dir" ] || { verify_fail "docs/proposals missing from archive cut"; return 0; }
   for entry in "$dir"/*; do
     [ -e "$entry" ] || continue
-    rm -f "$entry"
+    rm -rf "$entry"
   done
   cat > "$dir/ARCHIVED-NOTE.md" <<'EOF'
 # docs/proposals — archived at egg export (R146/R167 + scrub-wave-2)
