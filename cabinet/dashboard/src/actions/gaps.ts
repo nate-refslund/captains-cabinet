@@ -18,12 +18,16 @@ import { revalidatePath } from 'next/cache'
 // gap ids are `gap-<8 hex>` — validate before interpolating into a shell cmd.
 const GAP_ID_RE = /^gap-[0-9a-f]{8}$/
 
+// A0.3: pin the interpreter. Bare `python3` on the deployment box is 3.9; the
+// shell expands this, so an operator can still override it.
+const PY = '${CABINET_PYTHON:-python3.12}'
+
 export async function approveGap(gapId: string): Promise<{ ok: boolean; error?: string }> {
   if (!(await requireDashboardAuth())) return { ok: false, error: 'unauthorized' }
   if (!GAP_ID_RE.test(gapId)) return { ok: false, error: 'invalid gap id' }
   try {
     await dockerExec(
-      `python3 cabinet/scripts/org-runtime.py gaps approve '${gapId}' --actor captain --note 'approved via dashboard'`
+      `${PY} cabinet/scripts/org-runtime.py gaps approve '${gapId}' --actor captain --note 'approved via dashboard'`
     )
     revalidatePath('/gaps')
     return { ok: true }
@@ -39,7 +43,7 @@ export async function declineGap(gapId: string, reason: string): Promise<{ ok: b
   const safeReason = (reason || 'declined via dashboard').replace(/'/g, "'\\''").slice(0, 400)
   try {
     await dockerExec(
-      `python3 cabinet/scripts/org-runtime.py gaps decline '${gapId}' --actor captain --reason '${safeReason}'`
+      `${PY} cabinet/scripts/org-runtime.py gaps decline '${gapId}' --actor captain --reason '${safeReason}'`
     )
     revalidatePath('/gaps')
     return { ok: true }

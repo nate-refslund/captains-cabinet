@@ -1057,7 +1057,47 @@ budgets:
     # search that can tell "I found you" from "I found something" is a permanent
     # organ, and an allowance would promise a deletion gate that will never fire.
     # observed == maximum, zero headroom.
-    maximum: 64741
+    #
+    # 64741 -> 64837 (+96 measured 2026-09-07 with
+    # cognitive-architecture-census.py: effective 79391 -> 79487, observed
+    # 79487): phase-1 unit U3a in framework/learning/capability_gaps.py — the
+    # three STRUCTURAL gap kinds (skill / authority / information) recorded
+    # surface-only, and `record_gap(dedup_key=...)`, an identity dedupe taken
+    # under a cross-process lock so the officer hook — a fresh process every
+    # tick — records a standing condition ONCE instead of once per tick. Half
+    # the mass is the three independent vetoes that keep the new kinds out of
+    # the propose and auto lanes (route, gate, config), which is deliberate:
+    # one veto is a line an edit can delete without a test noticing. Zero new
+    # production MODULES and zero expansion rows. RAISED VISIBLY rather than
+    # paid by a temporary allowance, same reason as every row above: a
+    # vocabulary the org records its own missing holders in is permanent, and
+    # an allowance would promise a deletion gate that will never fire.
+    # observed == maximum, zero headroom.
+    #
+    # 64837 -> 64839 (+2 measured 2026-09-07, same unit and same run:
+    # effective 79487 -> 79489, observed 79489): the `surfaced` count wired
+    # into self_improvement_loop.py's own summary, plus the one-line fallback
+    # dict becoming two. A routing bucket that no consumer reads is a bucket a
+    # later edit deletes without a test noticing, and conflating it with
+    # `skipped` would report a deliberate silence as a routing failure — so the
+    # loop counts it separately, and a sensor pins the count.
+    # observed == maximum, zero headroom.
+    #
+    # 64839 -> 64870 (+31 measured 2026-09-07, same unit, third and last bump:
+    # effective 79489 -> 79520, observed 79520): DOCSTRING MASS, not behaviour.
+    # `_gaps_lock`'s docstring gained the acquisition order the lock U2 has not
+    # landed yet must respect — claims-lock -> gaps-lock -> ledger-lock — and
+    # `record_gap`'s gained what a keyed gap's hit_count staying 1 for life does
+    # to the /gaps ranking. Zero new statements, zero new modules, zero
+    # expansion rows. Bumped rather than reworded because the census counts
+    # every line that is not a `#` line, so a docstring IS mass under this law
+    # and the honest move is to pay for it on the line the zero-headroom rule is
+    # read from; rewriting the prose as `#` comments to dodge the count would
+    # put the ordering rule somewhere `help()` and the egg's own reader never
+    # see it. Paid separately from the two bumps above because it was measured
+    # after them, and a budget row that hides when its mass arrived is a budget
+    # row nobody can audit. observed == maximum, zero headroom.
+    maximum: 64870
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

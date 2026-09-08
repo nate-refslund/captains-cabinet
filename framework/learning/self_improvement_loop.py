@@ -1040,13 +1040,18 @@ def run_loop(
 
     # Stage 3.5 — route open capability gaps (self-extension) ----------------
     # procedure gaps → auto_skilling; tool/integration gaps → proposal to the
-    # Captain. NOTHING installs here — installs wait for an explicit approval
+    # Captain; the structural kinds (skill / authority / information) → surfaced,
+    # which routes them nowhere on purpose — a missing holder, permission or fact
+    # is not a thing this loop can build, so it is counted and left on the gaps
+    # surface rather than turned into an ask the Captain cannot approve into
+    # existence. NOTHING installs here — installs wait for an explicit approval
     # (capability_gaps.can_install, fail-closed). Isolated: never breaks the loop.
     try:
         from framework.learning.capability_gaps import route_open_gaps
         gap_routing = route_open_gaps(dry_run=dry_run or report_only)
     except Exception as exc:  # noqa: BLE001
-        gap_routing = {"error": str(exc), "auto_skilling": [], "proposed": [], "skipped": []}
+        gap_routing = {"error": str(exc), "auto_skilling": [], "proposed": [],
+                       "surfaced": [], "skipped": []}
 
     # Stage 4 — completion event --------------------------------------------
     if dry_run:
@@ -1086,6 +1091,11 @@ def run_loop(
         "capability_gaps": {
             "auto_skilling": len(gap_routing.get("auto_skilling", [])),
             "proposed_to_captain": len(gap_routing.get("proposed", [])),
+            # Structural kinds. Counted separately from "skipped", which means a
+            # gap this pass could NOT route — conflating the two would report a
+            # deliberate silence as a routing failure, and would leave the only
+            # consumer of the routing dict unable to see them at all.
+            "surfaced": len(gap_routing.get("surfaced", [])),
             "skipped": len(gap_routing.get("skipped", [])),
         },
     }
