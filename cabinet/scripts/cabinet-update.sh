@@ -636,6 +636,27 @@ PYHEALTH
 }
 
 restart_dashboard() {
+  # THE RESTART SEAM (A5.14 naming, phase-1 contract §4 P7). The acceptance
+  # drill proves "gate red -> roll back -> gate green" by giving one apply a
+  # restart that does nothing and the next one a restart that works. It cannot
+  # do that through the real path: `cabinet_dash_restart` kickstarts a launchd
+  # job or kills a listener and runs start-dashboard.sh, and a scratch install
+  # has neither. It cannot substitute its own dashboard library either — a
+  # bundle SHIPS cabinet/scripts/lib/dashboard.sh, so the apply would overwrite
+  # the fixture halfway through the run that depends on it. So the seam lives
+  # here, named CABINET_UPDATE_TEST_ like every other one in this file: a
+  # variable that can decide a leg of the health gate must never be mistaken
+  # for a production knob. The default below is the behaviour.
+  local restart_cmd
+  restart_cmd="${CABINET_UPDATE_TEST_RESTART_CMD:-}"
+  if [ -n "$restart_cmd" ]; then
+    log "restart: test seam"
+    # Same fd discipline as the real path below — whatever this starts may be
+    # detached, and it must not inherit the updater's lock.
+    ( exec 9>&-; unset CABINET_UPDATE_LOCK_HELD
+      cd "$ROOT" && eval "$restart_cmd" ) >>"$LOG" 2>&1
+    return $?
+  fi
   [ -f "$DASH_LIB" ] || { log "restart: no dashboard library at $DASH_LIB"; return 1; }
   # shellcheck disable=SC1090
   . "$DASH_LIB"

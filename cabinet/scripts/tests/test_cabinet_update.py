@@ -707,6 +707,51 @@ def test_health_gate_defaults_are_the_contract_legs(tmp_path):
     assert "REPORTED, never gated" in text
 
 
+def test_the_restart_seam_is_what_restarts_and_it_is_a_test_seam(tmp_path):
+    """A5.14 + §4 P7: the restart is drivable, or the rollback arm is theatre.
+
+    The acceptance drill proves "gate red => roll back => gate green" by
+    handing one apply a restart that does nothing and the next one a restart
+    that works. Without a seam it cannot: `cabinet_dash_restart` kicks a
+    launchd job or kills a listener and runs `start-dashboard.sh`, and a
+    scratch install has neither. Worse, the drill cannot supply its own
+    dashboard library either — the bundle SHIPS `cabinet/scripts/lib/
+    dashboard.sh`, so an apply overwrites any fixture put there halfway
+    through the very run that depends on it. The seam is therefore in the
+    updater, and it is named `CABINET_UPDATE_TEST_` because a variable that
+    can decide a leg of the health gate is not a production knob (the same law
+    test_health_gate_defaults_are_the_contract_legs pins for the other three).
+
+    RED before the seam existed: the marker below is never written, because
+    nothing in the updater reads the variable."""
+    root = make_install(tmp_path)
+    make_bundle(tmp_path, root, NEW_SHA, extra={"cabinet/scripts/hello.sh": "v2\n"})
+    marker = tmp_path / "restart-ran.txt"
+
+    result = run_updater(
+        root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+        env_extra={
+            "CABINET_UPDATE_TEST_RESTART_CMD": f"printf 'ran\\n' >> {marker}",
+            # Port 1 answers nothing, so the dashboard leg is red on the first
+            # attempt: this arm is about the restart being DRIVEN, and a gate
+            # that sat for 150 polls would be measuring the poll loop.
+            "CABINET_UPDATE_HEALTH_URL": "http://127.0.0.1:1/api/health",
+            "CABINET_OPEN_TRIES": "1",
+        },
+    )
+
+    assert marker.is_file(), (
+        "the updater never ran the restart command it was handed, so an apply "
+        "whose restart does nothing cannot be staged and the drill's rollback "
+        "arm would be measuring a dashboard that restarted perfectly well\n"
+        + result.stderr[-1500:])
+    # And the run that could not restart into a healthy dashboard rolled back
+    # rather than reporting success — the seam does not bypass the gate.
+    assert result.returncode != 0, result.stderr[-1500:]
+    assert "cabinet_update_rolled_back" in event_types(root)
+    assert installed_sha(root) == OLD_SHA
+
+
 def test_doctor_is_reported_not_gated(tmp_path):
     """A §5: a doctor gate on a single-worker install would rollback-storm."""
     root = make_install(tmp_path)
