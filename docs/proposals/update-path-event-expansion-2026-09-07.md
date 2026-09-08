@@ -73,11 +73,22 @@ Corrected two ways in the same commit:
    `framework/frontdoor/run_briefing.py`, which reads all three types back by
    name through `_update_receipt_for` (`emitter.replay(event_types=…)`,
    selected on the bundle rather than on recency). It is not decoration: a
-   REFUSAL writes no state file at all — it is refused before the first write
-   and leaves a receipt and nothing else — so before this read, a bundle whose
-   diff touches the constitutional set sat in the inbox for ever while the only
-   sentence the Captain ever saw said "ready to take — tap Apply", which did
-   nothing every time he tapped it.
+   bundle whose diff touches the constitutional set would otherwise sit in the
+   inbox for ever while the only sentence the Captain ever saw said "ready to
+   take — tap Apply", which did nothing every time he tapped it.
+
+   **Corrected again 2026-09-08 (A5.15/A5.16), and the reason matters more than
+   the correction.** This paragraph used to say a refusal "writes no state file
+   at all", which made the ledger the ONLY channel that could carry one — and
+   the first real apply on the installed Cabinet then proved that channel can
+   be shut: the installed emitter predated the update path, rejected
+   `cabinet_update_refused`, and the refusal reached neither the ledger nor any
+   file a surface reads. A refusal now writes `state.json` as `{phase:
+   "refused", bundle, reason, paths, ts, door}` with the record kept under
+   `last_refusal`, and `run_briefing._update_refusal_line` reads THAT first;
+   `_update_receipt_for` stays as the second channel and is still what these
+   rows' `consumer` names. Two independent channels, because on 2026-09-08 one
+   of them was silent and nobody could tell.
 2. **The claim is now checked.**
    `test_an_event_type_expansion_names_a_consumer_that_actually_names_it` reads
    the LIVE contract and requires every `central_event_types` expansion row's

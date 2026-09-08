@@ -48,6 +48,23 @@ export interface AvailableBundle {
   mtime: string
 }
 
+/**
+ * A refusal, as the updater wrote it down (A5.15).
+ *
+ * `paths` is the load-bearing field: "refused" on its own cannot be turned
+ * into a sentence anyone can act on, and what a constitutional refusal needs
+ * is a person deciding about NAMED files. It is empty for the refusals that
+ * are not about the constitutional set at all — a digest mismatch, an
+ * unreadable bundle, a second updater already running.
+ */
+export interface UpdateRefusal {
+  bundle: string
+  reason: string
+  paths: string[]
+  ts: string
+  door?: string
+}
+
 export interface UpdateState {
   phase?: string
   from_sha?: string
@@ -60,6 +77,11 @@ export interface UpdateState {
   snapshot?: string
   door?: string
   skipped_preserved?: string[]
+  bundle?: string
+  paths?: string[]
+  ts?: string
+  last_refusal?: UpdateRefusal
+  event_fallback?: boolean
 }
 
 export interface UpdateStatus {
@@ -70,6 +92,58 @@ export interface UpdateStatus {
   available: AvailableBundle[]
   latest: AvailableBundle | null
   snapshots: string[]
+  /** The last refusal the updater recorded, or null. Outlives the phase. */
+  last_refusal?: UpdateRefusal | null
+  /** A record is held outside the ledger because this install's emitter
+   *  does not know the event kind yet (A5.16). */
+  event_fallback?: boolean
+}
+
+/**
+ * A refusal is timing, or it is a verdict about the bundle.
+ *
+ * `busy` means another updater held the lock — it says nothing about these
+ * bytes, so it must not stick to them and turn a perfectly applicable bundle
+ * into one the card refuses to offer. Every other refusal IS about the bundle
+ * and follows it until something changes.
+ */
+function refusalIsAboutTheBundle(refusal: UpdateRefusal): boolean {
+  return refusal.reason !== 'busy'
+}
+
+/**
+ * The refusal this screen should be speaking about, or null.
+ *
+ * Shared by the headline and the card so the two cannot disagree — a card
+ * naming files under a headline that says "Update ready" is worse than either
+ * on its own. An apply in flight outranks it: that is the live state, and a
+ * busy refusal recorded a second ago is a note about a request, not about what
+ * the box is doing now.
+ */
+export function refusalToShow(status: UpdateStatus | null): UpdateRefusal | null {
+  if (!status || status.phase === 'applying') return null
+  const refusal = status.last_refusal
+  if (!refusal || !refusal.bundle) return null
+  if (status.phase === 'refused') return refusal
+  // The phase has moved on, but this bundle is still sitting in the inbox
+  // carrying a verdict. Offering it as "ready" again is the defect measured on
+  // 2026-09-08: a button that cannot work, with nothing saying why.
+  if (status.latest && status.latest.sha === refusal.bundle
+      && refusalIsAboutTheBundle(refusal)) {
+    return refusal
+  }
+  return null
+}
+
+/** The one sentence a refusal becomes. Counts, never a changelog line. */
+export function refusalHeadline(refusal: UpdateRefusal): string {
+  const short = (refusal.bundle || '').slice(0, 8)
+  const n = refusal.paths?.length ?? 0
+  if (n > 0) {
+    return `Update refused — ${n} constitutional file${n === 1 ? '' : 's'} ` +
+      `differ${n === 1 ? 's' : ''}; needs the Captain (${short})`
+  }
+  return `Update refused — ${refusal.reason || 'the updater would not take it'} (${short})`
 }
 
 /**
@@ -131,9 +205,12 @@ export async function getUpdateStatus(): Promise<UpdateStatus | null> {
 /**
  * The one line the home card shows, or null when there is nothing to say.
  *
- * Pure, so the wording is testable without a process: an update waiting, an
- * update that landed, or one that rolled itself back — in that order, because
- * a waiting bundle is the only one of the three the Captain can act on.
+ * Pure, so the wording is testable without a process: an apply in flight, a
+ * refusal, an update waiting, one that rolled itself back, one that landed —
+ * in that order. A waiting bundle leads the last three because it is the only
+ * one of them the Captain can act on; a refusal leads it in turn because the
+ * bundle waiting is usually the one that was refused, and offering it again is
+ * a button that cannot work.
  */
 export function updateHeadline(status: UpdateStatus | null): string | null {
   if (!status) return null
@@ -141,6 +218,11 @@ export function updateHeadline(status: UpdateStatus | null): string | null {
     const to = (status.last?.to_sha || '').slice(0, 8)
     return `Taking an update${to ? ` to ${to}` : ''} — this page restarts when it lands`
   }
+  // A refusal comes BEFORE the waiting bundle, because the waiting bundle is
+  // usually the one that was refused: "Update ready" over a bundle the updater
+  // has already turned down is a screen that lies once per refusal, for ever.
+  const refusal = refusalToShow(status)
+  if (refusal) return refusalHeadline(refusal)
   if (status.latest) {
     const n = status.latest.file_count
     return `Update ready — ${n} file${n === 1 ? '' : 's'} changed (${status.latest.short})`

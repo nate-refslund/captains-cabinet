@@ -12,6 +12,14 @@
  * the dashboard is being restarted underneath it, so the button goes to a
  * waiting line rather than a spinner that would outlive the process.
  *
+ * A REFUSAL IS A STATE THIS CARD RENDERS (A5.15), not an absence of one.
+ * Measured on the installed Cabinet 2026-09-08: an apply refused because one
+ * constitutional file differed, wrote nothing down, and this card would have
+ * gone on offering "Update ready" for that same bundle — an Apply button that
+ * fails identically every time it is tapped, with nothing anywhere saying why.
+ * So the refused headline names the count, the card names the FILES, and the
+ * Apply button is withdrawn for exactly the refusal a retry cannot fix.
+ *
  * THE PROVENANCE LINE carries all three facts about a waiting bundle: when it
  * was BUILT, who put it in the inbox, and when. The inbox is same-uid
  * writable (A5.11), so "where did this come from" is a question the Captain
@@ -22,7 +30,7 @@
 
 import { useState, useTransition } from 'react'
 import { applyUpdate, rollbackUpdate } from '@/actions/updates'
-import type { UpdateStatus } from '@/lib/updates'
+import { refusalToShow, type UpdateStatus } from '@/lib/updates'
 
 export default function UpdateCard({
   status,
@@ -35,7 +43,17 @@ export default function UpdateCard({
   const [error, setError] = useState('')
   const [launched, setLaunched] = useState('')
 
-  const waiting = status.latest
+  // A5.15. The refusal comes from the SAME helper the headline used, so the
+  // card can never name files under a sentence that says something else.
+  const refusal = refusalToShow(status)
+  // A constitutional refusal is the one an operator cannot retry into
+  // succeeding: those bytes change by a deliberate unlock-and-relock, and an
+  // Apply button there is a button that fails identically every time it is
+  // tapped. A refusal with no paths — busy, a bad digest, an unreadable
+  // bundle — says what happened and leaves the button, because a retry is a
+  // reasonable thing to do about all three.
+  const blocked = (refusal?.paths?.length ?? 0) > 0
+  const waiting = blocked ? null : status.latest
   const applied = status.phase === 'applied' && status.last?.to_sha
   const canRollBack = status.snapshots.length > 0
 
@@ -55,6 +73,30 @@ export default function UpdateCard({
             <p className="mt-2 text-xs text-zinc-500">
               Built {waiting.built_at || 'at an unrecorded time'} · placed by{' '}
               {waiting.owner || 'an unknown account'} at {waiting.mtime}
+            </p>
+          )}
+          {refusal && refusal.paths.length > 0 && (
+            <>
+              <ul className="mt-2 list-disc pl-5 text-xs text-amber-300">
+                {refusal.paths.slice(0, 5).map((path) => (
+                  <li key={path}>{path}</li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-zinc-400">
+                Nothing was applied. These files change by a deliberate unlock,
+                apply and lock in one sitting — not by an update.
+              </p>
+            </>
+          )}
+          {refusal && refusal.paths.length === 0 && (
+            <p className="mt-2 text-xs text-zinc-400">
+              Nothing was applied.
+            </p>
+          )}
+          {status.event_fallback && (
+            <p className="mt-2 text-xs text-zinc-500">
+              The record of this is held on disk — this Cabinet&apos;s ledger does
+              not know the update events yet, and the next update files it.
             </p>
           )}
           {applied && (status.last?.skipped_preserved?.length ?? 0) > 0 && (

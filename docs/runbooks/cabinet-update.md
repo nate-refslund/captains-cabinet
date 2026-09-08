@@ -17,9 +17,10 @@ inbox, and for reading a refusal.
 | Bundle | `<root>/.updates/inbox/<sha>.tar.gz` + `<sha>.manifest.json` |
 | Identity | `egg-manifest.json` → `source_commit`. There is no second version file |
 | Snapshots | `<root>/.updates/snapshots/<stamp>-<from-sha>/`, newest 3 kept |
-| State | `<root>/.updates/state.json` — what the card reads |
+| State | `<root>/.updates/state.json` — what the card reads, refusals included |
 | Log | `<root>/.updates/update.log` |
 | Receipts | `cabinet_update_applied` / `_refused` / `_rolled_back` in the ledger |
+| Held records | `<root>/.updates/events.jsonl` — receipts this install's ledger would not take yet, replayed by the next apply |
 
 ## Publishing a bundle (the producer side)
 
@@ -107,6 +108,60 @@ bundle; **any** differing path inside the constitutional set; and a preserve
 declaration neither side carries. Every one of them is whole-bundle — partial
 application is never a legal state.
 
+### Every refusal is durable, and every surface reads it
+
+A refusal writes `state.json` — `{phase: "refused", bundle, reason, paths, ts,
+door}` — and keeps the same record under `last_refusal`, which `status --json`
+carries beside the phase:
+
+```json
+{ "phase": "refused",
+  "last_refusal": { "bundle": "113b52c4…", "reason": "bundle 113b52c4… changes
+    locked constitutional paths", "paths": ["cabinet/scripts/start-officer-mac.sh"],
+    "ts": "2026-09-08T18:58:00Z", "door": "terminal" } }
+```
+
+The home card and the briefing line read that: *Update refused — 1
+constitutional file differs; needs the Captain*, with the files named on the
+card and the Apply button withdrawn, because those bytes change by a ceremony
+and no number of taps will do it. The same bundle is never offered as "Update
+ready" again — `last_refusal` survives later state writes, so an unrelated
+apply landing in between does not resurrect the offer.
+
+Two deliberate exceptions, both about not letting one durability feature eat
+another:
+
+- a **busy** refusal never takes `phase` from an interrupted apply. `phase:
+  applying` plus a snapshot name is the only marker saying a tree is
+  half-written and which snapshot puts it back; the busy refusal is recorded in
+  `last_refusal` beside it and leaves it alone.
+- **busy** does not stick to a bundle either. It is a fact about timing, not
+  about those bytes, so once the phase has moved on the card offers the bundle
+  normally again.
+
+Before 2026-09-08 none of this existed: the first real apply on the installed
+Cabinet refused exactly as designed and left `phase: idle, last: null` behind,
+so the card would have offered the same bundle for ever and the only record on
+the box was one line in `update.log`.
+
+### When this install's ledger does not know the event yet
+
+The emitter that knows `cabinet_update_applied` **arrives with the update that
+event announces**, so the first apply on any install cut before this leg
+existed cannot record it — measured on the box as `ValueError: Unknown event
+type: cabinet_update_refused`. The updater therefore records through its own
+recorder: the installed emitter first, and on any refusal from it an identical
+record is appended to `<root>/.updates/events.jsonl` with
+`state.json.event_fallback` set and a line on the log saying so. Nothing is
+dropped and nothing crashes.
+
+The next successful apply replays those records into the ledger **after the new
+tree is in place**, once each — idempotent on the record's own id, which the
+replayed ledger row carries as `deferred_record_id` — and renames the sidecar
+to `events.ingested-<ts>.jsonl` rather than deleting it. Replaying before the
+health gate is deliberate: a rollback undoes the bytes, and must not also undo
+the record that they were there.
+
 **A constitutional-set refusal is not a bug.** Those bytes are changed by a
 deliberate ceremony — unlock, apply, lock again in the same sitting — not by an
 unattended update. The refusal prints the paths, the current boundary state,
@@ -152,10 +207,22 @@ Two surfaces, both derived and neither hand-maintained: the home card
 (`Update ready — N files changed`, then `Updated to <sha>`, with Roll back) and
 one line on the daily briefing. The briefing line reads the inbox and the state
 file directly — a briefing must never be able to hang on a subprocess — and
-reads the three `cabinet_update_*` receipts back off the ledger for the one
-state the files cannot carry: a REFUSAL writes no state at all, so without that
-read a bundle refused for touching the constitutional set would sit in the
-inbox for ever behind a sentence saying "ready to take".
+falls back to the three `cabinet_update_*` receipts on the ledger for anything
+the state file does not carry.
+
+Both channels answer a refusal, and they have to: the state file is written by
+the updater itself, and the ledger is exactly what an install too old to know
+the event kind refuses to write. On 2026-09-08 both were silent on the same
+refusal, and the sentence waiting for the Captain was "an update is ready to
+take — tap Apply", over a bundle that had already been turned down.
+
+## Reading a held record
+
+`status` says `held: a record is waiting in .updates/events.jsonl for a newer
+ledger`, and `status --json` says `event_fallback: true`. The file is one JSON
+object per line — `{id, event_type, actor, payload, ts}` — and needs nothing
+done to it: the next apply files it. `events.ingested-<ts>.jsonl` beside it is
+what has already been filed, kept so the bootstrap hop is readable afterwards.
 
 ## First bootstrap
 

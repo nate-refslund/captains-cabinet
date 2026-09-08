@@ -219,6 +219,42 @@ def _update_receipt_for(sha: str, days: int = 30) -> "dict | None":
     return None
 
 
+# A5.15 — THE REFUSAL THE STATE FILE NOW CARRIES.
+#
+# Until 2026-09-08 an update refusal wrote nothing down, so the only way this
+# line could learn about one was the ledger (`_update_receipt_for`, below) —
+# and the ledger is exactly what an install cut before the update path existed
+# refuses to write, because it does not know the event kind yet (A5.16). Both
+# channels were silent on the same event on the first real apply, and the
+# sentence the Captain would have read was "an update is ready to take — tap
+# Apply", over a bundle that had already been turned down. So the state file is
+# asked first and the ledger stays as the second channel.
+#
+# TWO FILTERS, each one a sentence this must not produce. A refusal of some
+# OTHER bundle never silences the one that is waiting; and `busy` is about
+# timing rather than about these bytes, so once the phase has moved on it stops
+# following them. Counts only, never the path text on a card surface — the
+# files themselves are named on the home card, which is where the decision is
+# made. Fail-open like everything else on this path: any error is silence.
+def _update_refusal_line(base, waiting_sha: str = "") -> str:
+    import json
+    try:
+        state = json.loads((base / ".updates" / "state.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return ""
+    record = state if state.get("phase") == "refused" else (state.get("last_refusal") or {})
+    bundle = str(record.get("bundle") or "")
+    if not bundle or (waiting_sha and bundle != waiting_sha) or (
+            state.get("phase") != "refused" and record.get("reason") == "busy"):
+        return ""
+    paths = [str(entry) for entry in (record.get("paths") or [])]
+    if paths:
+        return ("Update refused — %d constitutional file%s; needs the Captain (%s)"
+                % (len(paths), " differs" if len(paths) == 1 else "s differ", bundle[:8]))
+    return ("Update refused — %s (%s)"
+            % (record.get("reason") or "the updater would not take it", bundle[:8]))
+
+
 def _update_notice(root: "str | None" = None) -> str:
     """ONE briefing line about the bytes this Cabinet is running, or "".
 
@@ -235,7 +271,10 @@ def _update_notice(root: "str | None" = None) -> str:
 
     Fail-open in the strong sense: any error, and any install with no updater
     at all, yields "" — an unaskable question is answered with silence, never
-    with "you are up to date"."""
+    with "you are up to date".
+
+    A REFUSAL LEADS (A5.15, `_update_refusal_line` above): a bundle the updater
+    has already turned down must never be announced as ready to take."""
     import json
     from pathlib import Path
 
@@ -252,6 +291,12 @@ def _update_notice(root: "str | None" = None) -> str:
             sha = doc.get("source_sha") or ""
             if sha and sha != installed and (inbox / (sha + ".tar.gz")).is_file():
                 waiting.append((doc.get("built_at") or "", sha, len(doc.get("files") or {})))
+        # The refusal leads: the bundle sitting in the inbox is usually the one
+        # that was refused, and "ready to take" over it is a sentence that is
+        # wrong once per refusal, for ever.
+        refused = _update_refusal_line(base, max(waiting)[1] if waiting else "")
+        if refused:
+            return refused
         if waiting:
             _, sha, count = max(waiting)
             receipt = _update_receipt_for(sha) or {}

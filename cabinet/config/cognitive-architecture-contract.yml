@@ -1322,7 +1322,30 @@ budgets:
     # two, and every expansion paragraph from both sides is kept. RE-MEASURED
     # over this merge tree with cognitive-architecture-census.py rather than
     # added on paper. observed == maximum, zero headroom.
-    maximum: 66638
+    #
+    # 66638 -> 66660 (+22 measured 2026-09-08 via cognitive-architecture-census.py,
+    # 81376 -> 81398 against the effective ceiling): U5b's refused arm in
+    # framework/frontdoor/run_briefing.py. The update path's briefing line could
+    # only learn about a refusal from the event ledger, and the first real apply
+    # on the installed Cabinet (2026-09-08) proved that channel can be shut: the
+    # INSTALLED emitter predated the update path and rejected
+    # `cabinet_update_refused`, so the refusal reached no ledger, wrote no state,
+    # and the sentence the Captain would have read was "an update is ready to
+    # take - tap Apply" over a bundle already turned down. The mass is
+    # `_update_refusal_line` (17 lines: the state read, the two filters that stop
+    # it announcing a refusal of some OTHER bundle or a `busy` that is about
+    # timing rather than these bytes, and the two sentences), three lines wiring
+    # it ahead of the waiting-bundle arm, and two docstring lines saying the
+    # refusal leads. Every other line the change adds to framework/ is a `#`
+    # comment by construction. RAISED VISIBLY rather than paid by a temporary
+    # allowance, same reason as every row above: an allowance promises a deletion
+    # gate, and a surface that can announce a refusal is permanent - the
+    # bootstrap-ordering hole it covers recurs on every install cut before the
+    # update path existed. Zero new production MODULES
+    # (framework_production_modules unchanged at 253: the helper lives in the
+    # existing frontdoor module, and every other file the unit touches is under
+    # cabinet/, outside this budget's path). observed == maximum, zero headroom.
+    maximum: 66660
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

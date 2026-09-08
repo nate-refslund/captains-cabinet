@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 import UpdateCard from './update-card'
-import type { UpdateStatus } from '@/lib/updates'
+import { updateHeadline, type UpdateStatus } from '@/lib/updates'
 
 const WAITING: UpdateStatus = {
   installed_sha: 'a'.repeat(40),
@@ -57,5 +57,58 @@ describe('UpdateCard', () => {
     const status = { ...WAITING, latest: null }
     const html = renderToStaticMarkup(<UpdateCard status={status} headline="Up to date" />)
     expect(html).not.toContain('>Apply<')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A5.15 on the card itself. The headline is one sentence; the card is where a
+// refusal becomes actionable, because "which files" is the whole of what the
+// operator needs in order to do anything about it.
+// ---------------------------------------------------------------------------
+
+const REFUSED: UpdateStatus = {
+  ...WAITING,
+  phase: 'refused',
+  last_refusal: {
+    bundle: 'b'.repeat(40),
+    reason: 'bundle changes locked constitutional paths',
+    paths: ['cabinet/scripts/start-officer-mac.sh'],
+    ts: '2026-09-08T18:58:00Z',
+    door: 'terminal',
+  },
+}
+
+describe('UpdateCard on a refusal', () => {
+  it('names the files that differ, so the sentence can be acted on', () => {
+    const html = renderToStaticMarkup(
+      <UpdateCard status={REFUSED} headline={updateHeadline(REFUSED)!} />)
+    expect(html).toContain('Update refused')
+    expect(html).toContain('cabinet/scripts/start-officer-mac.sh')
+    expect(html).not.toContain('Update ready')
+  })
+
+  it('offers no Apply for a bundle that cannot be applied without a person', () => {
+    const html = renderToStaticMarkup(
+      <UpdateCard status={REFUSED} headline={updateHeadline(REFUSED)!} />)
+    expect(html).not.toContain('>Apply<')
+  })
+
+  it('keeps Apply when the refusal was timing rather than content', () => {
+    const busy: UpdateStatus = {
+      ...WAITING,
+      phase: 'refused',
+      last_refusal: { ...REFUSED.last_refusal!, reason: 'busy', paths: [] },
+    }
+    const html = renderToStaticMarkup(
+      <UpdateCard status={busy} headline={updateHeadline(busy)!} />)
+    expect(html).toContain('Update refused')
+    expect(html).toContain('>Apply<')
+  })
+
+  it('says so when the record is being held outside the ledger (A5.16)', () => {
+    const held: UpdateStatus = { ...REFUSED, event_fallback: true }
+    const html = renderToStaticMarkup(
+      <UpdateCard status={held} headline={updateHeadline(held)!} />)
+    expect(html).toContain('held')
   })
 })

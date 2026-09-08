@@ -244,3 +244,73 @@ def test_the_headline_is_unharmed_when_there_is_no_update_to_report(tmp_path, mo
     head = run_briefing._plain_headline({"items": []}, None)
     assert "update" not in head.lower()
     assert head.endswith(".")
+
+
+# ---------------------------------------------------------------------------
+# A5.15 — the state file finally carries a refusal, and this line reads it
+#
+# Until 2026-09-08 a refusal wrote no state at all, so this notice could only
+# learn about one from the ledger — and the ledger is exactly what a
+# pre-update-path emitter refuses to write (A5.16). Both channels were silent
+# on the same event on the first real apply, and the sentence the Captain would
+# have read was "an update is ready to take — tap Apply".
+# ---------------------------------------------------------------------------
+
+def test_a_refused_state_file_is_read_even_when_the_ledger_never_heard(tmp_path,
+                                                                       monkeypatch):
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _waiting(root)
+    _state(root, {"phase": "refused", "bundle": NEW, "ts": "2026-09-08T18:58:00Z",
+                  "reason": "bundle changes locked constitutional paths",
+                  "paths": ["cabinet/scripts/start-officer-mac.sh"], "door": "terminal"})
+    line = run_briefing._update_notice(str(root))
+    assert "refused" in line.lower(), line
+    assert "1 constitutional file" in line
+    assert "tap Apply" not in line
+
+
+def test_a_refusal_names_more_than_one_file_in_the_plural(tmp_path, monkeypatch):
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _waiting(root)
+    _state(root, {"phase": "refused", "bundle": NEW, "ts": "2026-09-08T18:58:00Z",
+                  "reason": "bundle changes locked constitutional paths",
+                  "paths": ["a.sh", "b.sh"], "door": "web"})
+    assert "2 constitutional files" in run_briefing._update_notice(str(root))
+
+
+def test_a_refusal_with_no_paths_says_its_own_reason(tmp_path, monkeypatch):
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _waiting(root)
+    _state(root, {"phase": "refused", "bundle": NEW, "ts": "2026-09-08T18:58:00Z",
+                  "reason": "failed per-file digest verification", "paths": [],
+                  "door": "terminal"})
+    line = run_briefing._update_notice(str(root))
+    assert "refused" in line.lower()
+    assert "digest" in line
+    assert "constitutional" not in line
+
+
+def test_a_refusal_of_a_bundle_that_is_gone_still_says_what_happened(tmp_path,
+                                                                    monkeypatch):
+    """No bundle in the inbox and no apply since: the last thing that happened
+    is still the last thing that happened."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _state(root, {"phase": "refused", "bundle": NEW, "ts": "2026-09-08T18:58:00Z",
+                  "reason": "bundle changes locked constitutional paths",
+                  "paths": ["cabinet/scripts/start-officer-mac.sh"], "door": "terminal"})
+    assert "refused" in run_briefing._update_notice(str(root)).lower()
+
+
+def test_a_refusal_of_some_other_bundle_never_silences_the_waiting_one(tmp_path,
+                                                                      monkeypatch):
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _waiting(root)
+    _state(root, {"phase": "applied", "to_sha": "c" * 40, "changed": 2,
+                  "last_refusal": {"bundle": "e" * 40, "reason": "busy", "paths": [],
+                                   "ts": "2026-09-08T18:00:00Z", "door": "web"}})
+    assert run_briefing._update_notice(str(root)).startswith("An update is ready to take")

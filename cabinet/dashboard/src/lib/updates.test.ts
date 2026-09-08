@@ -17,7 +17,7 @@ vi.mock('child_process', () => ({
   spawn: vi.fn(() => ({ unref: vi.fn() })),
 }))
 
-import { getUpdateStatus, updateHeadline, type UpdateStatus } from './updates'
+import { getUpdateStatus, refusalToShow, updateHeadline, type UpdateStatus } from './updates'
 
 /** promisify(execFile) calls the callback form: (cmd, args, opts, cb). */
 function answer(stdout: string) {
@@ -111,5 +111,111 @@ describe('updateHeadline', () => {
         last: { phase: 'rolled_back', to_sha: 'a'.repeat(40), reason: 'the health gate was red' },
       })
     ).toBe('An update was rolled back to aaaaaaaa: the health gate was red')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A5.15 — a refusal reaches the screen, and the same bundle never reads as
+// "ready" again.
+//
+// Measured on the installed Cabinet 2026-09-08: an apply refused because one
+// constitutional path differed, wrote no state at all, and `status --json`
+// answered `phase: idle, last: null`. This card would then have offered
+// "Update ready" for that same bundle for ever — a button that cannot work,
+// with nothing anywhere saying why.
+// ---------------------------------------------------------------------------
+
+const WAITING = {
+  sha: 'b'.repeat(40), short: 'bbbbbbbb', built_at: '2026-09-07T00:00:00Z',
+  from_sha: null, file_count: 12, changelog: ['x'], owner: 'nate',
+  mtime: '2026-09-07T00:00:00Z',
+}
+
+const LOCKED_REFUSAL = {
+  bundle: 'b'.repeat(40),
+  reason: 'bundle changes locked constitutional paths',
+  paths: ['cabinet/scripts/start-officer-mac.sh'],
+  ts: '2026-09-08T18:58:00Z',
+  door: 'terminal',
+}
+
+describe('a refused bundle', () => {
+  it('says it was refused, names how many files, and never says "ready"', () => {
+    const line = updateHeadline({
+      ...BASE, phase: 'refused', latest: WAITING, last_refusal: LOCKED_REFUSAL,
+    })
+    expect(line).toContain('Update refused')
+    expect(line).toContain('1 constitutional file')
+    expect(line).not.toContain('Update ready')
+  })
+
+  it('counts more than one path in the plural', () => {
+    const line = updateHeadline({
+      ...BASE, phase: 'refused', latest: WAITING,
+      last_refusal: { ...LOCKED_REFUSAL, paths: ['a.sh', 'b.sh', 'c.sh'] },
+    })
+    expect(line).toContain('3 constitutional files differ')
+  })
+
+  it('a refusal with no paths says its own reason instead of inventing a count', () => {
+    const line = updateHeadline({
+      ...BASE, phase: 'refused', latest: WAITING,
+      last_refusal: { ...LOCKED_REFUSAL, paths: [], reason: 'failed per-file digest verification' },
+    })
+    expect(line).toContain('Update refused')
+    expect(line).toContain('digest')
+    expect(line).not.toContain('constitutional')
+  })
+
+  it('stays refused for that bundle even after some other apply moved the phase', () => {
+    const line = updateHeadline({
+      ...BASE, phase: 'applied', latest: WAITING, last_refusal: LOCKED_REFUSAL,
+      last: { phase: 'applied', to_sha: 'c'.repeat(40), changed: 3 },
+    })
+    expect(line).toContain('Update refused')
+  })
+
+  it('a refusal of some OTHER bundle never silences the one that is waiting', () => {
+    const line = updateHeadline({
+      ...BASE, phase: 'applied', latest: WAITING,
+      last_refusal: { ...LOCKED_REFUSAL, bundle: 'e'.repeat(40) },
+      last: { phase: 'applied', to_sha: 'c'.repeat(40), changed: 3 },
+    })
+    expect(line).toBe('Update ready — 12 files changed (bbbbbbbb)')
+  })
+
+  it('busy is about timing, not about the bundle, so it does not stick to it', () => {
+    const line = updateHeadline({
+      ...BASE, phase: 'applied', latest: WAITING,
+      last_refusal: { ...LOCKED_REFUSAL, reason: 'busy', paths: [] },
+      last: { phase: 'applied', to_sha: 'c'.repeat(40), changed: 3 },
+    })
+    expect(line).toBe('Update ready — 12 files changed (bbbbbbbb)')
+  })
+
+  it('an apply in flight still leads — it is the live state', () => {
+    const line = updateHeadline({
+      ...BASE, phase: 'applying', latest: WAITING,
+      last_refusal: { ...LOCKED_REFUSAL, reason: 'busy', paths: [] },
+      last: { phase: 'applying', to_sha: 'b'.repeat(40) },
+    })
+    expect(line).toContain('Taking an update')
+  })
+})
+
+describe('refusalToShow', () => {
+  it('is null when nothing was refused', () => {
+    expect(refusalToShow(BASE)).toBeNull()
+    expect(refusalToShow(null)).toBeNull()
+  })
+
+  it('is the refusal the headline is speaking about, so the card cannot disagree', () => {
+    const status = { ...BASE, phase: 'refused', latest: WAITING, last_refusal: LOCKED_REFUSAL }
+    expect(refusalToShow(status)).toEqual(LOCKED_REFUSAL)
+    expect(updateHeadline(status)).toContain('Update refused')
+  })
+
+  it('is null while an apply is in flight', () => {
+    expect(refusalToShow({ ...BASE, phase: 'applying', last_refusal: LOCKED_REFUSAL })).toBeNull()
   })
 })
