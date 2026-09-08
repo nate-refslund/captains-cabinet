@@ -197,6 +197,44 @@ _PACKAGES = {
         # live claim anywhere in this package
         "forbidden_lower": ("draft_only keeps the earn-up ladder",),
     },
+    "employee-phase1": {
+        "doc": "germline-amendment-employee-phase1-2026-09.md",
+        "apply_token": '"apply employee phase 1"',
+        # CG-36 set: the two proposed-byte targets, plus germline-lock.sh as
+        # the SET that must stay byte-identical (the CG-35 shape) — this
+        # package edits no locked path at all, so no file appears as edited.
+        "germline_files": (
+            "start-officer-mac.sh", "session-task-inject.sh", "germline-lock.sh",
+        ),
+        "eval_coverage": None,
+        "rollback_re": r"\*\*One-revert rollback:\*\*(.*?)(?:\n---|\n## )",
+        "rollback_skip": (),
+        "rollback_extra": ("germline path SET", "CG-36"),
+        # no paste-ready ledger block: the ruling is the CG-36 row + this doc
+        "blocks": (),
+        # the two changes named by their seams · the bundle apparatus · the
+        # amendments that shaped the scope · the drill's REAL exit codes
+        "anchors": (
+            "CG-36", "G1.diff", "G3.diff", "verify.sh", "parse_locked_set",
+            "CABINET_WORKER_ID", "CABINET_PYTHON", "CABINET_HOOK_LOG",
+            "exit 78", "already-at-target", "one-responsibility.sh",
+            "landed-then-ceremonied", "non-grantable",
+            "A7.1", "A7.3", "A7.4", "A0.5", "A0.8",
+        ),
+        "anchors_lower": (
+            "byte-identical",
+            "never force-applied",
+            "presence is not completeness",
+        ),
+        # the unit's hard invariant — it wraps across doc lines, so it is
+        # matched on flattened whitespace like the axes package's headings
+        "flat_anchors": ("nothing under a locked path is modified",),
+        "any_of": (("landed-then-ceremonied", "already landed on master"),),
+        # A7.1 dropped the soft label and the contract's placeholder exit code:
+        # a stage that labels itself unverified is a disabled sensor, and the
+        # landed drill names 20/21, not 25. Neither phrasing may resurface here.
+        "forbidden_lower": ("unverified-until-ceremony", "exit 25"),
+    },
 }
 
 _PKG_IDS = sorted(_PACKAGES)

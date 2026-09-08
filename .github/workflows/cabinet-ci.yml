@@ -784,6 +784,15 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
         with:
           persist-credentials: false
+          # fetch-depth: 0 (2026-09-08, CG-36). This job runs
+          # cabinet/scripts/tests, which carries the phase-1 germline guard
+          # test_germline_bundle.py::test_phase1_touches_no_locked_path. That
+          # guard diffs the branch against its merge-base and REFUSES rather
+          # than passing when the base is unreachable (contract amendment
+          # A7.3) — a guard that cannot see the diff it guards is a disabled
+          # sensor. On the default shallow checkout the base is unreachable,
+          # so the depth is the wiring that lets the guard measure at all.
+          fetch-depth: 0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: "3.12"
