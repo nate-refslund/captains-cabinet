@@ -8,6 +8,12 @@ Cabinet may do on its own:
   - procedure  → auto-skilled (draft → eval gate → promote). Human never asked.
   - tool       → proposal DM'd to Captain. Nothing installs without approval.
   - integration→ same as tool.
+  - skill / authority / information → SURFACE ONLY. Recorded, projected and
+    rendered; never auto-skilled, never proposed, never DM'd. These name a
+    missing holder, a missing permission and a missing fact — none of them is
+    a thing the loop can build for itself, so a proposal would be an ask the
+    Captain cannot approve into existence. Reading them off the gaps surface
+    is the whole behaviour.
 
 SAFETY — the two invariants that make "build it and iterate" responsible:
 
@@ -32,10 +38,12 @@ Usage:
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import os
 import re
 import sys
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,7 +53,7 @@ _FRAMEWORK_ROOT = str(Path(__file__).parent.parent.parent)
 if _FRAMEWORK_ROOT not in sys.path:
     sys.path.insert(0, _FRAMEWORK_ROOT)
 
-from framework.events.emitter import emit, replay  # noqa: E402
+from framework.events.emitter import emit, replay, _event_log_dir  # noqa: E402
 
 try:
     from yaml import safe_load as _yaml_load
@@ -57,7 +65,23 @@ except ImportError:  # pragma: no cover - yaml present in cabinet runtime
 # Kinds + status
 # ---------------------------------------------------------------------------
 
-VALID_KINDS = ("procedure", "tool", "integration")
+# The kinds the self-extension lane may ACT on: `procedure` is the only
+# auto-skillable one, `tool`/`integration` reach the Captain as proposals.
+ACTIONABLE_KINDS = ("procedure", "tool", "integration")
+
+# Structural kinds — recorded SURFACE-ONLY (see the module docstring). Held as
+# a code-level constant, not a config knob: widening it widens what the loop is
+# allowed to stay silent about.
+STRUCTURAL_KINDS = frozenset({"skill", "authority", "information"})
+
+VALID_KINDS = ACTIONABLE_KINDS + ("skill", "authority", "information")
+
+# The kinds an ambiguous classification may resolve to — both are *propose*
+# kinds. `procedure` (the auto lane) and every structural kind are refused
+# here: an ambiguous need that resolved to a structural kind would go quiet
+# instead of reaching the Captain, which is the opposite of erring toward
+# human-in-loop.
+_AMBIGUOUS_RESOLVES_TO = ("tool", "integration")
 
 # Status lifecycle (projected from events):
 #   open → classified → (procedure) auto_skilling → skilled → resolved
@@ -140,8 +164,9 @@ def classify(need: str, evidence: str = "", ambiguous_default: str = "tool") -> 
     if proc > tool:
         return "procedure"
     # Tie or both zero → ambiguous → safe default (propose). Never 'procedure'
-    # (the auto-skill lane) — enforced here, not just documented.
-    if ambiguous_default not in VALID_KINDS or ambiguous_default == "procedure":
+    # (the auto-skill lane) and never a structural kind (the silent lane) —
+    # enforced here, not just documented.
+    if ambiguous_default not in _AMBIGUOUS_RESOLVES_TO:
         ambiguous_default = "tool"
     return "integration" if integ_signal else ambiguous_default
 
@@ -208,7 +233,9 @@ def load_autonomy(cabinet_root: str | Path | None = None) -> AutonomyPolicy:
         return policy  # fail safe → conservative defaults
 
     d = data.get("defaults") or {}
-    for k in VALID_KINDS:
+    # ACTIONABLE_KINDS, not VALID_KINDS: a structural kind has no auto lane to
+    # configure, so `defaults: {skill: auto}` in the file is read as nothing.
+    for k in ACTIONABLE_KINDS:
         v = d.get(k)
         if v in ("auto", "propose", "off"):
             policy.defaults[k] = v
@@ -248,6 +275,11 @@ def can_auto_apply(kind: str, touches: set[str] | None, policy: AutonomyPolicy |
     try:
         policy = policy or load_autonomy()
         if kind not in VALID_KINDS:
+            return False
+        # Structural kinds are surface-only in every posture and under every
+        # autonomy.yml — the veto sits ahead of the policy lookup so a file
+        # cannot grant an auto lane that does not exist.
+        if kind in STRUCTURAL_KINDS:
             return False
         if policy.defaults.get(kind) != "auto":
             return False
@@ -354,21 +386,161 @@ def gap_id_for(need: str) -> str:
     return "gap-" + hashlib.sha1(need.strip().lower().encode()).hexdigest()[:8]
 
 
+def gap_id_for_key(dedup_key: str) -> str:
+    """Gap id for a caller-supplied dedup key — identity, not similarity.
+
+    Case is PRESERVED (unlike `gap_id_for`, which lowercases a free-text need):
+    a key is built from ids, and ids that differ only in case are different
+    subjects, so folding case here would silently merge two of them.
+    """
+    return "gap-" + hashlib.sha1(dedup_key.strip().encode()).hexdigest()[:8]
+
+
+_GAPS_LOCK_NAME = ".capability-gaps.lock"
+
+
+@contextmanager
+def _gaps_lock():
+    """Serialize keyed gap records across processes.
+
+    The critical section is read-then-emit. Without it, N observers of the same
+    key each replay a ledger that does not yet hold the gap and each emit, so
+    one subject lands N times — the exact failure a keyed dedupe exists to
+    prevent, and one that only appears under concurrency (the officer hook runs
+    a fresh process per tick).
+
+    The lock file lives beside the JSONL ledger the projection replays, so the
+    lock's scope is exactly the dedupe's scope. Advisory `flock`, POSIX only —
+    the same premise framework/attention/feed.py records. Ordering is always
+    gaps-lock → ledger-lock (emitter), never the reverse.
+
+    ORDERING FOR THE LOCK THAT HAS NOT LANDED YET. A3.1 says keyed records are
+    taken "under the claims lock"; `framework/missions/claims.py` does not
+    exist at this commit, so this purpose-built lock beside the ledger provides
+    the atomicity A3.1 exists for. When U2 lands its claims lock, the pull path
+    will hold it while calling into here (U3b's `observe_holder_gaps` runs
+    inside `get_next_task`), so the acquisition order is fixed now, in the only
+    direction that is deadlock-free with a single writer path:
+
+        claims-lock → gaps-lock → ledger-lock
+
+    Nothing in this module ever takes a claims lock, so this module cannot
+    invert it on its own; the rule binds whoever adds a call in the other
+    direction, and belongs in claims.py's docstring too when it lands.
+    """
+    log_dir = _event_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(log_dir / _GAPS_LOCK_NAME), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
+
+def _live_gap_with_id(gap_id: str, product_slug: str) -> dict[str, Any] | None:
+    """The gap carrying this id if it is still live (not resolved/declined).
+
+    A closed one answers None on purpose: the condition recurring after it was
+    closed is a NEW observation and re-opens the gap, which the projection
+    already handles (a second `capability_gap_recorded` rebuilds the row).
+
+    RECORDED, so U3b's producer does not surprise the Captain: for a KEYED gap
+    this makes a decline non-final in the projection. A Captain declines a
+    standing condition; the next observer tick re-records it and `/gaps` shows
+    it open again — occasional for a free-text gap, continuous for a keyed one
+    whose subject persists. The decline still BINDS where it matters:
+    `can_install` reads the decision out of the event ledger
+    (`_latest_decision_for`), not out of the projected status, so a re-opened
+    row grants nothing. The behaviour predates keys (`gap_id_for(need)` is
+    equally stable); keys only make it regular. If the Captain should be able
+    to silence a standing condition, that is a `resolve`/mute decision for
+    U3b's producer, not a change to this projection.
+    """
+    for g in project_gaps(product_slug=product_slug):
+        if g["gap_id"] != gap_id:
+            continue
+        if g["status"] in (STATUS_RESOLVED, STATUS_DECLINED):
+            return None
+        return g
+    return None
+
+
+def _emit_recorded(gap_id: str, need: str, kind: str | None, evidence: str,
+                   recorded_by: str, touches: list[str] | None,
+                   product_slug: str, actor: str,
+                   dedup_key: str | None) -> dict[str, Any]:
+    """Emit `capability_gap_recorded` and return the projected-shape gap."""
+    inferred_kind = kind if kind in VALID_KINDS else classify(
+        need, evidence, load_autonomy().ambiguous_kind)
+    inferred_touches = sorted(infer_touches(need, evidence, touches))
+    emit("capability_gap_recorded", actor=actor, payload={
+        "gap_id": gap_id, "product_slug": product_slug, "need": need,
+        "kind": inferred_kind, "evidence": evidence, "recorded_by": recorded_by,
+        "touches": inferred_touches, "dedup_key": dedup_key,
+    })
+    return {
+        "gap_id": gap_id, "product_slug": product_slug, "need": need,
+        "kind": inferred_kind, "status": STATUS_OPEN, "hit_count": 1,
+        "evidence": evidence, "recorded_by": recorded_by,
+        "touches": inferred_touches, "resolution": None,
+        "dedup_key": dedup_key,
+    }
+
+
 def record_gap(need: str, kind: str | None = None, evidence: str = "",
                recorded_by: str = "unknown", touches: list[str] | None = None,
                product_slug: str | None = None, actor: str | None = None,
-               dedup_threshold: float = 0.6) -> dict[str, Any]:
-    """Record a capability gap. Dedups near-identical recurring gaps by Jaccard
-    over content tokens — a recurring gap increments hit_count instead of
-    creating a duplicate (frequency = priority).
+               dedup_threshold: float = 0.6,
+               dedup_key: str | None = None) -> dict[str, Any]:
+    """Record a capability gap.
 
-    Returns the gap dict (new or merged-into).
+    Two dedupe modes, and a keyed record uses ONLY its key:
+
+      * `dedup_key` given — IDENTITY. `gap_id = gap_id_for_key(key)`; a live gap
+        with that id is returned as-is and NOTHING is emitted, so re-observing
+        the same subject on every pass costs one row in total instead of one
+        `capability_gap_merged` per pass. The whole check-then-emit runs under
+        `_gaps_lock()`, so N concurrent observers of one subject record once.
+      * no key — SIMILARITY, unchanged: near-identical recurring free-text needs
+        merge by Jaccard over content tokens and increment hit_count
+        (frequency = priority).
+
+    The two modes never cross. The similarity scan skips keyed gaps entirely: a
+    keyed gap is not a merge TARGET (two subjects whose needs read alike —
+    `…task-001` and `…task-002` — would otherwise collapse into one) and a keyed
+    record never runs the scan, so it cannot be merged INTO one either.
+
+    RECORDED CONSEQUENCE (A3.1 mandates no emit on re-observation, so this is
+    the contract's shape, not a defect): a keyed gap's `hit_count` stays 1 for
+    its whole life. `project_gaps` ranks by `-hit_count` — frequency = priority
+    for free-text gaps — so a standing condition observed on every tick sorts
+    BELOW a free-text gap seen twice. Nothing keyed is emitted today; when
+    U3b's producer starts emitting keyed gaps, the `/gaps` ranking is the call
+    to make then (rank keyed rows by `last_seen`/age, or accept the order).
+    Deliberately not pre-empted here: a ranking rule with no producer is a
+    guess about a surface nobody has looked at yet.
+
+    Returns the gap dict (new, keyed-existing, or merged-into).
     """
     need = (need or "").strip()
     if not need:
         raise ValueError("record_gap: need is required")
     actor = actor or recorded_by
     product_slug = product_slug or os.environ.get("CABINET_PRODUCT_SLUG") or "default"
+    dedup_key = (dedup_key or "").strip() or None
+
+    if dedup_key:
+        gid = gap_id_for_key(dedup_key)
+        with _gaps_lock():
+            live = _live_gap_with_id(gid, product_slug)
+            if live is not None:
+                return live
+            return _emit_recorded(gid, need, kind, evidence, recorded_by,
+                                  touches, product_slug, actor, dedup_key)
 
     # Dedup against open gaps.
     existing = project_gaps(product_slug=product_slug)
@@ -376,6 +548,8 @@ def record_gap(need: str, kind: str | None = None, evidence: str = "",
     for g in existing:
         if g["status"] in (STATUS_RESOLVED, STATUS_DECLINED):
             continue
+        if g.get("dedup_key"):
+            continue  # keyed gaps are identity-deduped; never a merge target
         if _jaccard(new_tokens, _tokens(g["need"] + " " + (g.get("evidence") or ""))) >= dedup_threshold:
             emit("capability_gap_merged", actor=actor, payload={
                 "gap_id": g["gap_id"], "product_slug": product_slug,
@@ -384,21 +558,8 @@ def record_gap(need: str, kind: str | None = None, evidence: str = "",
             g["hit_count"] = g.get("hit_count", 1) + 1
             return g
 
-    gid = gap_id_for(need)
-    inferred_kind = kind if kind in VALID_KINDS else classify(
-        need, evidence, load_autonomy().ambiguous_kind)
-    inferred_touches = sorted(infer_touches(need, evidence, touches))
-    emit("capability_gap_recorded", actor=actor, payload={
-        "gap_id": gid, "product_slug": product_slug, "need": need,
-        "kind": inferred_kind, "evidence": evidence, "recorded_by": recorded_by,
-        "touches": inferred_touches,
-    })
-    return {
-        "gap_id": gid, "product_slug": product_slug, "need": need,
-        "kind": inferred_kind, "status": STATUS_OPEN, "hit_count": 1,
-        "evidence": evidence, "recorded_by": recorded_by,
-        "touches": inferred_touches, "resolution": None,
-    }
+    return _emit_recorded(gap_id_for(need), need, kind, evidence, recorded_by,
+                          touches, product_slug, actor, None)
 
 
 # ---------------------------------------------------------------------------
@@ -470,6 +631,7 @@ def project_gaps(product_slug: str | None = None) -> list[dict[str, Any]]:
                 "status": STATUS_OPEN, "hit_count": 1, "evidence": p.get("evidence", ""),
                 "recorded_by": p.get("recorded_by", "unknown"),
                 "touches": p.get("touches", []), "resolution": None,
+                "dedup_key": p.get("dedup_key"),
                 "first_seen": ts, "last_seen": ts,
             }
         elif gid not in gaps:
@@ -514,6 +676,10 @@ def route_open_gaps(product_slug: str | None = None, policy: AutonomyPolicy | No
                                    here — install waits for can_install() == True
                                    (a Captain approval), guarded by the fail-closed
                                    gate.
+      STRUCTURAL_KINDS           → counted under "surfaced" and otherwise left
+                                   alone: no proposal, no notify_fn, no status
+                                   change, nothing installable. They are already
+                                   where they belong the moment they are recorded.
 
     dry_run = compute + return the plan without emitting anything.
     notify_fn(gap, summary) optional — used to DM the Captain (best-effort).
@@ -521,7 +687,7 @@ def route_open_gaps(product_slug: str | None = None, policy: AutonomyPolicy | No
     """
     product_slug = product_slug or os.environ.get("CABINET_PRODUCT_SLUG") or "default"
     policy = policy or load_autonomy()
-    routed = {"auto_skilling": [], "proposed": [], "skipped": []}
+    routed = {"auto_skilling": [], "proposed": [], "surfaced": [], "skipped": []}
 
     for g in project_gaps(product_slug=product_slug):
         if g["status"] != STATUS_OPEN:
@@ -529,6 +695,11 @@ def route_open_gaps(product_slug: str | None = None, policy: AutonomyPolicy | No
         gid = g["gap_id"]
         kind = g.get("kind") or classify(g["need"], g.get("evidence", ""),
                                          policy.ambiguous_kind)
+        if kind in STRUCTURAL_KINDS:
+            # Surface-only. Kept out of "skipped", which means a gap the pass
+            # could not route — a distinct thing that must stay countable.
+            routed["surfaced"].append(gid)
+            continue
         touches = set(g.get("touches") or [])
         try:
             if kind == "procedure" and can_auto_apply(kind, touches, policy):

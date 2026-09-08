@@ -66,6 +66,16 @@ VALID_EVENT_TYPES = frozenset({
     "work_item_completed",
     "work_item_failed",
     "work_item_verified",
+    # Claim lifecycle (2026-09-07, phase-1 claim). A claim is the CLAIM's
+    # lifecycle, not the work item's: the item is neither done nor failed when
+    # a lease is extended or handed back, so these are their own types rather
+    # than an overloaded work_item_* completion. `_renewed` moves the expiry
+    # the compiler's status overlay measures IN_PROGRESS against; `_released`
+    # ends a claim early (a holder giving the task back) or records the
+    # takeover of an expired one, and returns the node to PENDING so
+    # ready_tasks() resurfaces it.
+    "work_item_claim_renewed",
+    "work_item_claim_released",
     # Subagent lifecycle (2026-07-04 ledger hygiene + g-hooks). Generic
     # helper-agent completions (code reviewers, explainer crews, exploration,
     # debugging — no task ref in agent_type) land HERE, not on
@@ -533,6 +543,8 @@ _AGGREGATE_MAP: dict[str, tuple[str, str]] = {
     "work_item_completed":        ("work_item",   "task_id"),
     "work_item_failed":           ("work_item",   "task_id"),
     "work_item_verified":         ("work_item",   "task_id"),
+    "work_item_claim_renewed":    ("work_item",   "task_id"),
+    "work_item_claim_released":   ("work_item",   "task_id"),
     # Subagent lifecycle (2026-07-04): aggregate on the subagent's own id —
     # agent_id is the one key the SubagentStop hook payload ALWAYS carries
     # (task_ref only exists when agent_type encodes FW-*/PROD-*/TASK-*).

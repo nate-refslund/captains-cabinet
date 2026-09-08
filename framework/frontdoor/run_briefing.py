@@ -358,9 +358,11 @@ def _run_local_render(*, genesis_fn=None, now: str | None = None) -> dict:
         f"- composed: {stamp} on this machine, from local genesis surfaces only\n"
         "- sent: no — the Telegram channel engages post-hatch when configured "
         "(channel.py + allow_sends untouched)\n"
+        # The receipt says how to ratify, and the answer is the tap — never
+        # "open this file and move the row", which no operator can do from a
+        # phone and which the tap replaced.
         "- propose-only: every outcome card below is a DRAFT "
-        "(captain_ratified: false); ratify by moving it into "
-        "instance/config/outcomes.yml\n\n"
+        "(captain_ratified: false); " + genesis.RATIFY_HINT + "\n\n"
         + (text if text else
            "(honest empty — no genesis items were staged; run the genesis "
            "proposal step: python3.12 -m framework.onboarding.genesis)")

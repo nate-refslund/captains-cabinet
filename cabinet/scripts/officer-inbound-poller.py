@@ -1719,8 +1719,16 @@ def main() -> int:
                             # Captain provenance (§4.10.4 — the grant IS the
                             # provenance); 0 (absent) passes None so a louder
                             # grant fails closed instead of forging a receipt.
+                            # principal = the sender THIS process verified
+                            # against the captain id gate. The tap records a
+                            # principal on every ratification and a door that
+                            # cannot name one refuses, so passing the verified
+                            # sender is what makes this door usable at all —
+                            # `captain_verified` alone says that someone was
+                            # checked, never who.
                             wr = binder_wire.handle_captain_update(
                                 text, quoted_full, log=log,
+                                principal=frm or None,
                                 receipt_message_id=mid or None)
                             if wr.get("handled"):
                                 binder_note = wr.get("summary", "")

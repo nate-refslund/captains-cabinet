@@ -331,14 +331,15 @@ def test_live_allowance_raises_only_its_named_effective_budget(tmp_path: Path):
     assert report["ok"] is True
     assert report["maximums"]["claude_skills"] == 23
     assert report["maximums"]["organ_manifests"] == 5
-    # 91 -> 94 (2026-09-07): the update path's three receipts raised the
-    # central_event_types ceiling in the live contract. The arm's meaning is
-    # unchanged — a `claude_skills` allowance moves `claude_skills` and NOTHING
-    # else — so the sibling it checks tracks the contract rather than a number
-    # that was true on the day it was written.
-    assert report["maximums"]["central_event_types"] == yaml.safe_load(
-        CONTRACT.read_text()
-    )["budgets"]["central_event_types"]["maximum"]
+    # 91 -> 96 (2026-09-07/08): raised VISIBLY twice, by two units authored
+    # blind of each other off the same base — the claim's
+    # work_item_claim_renewed / _released (+2) and the update path's
+    # cabinet_update_applied / _refused / _rolled_back (+3) — merged as the SUM
+    # of both raises. These three stay deliberate literals: the arm's whole
+    # claim is that an allowance naming claude_skills raises claude_skills and
+    # NOTHING else, and reading each number back out of the same contract the
+    # census read would weaken that to a tautology about the census's own echo.
+    assert report["maximums"]["central_event_types"] == 96
 
 
 def test_expired_allowance_fails_even_when_observed_is_within_base_budget(tmp_path: Path):
@@ -1071,6 +1072,25 @@ def test_unregistered_set_member_is_red(tmp_path: Path):
     } == {(SYNTHETIC_CLASS, SYNTHETIC_MEMBER, "unregistered set member")}
 
 
+def _live_expansion_members(member_class: str) -> set:
+    """Members the REAL contract already registers in *member_class*.
+
+    Read from the shipped contract rather than hardcoded, and deliberately from
+    a different input than the census report this test checks: the copied tree
+    carries the live framework, so its surplus is the live rows PLUS whatever a
+    fixture plants. Spelling the live half as a literal was what made the
+    assertion below break the first time a real event type was registered here
+    (2026-09-07, work_item_claim_renewed/_released), and re-spelling it would
+    only move the same breakage to the next one.
+    """
+    data = yaml.safe_load(CONTRACT.read_text())
+    return {
+        row["member"]
+        for row in (data.get("expansions") or [])
+        if row.get("member_class") == member_class
+    }
+
+
 def test_registered_set_member_is_green(tmp_path: Path):
     """POSITIVE control: the same tree, the same member, one adjudicated row."""
 
@@ -1080,18 +1100,13 @@ def test_registered_set_member_is_green(tmp_path: Path):
     report = census.inspect_repository(tree)
 
     assert report["ok"] is True, report["failures"]
-    # The surplus is exactly the registry's rows for this class — the bijection
-    # itself, not a fixed singleton. `_rewrite_contract` APPENDS to the live
-    # rows, so every live expansion member of this class is legitimately in the
-    # surplus too (the update path's three receipts landed 2026-09-07); a
-    # hardcoded `[SYNTHETIC_MEMBER]` would fail for a reason it does not name.
-    live_rows = {
-        row["member"]
-        for row in yaml.safe_load(CONTRACT.read_text())["expansions"]
-        if row["member_class"] == SYNTHETIC_CLASS
-    }
-    assert SYNTHETIC_MEMBER in report["surplus_members"][SYNTHETIC_CLASS]
-    assert set(report["surplus_members"][SYNTHETIC_CLASS]) == live_rows | {SYNTHETIC_MEMBER}
+    # EXACT, not a membership check: the surplus is the live registry's members
+    # for this class plus the one this fixture planted, and nothing else. An
+    # `in` test here would pass on a tree whose surplus had grown an
+    # unaccounted member, which is the whole thing the registry exists to red.
+    assert set(report["surplus_members"][SYNTHETIC_CLASS]) == (
+        _live_expansion_members(SYNTHETIC_CLASS) | {SYNTHETIC_MEMBER}
+    )
 
 
 def test_an_event_type_expansion_names_a_consumer_that_actually_names_it():

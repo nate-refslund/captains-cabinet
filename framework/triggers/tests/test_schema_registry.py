@@ -171,27 +171,35 @@ def test_resolve_returns_fresh_copies_mutation_cannot_poison():
     assert "task_id" in b["required"], "a caller mutation leaked into the registry"
 
 
+#: The central enum's size, pinned so a domain vocabulary cannot grow it by
+#: accident. It moves ONLY with a visible `maximum` raise plus an adjudicated
+#: expansion row in cabinet/config/cognitive-architecture-contract.yml.
+#: 91 -> 93 (2026-09-07): work_item_claim_renewed / work_item_claim_released,
+#: the claim's own lifecycle types (phase-1 claim). Ground @cbf52e49 was 91.
+#: 93 -> 96 (2026-09-08): cabinet_update_applied / _refused / _rolled_back, the
+#: update path's three receipts, ratified the same way. The two raises were
+#: authored blind of each other off the same base of 91 and are summed here.
+#: The update-path unit argued for dropping this literal entirely, on the
+#: ground that a size pin inside M4 reds for a reason M4 does not name — the
+#: enum grows legitimately through the expansion registry, a route the registry
+#: under test cannot reach. The pin is KEPT: it is a lockstep sensor, cheap and
+#: exact, and an unratified member added without a contract raise has nowhere
+#: else in this file to go red. The identity assertion below is the M4 claim;
+#: this literal is the lockstep one, and they are independent.
+CENTRAL_ENUM_SIZE = 96
+
+
 def test_m4_central_enum_untouched():
     """M4 mechanical proof: the registry absorbs domain vocabulary WITHOUT
-    growing the central enum, and the domain's event types stay disjoint.
-
-    THE PIN IS THE IDENTITY, NOT THE SIZE. This test used to assert the enum
-    held exactly 91 members (ground @cbf52e49), which made it red for a reason
-    it does not name: the enum legitimately grows through the expansion
-    registry — a governance route the registry under test cannot reach — and a
-    size literal cannot tell that apart from the failure M4 exists to catch.
-    It went red on 2026-09-07 when the update path added three receipts
-    (cabinet_update_applied/_refused/_rolled_back) through that registry, none
-    of them via any schema resolve. What M4 actually claims is that a resolve
-    leaves the enum BYTE-IDENTICAL, so that is what is asserted; the count
-    ceiling is owned by cognitive-architecture-contract.yml, which reds on an
-    unratified member and is the sensor for that property."""
+    growing the central enum — the count is pinned above and the domain's
+    event types stay disjoint from it."""
     from framework.events.emitter import VALID_EVENT_TYPES
     before = frozenset(VALID_EVENT_TYPES)
+    assert len(before) == CENTRAL_ENUM_SIZE
     R.resolve("tasks", "task-event", 1)
     R.event_type_known("tasks.status_changed")
     from framework.events.emitter import VALID_EVENT_TYPES as after
-    assert after == before, "a registry lookup changed the central enum"
+    assert after == before and len(after) == CENTRAL_ENUM_SIZE
     assert R.event_types_for("tasks", "task-event", 1).isdisjoint(after)
 
 

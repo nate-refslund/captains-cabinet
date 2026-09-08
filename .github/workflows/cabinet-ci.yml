@@ -1113,6 +1113,87 @@ jobs:
       - name: "Proof 1 — null hatch (one gate, clean checkout)"
         run: bash cabinet/scripts/null-hatch.sh
 
+  # THE 3.9 FLOOR (2026-09-07, phase-1 claim). The prompt hook that pulls work
+  # is schg-locked and runs `python3` from the officer's own PATH — 3.9.6 on the
+  # reference box. Every other job here runs 3.12, so CI structurally cannot
+  # execute its way into a 3.10-only construct on the pull path: it would ship
+  # green and take the pull path down on the machine it actually runs on, with
+  # the hook's own stderr redirect hiding the traceback.
+  #
+  # NEVER skip-if-absent. setup-python installs the interpreter, so "no 3.9
+  # here" is not a state this job can be in; the local half of the same claim
+  # (framework/missions/tests/test_pull_path_py39.py) FAILS rather than skips
+  # when a host has no 3.9, so neither side can quietly stop carrying it.
+  #
+  # It runs the hook's own command, not a substitute: the same import, the same
+  # call, the same kwargs as cabinet/scripts/hooks/session-task-inject.sh. A
+  # grammar check alone would miss a 3.10-only stdlib symbol.
+  pull-path-python39:
+    needs: [tree-dedupe]
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.tree-dedupe.outputs.skip != 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: '3.9'
+      - name: Install the pull path's runtime dependencies
+        run: pip install pyyaml
+      - name: "The locked hook's command, on 3.9"
+        env:
+          CABINET_EVENT_LOG_DIR: ${{ runner.temp }}/py39-events
+          CABINET_WORKER_ID: engineering@session:ci
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP}/py39-cabinet"
+          mkdir -p "$root/instance/config"
+          cat > "$root/instance/config/outcomes.yml" <<'YML'
+          outcomes:
+            - id: outcome-p39
+              name: Nine
+              measurable_criteria:
+                - node_id: p39-task
+                  title: Do the thing
+                  owner_role: engineering
+                  depends_on: []
+              status: active
+          YML
+          python -c "
+          import sys; sys.path.insert(0, '.')
+          from framework.missions.session_bridge import get_next_task, format_task_for_session
+          task = get_next_task('engineering', cabinet_root='$root')
+          assert task is not None, 'the pull returned nothing on 3.9'
+          text = format_task_for_session(task)
+          assert 'Do the thing' in text, text
+          assert 'Claim:' in text, text
+          print(text)
+          "
+      - name: "The completion path, on 3.9"
+        env:
+          CABINET_EVENT_LOG_DIR: ${{ runner.temp }}/py39-events
+        run: |
+          set -euo pipefail
+          python -c "
+          import sys; sys.path.insert(0, '.')
+          from framework.missions import claims
+          live = claims.live_claims()
+          assert list(live) == ['p39-task'], live
+          token = live['p39-task']['claim_id']
+          claims.complete('p39-task', 'outcome-p39', 'engineering@session:ci',
+                          claim_id=token, status='done')
+          try:
+              claims.complete('p39-task', 'outcome-p39', 'engineering@session:ci',
+                              claim_id=token, status='done')
+          except claims.ClaimRefused as refused:
+              assert refused.code == 'already_terminal', refused.code
+          else:
+              raise SystemExit('the fence did not refuse a second completion')
+          print('claim path OK on 3.9')
+          "
+
   # 2026-07-27: the COG-4 exit gate, wired into CI because it was NOT.
   #
   # Until this job existed no workflow ran ANY verify-cognitive-phase* twin

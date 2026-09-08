@@ -8,7 +8,7 @@
 - sent: no — the Telegram channel engages post-hatch when configured
   (channel.py + allow_sends untouched)
 - propose-only: every outcome card below is a DRAFT (captain_ratified: false);
-  ratify by moving it into instance/config/outcomes.yml
+  tap Ratify on the card, or reply `ratify <id>`
 
 ## Proposed outcome cards (org-proposed at genesis, drafts awaiting Ada)
 
