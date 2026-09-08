@@ -220,6 +220,10 @@ _PACKAGES = {
             "exit 78", "already-at-target", "one-responsibility.sh",
             "landed-then-ceremonied", "non-grantable",
             "A7.1", "A7.3", "A7.4", "A0.5", "A0.8",
+            # round 3: the landing-acknowledgement channel and the unlocked-lane
+            # landing of G3 are contract items, so the document that the Captain
+            # executes has to name them or the two can drift apart silently.
+            "A7.6", "A7.7",
         ),
         "anchors_lower": (
             "byte-identical",
@@ -246,6 +250,12 @@ _PACKAGES = {
             "unverified-until-ceremony",
             "exit 25",
             "the forward patch applies",
+            # A7.7 landed G3's bytes in the unlocked lane. The heading and the
+            # §3 bullet that called them unlanded were true until 2026-09-08
+            # and are false now; neither phrasing may drift back while the
+            # BUNDLE_ROWS state says `landed`.
+            "proposed, not landed",
+            "g3 is not landed",
         ),
     },
 }

@@ -223,12 +223,14 @@ class TestGetNextTask:
         that `except` was deleted, so this is the arm that notices.
 
         And the failure is recorded DURABLY. The only production caller is
-        cabinet/scripts/hooks/session-task-inject.sh, which runs the pull as
-        `RESULT="$(python3 -c "..." 2>/dev/null)"` — stderr is discarded
+        cabinet/scripts/hooks/session-task-inject.sh, which ran the pull as
+        `RESULT="$(python3 -c "..." 2>/dev/null)"` — stderr was discarded
         there, so an observation failing on every tick would be exactly the
-        silence this unit exists to remove, one layer up. The sibling claim
-        path in this same function already writes `claims.err` beside the
-        ledger; the observation joins it.
+        silence this unit exists to remove, one layer up. Master's copy sends
+        it to `${CABINET_HOOK_LOG:-...}` since the A7.7 landing, and a
+        deployment keeps the discarding copy until its unlock window. The
+        sibling claim path in this same function already writes `claims.err`
+        beside the ledger; the observation joins it.
         """
         from framework.missions import gaps as gaps_module
 

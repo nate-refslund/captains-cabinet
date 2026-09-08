@@ -195,12 +195,15 @@ def _pull_with_claim(
 # than the silence it replaces.
 #
 # The failure goes to `claims.err`, NOT to stderr. The only production caller
-# is `cabinet/scripts/hooks/session-task-inject.sh`, which runs this as
+# is `cabinet/scripts/hooks/session-task-inject.sh`, which ran this as
 # `RESULT="$(python3 -c "..." 2>/dev/null)"`: a stderr line there is
 # discarded, so an observation failing on every tick would be invisible — the
-# same silence this unit exists to remove, one layer up. `record_error` is the
-# seam the claim path in this same function already uses, and it is durable,
-# beside the ledger, where a later pass can find it.
+# same silence this unit exists to remove, one layer up. Master's copy appends
+# that stderr to `${CABINET_HOOK_LOG:-...}` since the A7.7 landing of the
+# germline bundle's G3 bytes, but the deployment runs its locked copy until the
+# Captain's window, so the discarding shape is still the live one. `record_error`
+# is the seam the claim path in this same function already uses, and it is
+# durable, beside the ledger, where a later pass can find it.
 def _observe_gaps(missions: list[dict[str, Any]], role_slug: str) -> None:
     """Record the pull path's silence, once per invocation."""
     try:

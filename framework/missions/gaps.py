@@ -55,12 +55,16 @@ nothing.
 # directions, and only he re-opens it. It appears in none of the three lists.
 #
 # THE FAILURE CHANNEL IS DURABLE, not stderr alone. The only production caller
-# of the pull path is `cabinet/scripts/hooks/session-task-inject.sh`, which
-# runs it as `RESULT="$(python3 -c "..." 2>/dev/null)"` — a stderr line there
-# is discarded, so a record failing on every tick would be exactly the silence
-# this module exists to remove, one layer down. Failures go to `claims.err`
-# beside the ledger (the seam the claim path already uses) AND to stderr,
-# which is where the supervisor's cron log is read by a human.
+# of the pull path is `cabinet/scripts/hooks/session-task-inject.sh`. It ran
+# the pull as `RESULT="$(python3 -c "..." 2>/dev/null)"` — a stderr line there
+# was discarded, so a record failing on every tick would be exactly the silence
+# this module exists to remove, one layer down. Master's copy now appends that
+# stderr to `${CABINET_HOOK_LOG:-...}` instead (the germline bundle's G3 bytes,
+# landed 2026-09-08 per contract amendment A7.7), but a DEPLOYMENT keeps
+# running its schg-locked copy until the Captain's unlock window, so the
+# discarding shape is still live where it matters. Failures therefore go to
+# `claims.err` beside the ledger (the seam the claim path already uses) AND to
+# stderr, which is where the supervisor's cron log is read by a human.
 #
 # PYTHON 3.9. The locked prompt hook reaches this module through
 # `session_bridge.get_next_task`, and the reference box's `python3` is 3.9.6.
