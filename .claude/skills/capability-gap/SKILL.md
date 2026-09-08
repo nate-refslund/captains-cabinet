@@ -40,6 +40,8 @@ bash cabinet/scripts/record-capability-gap.sh \
   — anything touching these is **always** Captain-gated, never auto.
 
 Recurring near-identical gaps merge (hit-count++), so frequency ranks them.
+Gaps the cabinet records for ITSELF are keyed on their subject instead — one
+row per subject, no merging, and a hit count that stays 1 for life.
 
 ## What happens next (you don't drive this)
 
@@ -50,9 +52,15 @@ The self-improvement loop picks up open gaps and routes by kind:
   Captain a plain-language yes/no. **Nothing installs without approval.**
 - **skill / authority / information** → nothing. These three are recorded by
   the cabinet itself when a piece of work has no holder, no permission or no
-  fact behind it; they are **surface-only** — shown on `/gaps` and never
-  proposed, DM'd or auto-applied, because none of them is a thing the loop can
-  build for itself. You record the three above; these three record themselves.
+  fact behind it; they are **surface-only** — never proposed, DM'd or
+  auto-applied, because none of them is a thing the loop can build for itself.
+  You record the three above; these three record themselves. `skill` is shown
+  on `/gaps` and resolves itself the moment a holder appears; `authority` and
+  `information` are shown there AND counted in one line on the briefing card,
+  because a permission or a fact only the Captain has is not something to leave
+  on a page he has to think to visit. If the Captain DECLINES one of these
+  self-recorded rows, it stays closed — the cabinet never re-opens a standing
+  condition he has answered, and never resolves one on his behalf either.
 
 ### When you've already TESTED the MCP/plugin (the one-tap self-proposal)
 

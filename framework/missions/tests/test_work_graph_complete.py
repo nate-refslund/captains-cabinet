@@ -57,6 +57,19 @@ def env(tmp_path):
     e["OUTCOMES_FILE"] = str(outcomes)
     e["OFFICER_NAME"] = "test-officer"
     e.pop("DATABASE_URL", None)          # never touch Postgres from tests
+    # A2.9 — SCRUB THE CLAIM ENV. This dict is a copy of os.environ, and the
+    # host that runs it may be an officer session (which exports
+    # CABINET_WORKER_ID permanently) or a shell left over from the acceptance
+    # drill (which exports the claim token and a 1 s lease floor). Measured on
+    # this host: with CABINET_WORKER_ID inherited three arms below go red on a
+    # holder nobody claimed under, with CABINET_CLAIM_ID a DIFFERENT three go
+    # red on a token nobody minted, and the lease pair expires a claim between
+    # the claim and the completion. Every one of those reds would read as a
+    # code regression rather than as the environment leak it is.
+    for leaked in ("CABINET_WORKER_ID", "CABINET_CLAIM_ID",
+                   "CABINET_CLAIM_LEASE_SECONDS",
+                   "CABINET_CLAIM_LEASE_FLOOR_SECONDS"):
+        e.pop(leaked, None)
     # Pin the repo root explicitly: framework/measurement role-eval modules
     # set os.environ["CABINET_ROOT"] = <tmp> PERSISTENTLY when their suites
     # run earlier in the same pytest process, and the script trusts the env —

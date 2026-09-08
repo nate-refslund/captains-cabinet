@@ -93,12 +93,26 @@ from framework.events.emitter import _event_log_dir, emit, replay  # noqa: E402
 DEFAULT_LEASE_SECONDS = 900
 
 #: A lease shorter than a minute cannot survive one tick; one longer than a day
-#: is indistinguishable from no lease at all.
+#: is indistinguishable from no lease at all.  MIN_LEASE_SECONDS is the
+#: PRODUCTION floor and never moves.
 MIN_LEASE_SECONDS = 60
 MAX_LEASE_SECONDS = 86400
 
+#: The hard minimum under every floor, override included: a lease of zero or
+#: less is expired the instant it is minted, which is not a short lease but a
+#: broken one.
+ABSOLUTE_MIN_LEASE_SECONDS = 1
+
 #: Env override for the default lease (the drill sets a short one).
 LEASE_ENV = "CABINET_CLAIM_LEASE_SECONDS"
+
+#: The ONLY sub-floor path (contract A2.9).  The acceptance drill exports 1 so
+#: its kill-and-take-over stages run on 2-5 s leases and finish in seconds;
+#: nothing in production sets it.  It can only ever LOWER the floor -- a value
+#: above MIN_LEASE_SECONDS is clamped back down to it -- so no environment can
+#: use this to lengthen a production lease, which is the liveness signal the
+#: whole pull path reads.
+LEASE_FLOOR_ENV = "CABINET_CLAIM_LEASE_FLOOR_SECONDS"
 
 #: Env override for the holder identity (the germline bundle exports it).
 WORKER_ID_ENV = "CABINET_WORKER_ID"
@@ -318,8 +332,40 @@ def claims_lock() -> Iterator[None]:
             os.close(fd)
 
 
+def resolve_lease_floor() -> int:
+    """The smallest lease :func:`resolve_lease` will hand back, in seconds.
+
+    MIN_LEASE_SECONDS unless ``CABINET_CLAIM_LEASE_FLOOR_SECONDS`` lowers it,
+    and then never below ABSOLUTE_MIN_LEASE_SECONDS and never above
+    MIN_LEASE_SECONDS.  Unset, empty and unparseable all mean the production
+    floor: a drill that mistypes its floor gets a slow honest run, never a
+    silent one-second lease that expires under its own stages.
+    """
+    raw = os.environ.get(LEASE_FLOOR_ENV)
+    if raw is None or not str(raw).strip():
+        return MIN_LEASE_SECONDS
+    try:
+        floor = int(str(raw).strip())
+    except ValueError:
+        record_error(
+            "{0}={1!r} is not an integer; using the {2} s floor".format(
+                LEASE_FLOOR_ENV, raw, MIN_LEASE_SECONDS
+            )
+        )
+        return MIN_LEASE_SECONDS
+    if floor < ABSOLUTE_MIN_LEASE_SECONDS:
+        return ABSOLUTE_MIN_LEASE_SECONDS
+    if floor > MIN_LEASE_SECONDS:
+        return MIN_LEASE_SECONDS
+    return floor
+
+
 def resolve_lease(lease_s: Optional[int] = None) -> int:
-    """Resolve the lease in seconds, clamped to [MIN, MAX]."""
+    """Resolve the lease in seconds, clamped to [floor, MAX].
+
+    The floor is MIN_LEASE_SECONDS in production and only the drill's env
+    lowers it (:func:`resolve_lease_floor`).
+    """
     if lease_s is None:
         raw = os.environ.get(LEASE_ENV)
         if raw is not None and str(raw).strip():
@@ -335,8 +381,9 @@ def resolve_lease(lease_s: Optional[int] = None) -> int:
         else:
             lease_s = DEFAULT_LEASE_SECONDS
     lease_s = int(lease_s)
-    if lease_s < MIN_LEASE_SECONDS:
-        return MIN_LEASE_SECONDS
+    floor = resolve_lease_floor()
+    if lease_s < floor:
+        return floor
     if lease_s > MAX_LEASE_SECONDS:
         return MAX_LEASE_SECONDS
     return lease_s

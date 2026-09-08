@@ -24,6 +24,7 @@ from framework.measurement.role_eval_runner import (
 )
 from framework.measurement.eval_pattern_detector import detect_patterns
 from framework.roles.evolution import (
+    _SUGGESTION_TEMPLATES,
     draft_amendment,
     propose_one,
     propose_from_patterns,
@@ -330,38 +331,69 @@ class TestEvolution:
         # Heuristic: missing_skill → add_hat
         assert amendment["suggested_change"]["kind"] == "add_hat"
 
-    def test_propose_one_writes_yaml_and_emits_event(self, tmp_path):
-        path = propose_one(self._make_pattern(), cabinet_root=str(tmp_path))
-        assert path.exists()
+    # Every SHIPPED template is a skeleton, and since §6 (no skeleton
+    # proposals) a skeleton records a capability gap instead of a file — see
+    # framework/roles/tests/test_evolution_no_skeletons.py. The write path is
+    # unchanged and still pinned here, driven by a concrete template.
+    _CONCRETE_TYPE = "concrete_fix"
+
+    def _concrete_template(self, monkeypatch):
+        monkeypatch.setitem(_SUGGESTION_TEMPLATES, self._CONCRETE_TYPE, {
+            "kind": "add_hat",
+            "rationale": "A fully specified adaptation with nothing to fill in.",
+            "hat_template": {
+                "name": "concrete-hat",
+                "description": "Concrete capability",
+                "capabilities": ["concrete_capability"],
+                "expires_at": None,
+            },
+        })
+
+    def test_propose_one_writes_yaml_and_emits_event(self, tmp_path, monkeypatch):
+        self._concrete_template(monkeypatch)
+        path = propose_one(
+            self._make_pattern(failure_type=self._CONCRETE_TYPE),
+            cabinet_root=str(tmp_path),
+        )
+        assert path is not None and path.exists()
         content = path.read_text()
         assert "cto" in content
-        assert "missing_skill" in content or "missing-skill" in content
+        assert "concrete_fix" in content or "concrete-fix" in content
 
         # role_charter_changed event was emitted
         events = replay(event_types=["role_charter_changed"])
         assert any(
-            (e.get("payload") or {}).get("proposal_id") == "cto-missing-skill"
+            (e.get("payload") or {}).get("proposal_id") == "cto-concrete-fix"
             for e in events
         )
 
-    def test_propose_one_overwrites_existing_proposal(self, tmp_path):
+    def test_propose_one_overwrites_existing_proposal(self, tmp_path, monkeypatch):
+        self._concrete_template(monkeypatch)
         # First write
-        first = propose_one(self._make_pattern(count=3), cabinet_root=str(tmp_path))
+        first = propose_one(
+            self._make_pattern(failure_type=self._CONCRETE_TYPE, count=3),
+            cabinet_root=str(tmp_path),
+        )
         first_content = first.read_text()
 
         # Re-propose with higher count — should overwrite, not duplicate
-        second = propose_one(self._make_pattern(count=7), cabinet_root=str(tmp_path))
+        second = propose_one(
+            self._make_pattern(failure_type=self._CONCRETE_TYPE, count=7),
+            cabinet_root=str(tmp_path),
+        )
         assert first == second
         assert second.read_text() != first_content
         # Only one file in the proposals dir for this id
         files = list((tmp_path / "instance" / "roles" / "proposals").glob("cto-*.yml"))
         assert len(files) == 1
 
-    def test_propose_from_patterns_creates_one_per_pattern(self, tmp_path):
-        # Seed 3 patterns
+    def test_propose_from_patterns_creates_one_per_written_pattern(
+            self, tmp_path, monkeypatch):
+        self._concrete_template(monkeypatch)
+        # Two patterns a template can answer concretely, one it cannot.
         for slug, ftype, count in [
-            ("cto", "missing_skill", 5),
-            ("cpo", "quality_gap", 4),
+            ("cto", self._CONCRETE_TYPE, 5),
+            ("cpo", self._CONCRETE_TYPE, 4),
             ("cos", "wrong_authority", 3),
         ]:
             for _ in range(count):
@@ -371,10 +403,12 @@ class TestEvolution:
                     "failure_types": [ftype],
                 })
 
-        proposed = propose_from_patterns(cabinet_root=str(tmp_path))
-        assert len(proposed) == 3
+        gaps = []
+        proposed = propose_from_patterns(cabinet_root=str(tmp_path), gaps_out=gaps)
+        assert len(proposed) == 2
         proposal_dir = tmp_path / "instance" / "roles" / "proposals"
-        assert len(list(proposal_dir.glob("*.yml"))) == 3
+        assert len(list(proposal_dir.glob("*.yml"))) == 2
+        assert [g["failure_type"] for g in gaps] == ["wrong_authority"]
 
     def test_heuristic_mapping_failure_type_to_suggestion(self, tmp_path):
         for ftype, expected_kind in [

@@ -38,6 +38,10 @@ def ledger(tmp_path, monkeypatch):
     monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(log_dir))
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("CABINET_CLAIM_LEASE_SECONDS", raising=False)
+    # A2.9: the drill exports a 1 s floor, and a host that still carries it
+    # would make every "clamped to MIN" arm in this file assert against a
+    # one-second floor instead of the production one.
+    monkeypatch.delenv("CABINET_CLAIM_LEASE_FLOOR_SECONDS", raising=False)
     monkeypatch.delenv(claims.WORKER_ID_ENV, raising=False)
     return log_dir
 
@@ -217,6 +221,98 @@ def test_lease_bounds_are_clamped(monkeypatch):
 def test_default_lease_outlives_three_wake_ticks():
     """A 300 s tick with a 900 s lease must not lose the task between ticks."""
     assert claims.DEFAULT_LEASE_SECONDS >= 3 * 300
+
+
+# ---------------------------------------------------------------------------
+# The lease FLOOR (contract A2.9)
+#
+# The acceptance drill needs 2-5 s leases so a kill-and-take-over stage
+# finishes in seconds rather than in minutes.  Lowering MIN_LEASE_SECONDS to
+# buy that would pay for a drill with the production invariant, so the floor
+# gets ONE named sub-floor path and these arms pin every edge of it.
+#
+# The env name is spelled OUT here rather than read from the module: this file
+# is what pins the published name, and a test that asks the module what its
+# own env is called cannot notice the module renaming it.
+# ---------------------------------------------------------------------------
+
+FLOOR_ENV = "CABINET_CLAIM_LEASE_FLOOR_SECONDS"
+
+
+def test_the_floor_env_is_the_name_the_drill_exports():
+    assert claims.LEASE_FLOOR_ENV == FLOOR_ENV
+
+
+def test_the_production_floor_is_sixty_seconds_with_no_override(monkeypatch):
+    """The default: a 5 s request still resolves to a full minute.
+
+    Vacuously true before A2.9 — there was no override to widen anything —
+    so its red arm is the MUTATION direction: it fails the moment the default
+    floor is lowered, which is the one way this feature could damage
+    production while every override arm below stayed green.
+    """
+    monkeypatch.delenv(FLOOR_ENV, raising=False)
+    assert claims.MIN_LEASE_SECONDS == 60
+    assert claims.resolve_lease(5) == 60
+    assert claims.resolve_lease_floor() == 60
+
+
+def test_the_floor_override_is_honoured(monkeypatch):
+    """Floor 1 => a 3 s lease is minted as 3 s and is dead ~3 s later."""
+    monkeypatch.setenv(FLOOR_ENV, "1")
+    assert claims.resolve_lease(3) == 3
+
+    held = claims.claim("outcome-f-task-000", "outcome-f", "holder-1", lease_s=3)
+    assert held["lease_s"] == 3
+    assert claims.live_claim("outcome-f-task-000") is not None
+    # Expiry is computed from ledger timestamps, so the clock is an argument.
+    # Sleeping three seconds here would buy nothing but three seconds.
+    later = claims.parse_ts(held["started_at"]) + timedelta(seconds=4)
+    assert claims.live_claim("outcome-f-task-000", now=later) is None
+
+
+def test_the_floor_override_also_reaches_the_env_default(monkeypatch):
+    """CABINET_CLAIM_LEASE_SECONDS is clamped by the floor, not by MIN."""
+    monkeypatch.setenv(FLOOR_ENV, "1")
+    monkeypatch.setenv(claims.LEASE_ENV, "2")
+    assert claims.resolve_lease() == 2
+
+
+def test_a_floor_below_one_is_clamped_to_one(monkeypatch):
+    """The degenerate end: a zero or negative lease is dead when it is minted."""
+    for hostile in ("0", "-1", "-86400"):
+        monkeypatch.setenv(FLOOR_ENV, hostile)
+        assert claims.resolve_lease(0) == 1
+        assert claims.resolve_lease_floor() == claims.ABSOLUTE_MIN_LEASE_SECONDS
+
+
+def test_the_override_can_never_raise_the_floor(monkeypatch):
+    """One direction only: this env lowers a floor, it never raises a bar.
+
+    Also vacuous before A2.9 and also mutation-proved: drop the upper clamp in
+    resolve_lease_floor and an environment variable can lengthen a production
+    lease -- the liveness signal -- from outside the code that reasons about
+    it.
+    """
+    for hostile in ("61", "3600", "86400", str(10 ** 9)):
+        monkeypatch.setenv(FLOOR_ENV, hostile)
+        assert claims.resolve_lease_floor() == claims.MIN_LEASE_SECONDS
+        assert claims.resolve_lease(30) == claims.MIN_LEASE_SECONDS
+
+
+def test_an_unparseable_floor_is_recorded_and_ignored(monkeypatch):
+    """A mistyped drill floor gets a slow honest run, never a silent 1 s lease."""
+    monkeypatch.setenv(FLOOR_ENV, "one")
+    assert claims.resolve_lease(5) == claims.MIN_LEASE_SECONDS
+    recorded = claims.error_path()
+    text = recorded.read_text() if recorded.exists() else ""
+    assert text.count(FLOOR_ENV) == 1
+
+
+def test_an_empty_floor_is_the_production_floor(monkeypatch):
+    """The other degenerate end: exported-but-empty is a shell spelling "unset"."""
+    monkeypatch.setenv(FLOOR_ENV, "")
+    assert claims.resolve_lease(5) == claims.MIN_LEASE_SECONDS
 
 
 def test_renew_extends_the_expiry_for_the_holder_only():
