@@ -4,7 +4,7 @@ Resolves domain payload-schema shapes from per-domain JSON files at
 framework/schemas/domains/<domain>/<name>.v<version>.json — the registry that
 absorbs new event vocabulary so the CENTRAL enum stops growing: it CANNOT
 extend framework/events/emitter.py's VALID_EVENT_TYPES (M4 mechanical proof —
-census enums stay 91/91, 30/30; the suite pins disjointness). Plan:
+the enum is byte-identical across a resolve; the suite pins disjointness). Plan:
 docs/plans/cognitive-core-phase-1-contract-2026-07-20.md §4.4, per the
 2026-07-07 full-autonomy grant.
 

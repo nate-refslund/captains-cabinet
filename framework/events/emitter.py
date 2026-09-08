@@ -167,6 +167,16 @@ VALID_EVENT_TYPES = frozenset({
     "kill_switch_deactivated",
     "spending_limit_reached",
 
+    # The update path (2026-09-07). An installed Cabinet is an unpacked export
+    # with no version control in it, so until these existed there was no record
+    # anywhere that the bytes it runs had changed — the org could improve itself
+    # and the operator's install would silently stay where it was. RECEIPT
+    # class: each one describes an act that has already finished (or been
+    # refused), and none of them may ever gate an update.
+    "cabinet_update_applied",     # new bytes are installed and the gate came back green
+    "cabinet_update_refused",     # nothing was written, and the payload says why
+    "cabinet_update_rolled_back",  # the previous bytes were put back
+
     # Authority/control-plane observations (R-1, evidence Phase 2 Batch B —
     # registered 2026-07-17). RECEIPT class by law: every one describes a
     # control-plane state change that ALREADY happened; none may ever gate,
@@ -582,6 +592,12 @@ _AGGREGATE_MAP: dict[str, tuple[str, str]] = {
     "notification_received":      ("session",     "session_id"),
     "kill_switch_activated":      ("system",      "killswitch_id"),
     "kill_switch_deactivated":    ("system",      "killswitch_id"),
+    # The update path aggregates on the commit it was TRYING to reach, so a
+    # refusal, the retry that succeeded and a later rollback all land on one
+    # aggregate and read as one story.
+    "cabinet_update_applied":     ("system",      "to_sha"),
+    "cabinet_update_refused":     ("system",      "to_sha"),
+    "cabinet_update_rolled_back": ("system",      "to_sha"),
     "spending_limit_reached":     ("system",      "limit_id"),
     "evidence_mirror_degraded":   ("system",      "chokepoint"),
     # Phase 2 Batch B receipts (watchdog/doctor + officer lifecycle)

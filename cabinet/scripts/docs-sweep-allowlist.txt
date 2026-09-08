@@ -285,3 +285,13 @@ shared/cabinet.env
 # that is what the operator ends up with.
 instance/config/fleetwatch.yml
 instance/config/liveness.yml
+# The update path's preserve declaration (2026-09-07). GENERATED at export
+# time by egg-export.sh (`transform preserve-set`, expect-present'ed) from
+# cabinet/scripts/egg-export-manifest.txt's own `delete` rules for instance
+# data plus the interface ledgers the export ships header-only — so it exists
+# in every EGG and in no checkout, deliberately: one authoring source, derived
+# data shipped. It has to be derived rather than read at run time because the
+# export manifest deletes ITSELF from the egg, leaving an installed Cabinet no
+# other way to tell its own data from shipped content. Both runbooks name it by
+# the path an operator actually finds on their install.
+cabinet/config/egg-preserve-set.txt

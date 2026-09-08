@@ -331,12 +331,15 @@ def test_live_allowance_raises_only_its_named_effective_budget(tmp_path: Path):
     assert report["ok"] is True
     assert report["maximums"]["claude_skills"] == 23
     assert report["maximums"]["organ_manifests"] == 5
-    # 91 -> 93 (2026-09-07): the contract's own maximum was raised VISIBLY for
-    # work_item_claim_renewed / work_item_claim_released. These three are
-    # deliberate literals — the arm's whole claim is that an allowance naming
-    # claude_skills raises claude_skills and NOTHING else, and reading each
-    # number back out of the same contract the census read would assert nothing.
-    assert report["maximums"]["central_event_types"] == 93
+    # 91 -> 96 (2026-09-07/08): raised VISIBLY twice, by two units authored
+    # blind of each other off the same base — the claim's
+    # work_item_claim_renewed / _released (+2) and the update path's
+    # cabinet_update_applied / _refused / _rolled_back (+3) — merged as the SUM
+    # of both raises. These three stay deliberate literals: the arm's whole
+    # claim is that an allowance naming claude_skills raises claude_skills and
+    # NOTHING else, and reading each number back out of the same contract the
+    # census read would weaken that to a tautology about the census's own echo.
+    assert report["maximums"]["central_event_types"] == 96
 
 
 def test_expired_allowance_fails_even_when_observed_is_within_base_budget(tmp_path: Path):
@@ -1104,6 +1107,37 @@ def test_registered_set_member_is_green(tmp_path: Path):
     assert set(report["surplus_members"][SYNTHETIC_CLASS]) == (
         _live_expansion_members(SYNTHETIC_CLASS) | {SYNTHETIC_MEMBER}
     )
+
+
+def test_an_event_type_expansion_names_a_consumer_that_actually_names_it():
+    """The LIVE contract's event-type rows, checked for USE and not existence.
+
+    The census's own docstring says what its `consumer` field is worth: "an
+    EXISTENCE-AND-DISJOINTNESS check, never a USE check ... Any path that
+    exists in the tree satisfies it — `.git/config` does, measured". That hole
+    was walked into: the update path's three receipts shipped naming
+    `framework/watchdog/receipts.py`, a typed seam whose `RECEIPT_CLASSES`
+    frozenset holds four watchdog classes and whose `emit_receipt` RAISES on
+    everything else. It could not consume them and never will, so the label
+    channel was closed while the evidence channel stayed open.
+
+    An event type is a STRING, which makes this one class mechanically
+    decidable: a file that reads a type by name contains that name. It is not a
+    general use check — there cannot be one here — but it is the difference
+    between a claim and a grep, and it is aimed at the LIVE contract rather
+    than a fixture, so a future row cannot pass by being written elsewhere."""
+    contract = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))
+    misses = []
+    for row in contract["expansions"]:
+        if row["member_class"] != "central_event_types":
+            continue
+        consumer = ROOT / str(row["consumer"]).lstrip("./")
+        if not consumer.is_file():
+            misses.append((row["member"], row["consumer"], "consumer is not a file"))
+        elif row["member"] not in consumer.read_text(encoding="utf-8", errors="ignore"):
+            misses.append((row["member"], row["consumer"], "consumer never names the member"))
+    assert not misses, (
+        "an event type is registered against a consumer that cannot read it: %r" % (misses,))
 
 
 def test_expansion_row_naming_an_absent_member_is_red(tmp_path: Path):

@@ -21,6 +21,31 @@ bash cabinet/scripts/egg-export.sh --out /tmp/egg-export
 bash cabinet/scripts/egg-publish-gate.sh --export /tmp/egg-export
 ```
 
+### Bundle mode (2026-09-07) — the same cut, packaged for an installed Cabinet
+
+```bash
+bash cabinet/scripts/egg-export.sh --bundle /path/to/install/.updates/inbox \
+     [--changelog-from <sha>]
+```
+
+`--bundle` and `--out` are alternatives. It runs the identical cut and the
+identical verification pass — an update that shipped different bytes from the
+egg would be a second export path to keep honest — and then packages the
+PASSING cut as `<sha>.tar.gz` plus `<sha>.manifest.json` (per-file `sha256`,
+`source_sha`, `built_at`, `changelog`, and the constitutional set as declared
+by this checkout, which is **information only**: the updater parses the
+INSTALLED boundary script, because a bundle that named its own boundary could
+widen it). A cut that fails verification never becomes a bundle. The usual
+producer entry point is `cabinet-update.sh publish`, which also stamps the
+install's own commit into `from_sha`; see `docs/runbooks/cabinet-update.md`.
+
+The cut also generates **`cabinet/config/egg-preserve-set.txt`**
+(`transform preserve-set`, `expect-present`ed): the paths an update must never
+write or delete, derived from this manifest's own `delete` rules for instance data
+plus the interface ledgers `interfaces-header-only` empties. It has to be
+generated here because the manifest **deletes itself** from the egg, so an
+installed Cabinet has no other way to learn which paths are its own data.
+
 The exporter writes `egg-manifest.json` (source commit, commit-clock date,
 file count, applied rules) into the export root and refuses: an `--out`
 inside the repo, an `--out` containing the repo, `/`, `$HOME`, symlinks, and

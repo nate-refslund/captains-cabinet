@@ -19,6 +19,8 @@ import CardCosts from '@/components/consumer/card-costs'
 import CardTasks from '@/components/consumer/card-tasks'
 import CardLibrary from '@/components/consumer/card-library'
 import { cookies } from 'next/headers'
+import UpdateCard from '@/components/updates/update-card'
+import { getUpdateStatus, updateHeadline } from '@/lib/updates'
 
 export const dynamic = 'force-dynamic'
 
@@ -177,6 +179,15 @@ export default async function DashboardPage() {
 
   const { consumerModeEnabled } = getDashboardConfig()
 
+  // THE UPDATE CARD (2026-09-07). An installed Cabinet is an unpacked export
+  // with no version control in it, so until this line existed the only way to
+  // learn that better bytes were waiting was a terminal — the door of last
+  // resort. `getUpdateStatus` never throws and returns null on a box with no
+  // updater, and a null status renders NOTHING rather than "you are up to
+  // date": silence is the honest answer to a question that could not be asked.
+  const updateStatus = await getUpdateStatus()
+  const updateLine = updateHeadline(updateStatus)
+
   // THE POWER-UP, on the first screen after onboarding. It renders NOTHING when
   // Telegram is already connected or when the operator has said "not now", so
   // an unreadable status must not turn into a permanent offer: a failed read is
@@ -199,6 +210,9 @@ export default async function DashboardPage() {
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           <TelegramPowerUpCard connected={telegram.connected} />
+          {updateStatus && updateLine && (
+            <UpdateCard status={updateStatus} headline={updateLine} />
+          )}
           <ConsumerFrontPage>
             <CardProducts />
             <CardCabinet />
@@ -274,6 +288,9 @@ export default async function DashboardPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
       <TelegramPowerUpCard connected={telegram.connected} />
+      {updateStatus && updateLine && (
+        <UpdateCard status={updateStatus} headline={updateLine} />
+      )}
 
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

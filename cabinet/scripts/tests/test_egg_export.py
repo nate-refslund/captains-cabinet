@@ -24,6 +24,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -1248,3 +1249,126 @@ def test_gate_source_carries_no_captain_pattern_values():
         f"{len(leaked)} captain-specific value(s) leaked into tracked "
         "sources (values withheld from this assertion output by design — "
         "diff the live patterns file against the named sources)")
+
+
+# ---------------------------------------------------------------------------
+# The update path's export side (phase-1 contract §5, A5.2 / A5.4)
+# ---------------------------------------------------------------------------
+# An installed Cabinet has to be able to tell its OWN data from shipped
+# content, and it cannot read this manifest to find out: the manifest deletes
+# itself from the egg. So the export DERIVES the preserve set at cut time and
+# ships it. These two arms pin the derivation and the bundle's self-description;
+# without them the transform could silently become a no-op and every update
+# would overwrite the operator's instance tree while reporting success.
+
+_PRESERVE_REL = "cabinet/config/egg-preserve-set.txt"
+
+
+def _manifest_delete_instance_globs() -> list[str]:
+    return [
+        line.split(" ", 1)[1].strip()
+        for line in _MANIFEST.read_text(encoding="utf-8").splitlines()
+        if line.startswith("delete instance/")
+    ]
+
+
+def test_preserve_set_is_exported_and_matches_manifest(export: Path):
+    """B §5.5: present, non-empty, and carrying every `delete instance/…` glob."""
+    shipped = export / _PRESERVE_REL
+    assert shipped.is_file(), (
+        f"{_PRESERVE_REL} did not ship — an installed Cabinet with no preserve "
+        "declaration cannot tell its own data from shipped content"
+    )
+    entries = [
+        line.strip() for line in shipped.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    assert entries, "the shipped preserve set parsed to zero rules"
+
+    declared = _manifest_delete_instance_globs()
+    assert declared, "the export manifest carries no `delete instance/…` rules"
+    missing = [glob for glob in declared if glob not in entries]
+    assert not missing, missing
+
+    # The other half of A5.2(d): the ledgers the export EMPTIES are the
+    # operator's too, and a `vetoes: []` header overwriting a live veto list is
+    # exactly the silent loss the set exists to prevent.
+    for rel in ("shared/interfaces/captain-vetoes.yml",
+                "shared/interfaces/captain-rules-index.yaml",
+                "shared/interfaces/captain-knowledge-classification.yml"):
+        assert rel in entries, rel
+
+
+def test_preserve_set_transform_is_not_a_no_op():
+    """The degenerate end: a generator with nothing to say REFUSES.
+
+    A transform that wrote an empty file on an unreadable authoring source
+    would ship a green preserve declaration that preserves nothing."""
+    proc = subprocess.run(
+        ["python3.12", str(_SCRIPTS_DIR / "lib" / "update_bundle.py"),
+         "preserve-doc", "--export-manifest", "/nonexistent/manifest.txt"],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert proc.returncode == 3, (proc.returncode, proc.stdout, proc.stderr)
+    assert not proc.stdout.strip()
+
+
+@pytest.fixture(scope="module")
+def bundle(tmp_path_factory) -> Path:
+    """One real `--bundle` cut of this repo's HEAD."""
+    out = tmp_path_factory.mktemp("egg-bundle") / "inbox"
+    proc = subprocess.run(
+        ["bash", str(_EXPORT_SH), "--bundle", str(out)],
+        cwd=_REPO_ROOT, capture_output=True, text=True, timeout=_EXPORT_TIMEOUT,
+    )
+    assert proc.returncode == 0, (
+        f"egg-export.sh --bundle failed rc={proc.returncode}\n"
+        f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+    assert "verify        : PASS" in proc.stdout, proc.stdout
+    return out
+
+
+def test_bundle_manifest_locked_set(bundle: Path):
+    """A §5.5: the manifest's `locked_set` is the parsed set, and is INFORMATIONAL.
+
+    Informational is the load-bearing word (A5.4): the refusal reads the
+    INSTALLED germline-lock.sh, never this field, because a bundle that named
+    its own boundary could widen it. The field still has to be honest — it is
+    what a reader inspects before applying."""
+    manifests = sorted(bundle.glob("*.manifest.json"))
+    assert len(manifests) == 1, [p.name for p in manifests]
+    doc = json.loads(manifests[0].read_text(encoding="utf-8"))
+
+    head = subprocess.run(["git", "-C", str(_REPO_ROOT), "rev-parse", "HEAD"],
+                          capture_output=True, text=True, check=True).stdout.strip()
+    assert doc["source_sha"] == head
+    assert doc["built_at"]
+    assert doc["files"], "the bundle manifest shipped no files"
+
+    sys.path.insert(0, str(_SCRIPTS_DIR / "lib"))
+    import update_bundle
+    parsed = update_bundle.parse_locked_set(_SCRIPTS_DIR / "germline-lock.sh")
+    assert doc["locked_set"]["files"] == parsed["files"]
+    assert doc["locked_set"]["dirs"] == parsed["dirs"]
+
+    # Per-file digests, and the tarball beside the manifest.
+    tarball = bundle / f"{head}.tar.gz"
+    assert tarball.is_file() and tarball.stat().st_size > 0
+    assert all(re.fullmatch(r"[0-9a-f]{64}", d) for d in doc["files"].values())
+    # The updater and its helper ride the egg, or an install can never update.
+    assert "cabinet/scripts/cabinet-update.sh" in doc["files"]
+    assert "cabinet/scripts/lib/update_bundle.py" in doc["files"]
+    assert _PRESERVE_REL in doc["files"]
+    # The staging cut is cleaned up: an inbox is not a place to leave a tree.
+    assert not (bundle / ".cut").exists()
+
+
+def test_bundle_and_out_are_alternatives():
+    """A cut cannot be two things at once; the refusal is stated, not inferred."""
+    proc = subprocess.run(
+        ["bash", str(_EXPORT_SH), "--out", "/tmp/x-egg-out", "--bundle", "/tmp/x-egg-bundle"],
+        cwd=_REPO_ROOT, capture_output=True, text=True, timeout=60,
+    )
+    assert proc.returncode == 1, (proc.returncode, proc.stdout, proc.stderr)
+    assert "alternatives" in proc.stderr

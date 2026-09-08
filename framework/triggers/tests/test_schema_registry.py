@@ -4,7 +4,8 @@ structural-vs-semantic classification, jsonschema cross-check, M4 pin.
 The registry resolves domain payload schemas from per-domain JSON files at
 framework/schemas/domains/<domain>/<name>.v<version>.json. It is LOOKUP-ONLY:
 no runtime registration, no mutation, and it CANNOT extend the central
-VALID_EVENT_TYPES enum — M4 is the mechanical proof (census stays 91/91).
+VALID_EVENT_TYPES enum — M4 is the mechanical proof (the enum is the same
+frozenset before and after a resolve, whatever its size).
 
 Structural validation is the Phase-0 stdlib-interpreter pattern
 (framework/evolution/contracts.py precedent) with a jsonschema reference
@@ -175,7 +176,17 @@ def test_resolve_returns_fresh_copies_mutation_cannot_poison():
 #: expansion row in cabinet/config/cognitive-architecture-contract.yml.
 #: 91 -> 93 (2026-09-07): work_item_claim_renewed / work_item_claim_released,
 #: the claim's own lifecycle types (phase-1 claim). Ground @cbf52e49 was 91.
-CENTRAL_ENUM_SIZE = 93
+#: 93 -> 96 (2026-09-08): cabinet_update_applied / _refused / _rolled_back, the
+#: update path's three receipts, ratified the same way. The two raises were
+#: authored blind of each other off the same base of 91 and are summed here.
+#: The update-path unit argued for dropping this literal entirely, on the
+#: ground that a size pin inside M4 reds for a reason M4 does not name — the
+#: enum grows legitimately through the expansion registry, a route the registry
+#: under test cannot reach. The pin is KEPT: it is a lockstep sensor, cheap and
+#: exact, and an unratified member added without a contract raise has nowhere
+#: else in this file to go red. The identity assertion below is the M4 claim;
+#: this literal is the lockstep one, and they are independent.
+CENTRAL_ENUM_SIZE = 96
 
 
 def test_m4_central_enum_untouched():

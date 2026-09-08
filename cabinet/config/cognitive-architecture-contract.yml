@@ -2,6 +2,14 @@ schema_version: cognitive-architecture-contract/v1
 baseline_sha: 8f9c555d2064d55a159a53fcedd6df33434a9291
 budgets:
   central_event_types:
+    # 91 -> 94 (2026-09-07): the update path's three receipts
+    # (cabinet_update_applied / _refused / _rolled_back). RAISED VISIBLY, with
+    # the three members registered as expansions below rather than written into
+    # the baseline — a genuinely new member belongs in the surplus, where it
+    # stays visible, and a baseline line added in the same commit as the member
+    # it excuses is the purchase channel cabinet/scripts/baseline-set-ratchet.py
+    # exists to refuse. Adjudication:
+    # docs/proposals/update-path-event-expansion-2026-09-07.md
     path: framework/events/emitter.py
     symbol: VALID_EVENT_TYPES
     # 91 -> 93 (2026-09-07): work_item_claim_renewed and work_item_claim_released,
@@ -11,7 +19,13 @@ budgets:
     # adjudication (two blind arms on the unit contract, two more attacking it,
     # the refused merges and the consumers named before the producers landed) is
     # docs/proposals/claim-expansion-2026-09-07.md.
-    maximum: 93
+    # MERGED 2026-09-08: the two raises above were authored blind of each other
+    # off the same base of 91 — the claim unit's +2 and the update path's +3 —
+    # so the merged ceiling is the SUM of the raises over that common base
+    # (91 + 2 + 3 = 96), never the maximum of the two, which would have silently
+    # dropped one unit's headroom and left the other's members unbudgeted. All
+    # five members stay named in the expansion registry below.
+    maximum: 96
   central_action_types:
     path: framework/authority/classifier.py
     symbol: ACTION_TYPES
@@ -2711,7 +2725,150 @@ temporary_allowances:
       +108 measured with cognitive-architecture-census.py at this landing
       (78824 -> 78932); prose counted honestly rather than reformatted into
       comments to duck the budget.
+  - phase: update-path
+    budget: framework_production_noncomment_lines
+    additional: 88
+    owner: cognitive-core-program
+    sunset: '2027-03-31'
+    deletion_gate: >-
+      the receipts read model (`framework/missions/receipts.py`, phase-1 unit 1)
+      lands and carries `update_applied` / `update_refused` /
+      `update_rolled_back` as receipt kinds; `_update_notice` then reads THAT
+      one surface instead of the updater's files and collapses to a projection
+      of it, retiring this row with it.
+    reason: >-
+      ONE BRIEFING LINE, AND THE READER IT NEEDS. An installed Cabinet is an
+      unpacked export with no version control in it: until this landing nothing
+      on the box could say "a better version of me is sitting in the inbox", so
+      every improvement the org made about itself stopped at the repository.
+      The update path (contract of record phase1-contracts-v2-2026-09-07 §5,
+      amendment A5.13) puts that sentence on the two doors the Captain actually
+      uses — the home card and the daily briefing — and this is the briefing
+      half: `run_briefing._update_notice`, which reads the updater's own inbox
+      and state file and returns ONE sentence or the empty string. What the
+      lines buy: (1) it reads FILES, not the updater CLI, because a briefing
+      pass that can hang on a subprocess is a briefing that can fail to arrive;
+      (2) it is fail-open in the strong sense — any error, and any install with
+      no updater at all, yields "", never "you are up to date", which is the
+      degenerate answer this whole leg exists to keep off the Captain's screen;
+      (3) a waiting bundle leads, because it is the only one of the three
+      states he can act on. ZERO new framework modules and ZERO bijection-class
+      mass: every line lands in the briefing composer that already owns the
+      card headline, beside `_flatline_notice`, which is the same shape of
+      one-sentence notice. +88 measured with cognitive-architecture-census.py
+      at this landing (79391 -> 79479); the explanatory docstrings are counted
+      honestly rather than reformatted into comments to duck the budget.
+      RAISED 54 -> 88 on 2026-09-07 (round-1 review) for the fourth thing the
+      lines buy: (4) a REFUSAL has no state file to be read out of — a bundle
+      whose diff touches the constitutional set is refused before anything is
+      written and leaves a receipt and nothing else — so `_update_receipt_for`
+      reads the three `cabinet_update_*` types back off the ledger and the
+      waiting-bundle sentence says REFUSED, or rolled back, instead of
+      inviting the Captain to tap Apply on a bundle that will refuse itself
+      every time. That read is also what makes this module a truthful
+      `consumer` for the three expansion rows below; the first spelling named
+      a typed watchdog seam that raises on anything outside four classes.
 expansions:
+  - member: cabinet_update_applied
+    member_class: central_event_types
+    gate_date: '2026-09-07'
+    models_run:
+      - Fable 5.1
+      - Opus 5
+    adjudication: docs/proposals/update-path-event-expansion-2026-09-07.md
+    merge_refuted: >-
+      framework/events/emitter.py::graduation_transition — the nearest existing
+      "a durable state of this deployment moved" receipt, and the obvious fold
+      target for anyone who reads this as a lifecycle transition. Refused on
+      three properties. Different subject: graduation_transition describes a
+      FIDELITY LEVEL moving (framework/fidelity/graduation.py) — a judgement
+      about behaviour, carrying no bytes, no from/to commit and no snapshot.
+      Different aggregate: it keys on the graduating subject, while an update
+      must key on the commit it was reaching for so a refusal, the retry that
+      succeeded and a later rollback read as one story. Different pairing: the
+      rollback receipt has nothing to pair with inside a fidelity vocabulary,
+      so folding one in would leave the other homeless.
+    consumer: framework/frontdoor/run_briefing.py
+    provenance: >-
+      per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; contract
+      of record phase1-contracts-v2-2026-09-07 §5, two blind arms (Fable 5.1,
+      Opus 5) adjudicated in the document named above. CONSUMER CORRECTED
+      2026-09-07 (round-1 review): the first spelling named
+      framework/watchdog/receipts.py, whose RECEIPT_CLASSES frozenset holds
+      four watchdog classes and whose emit_receipt RAISES on anything else — it
+      could not consume this member and never will. The census's consumer field
+      is an existence-and-disjointness check by its own docstring, so the gate
+      passed on a false claim. It now names the surface that reads these three
+      types back by name (run_briefing._update_receipt_for, over
+      emitter.replay), and
+      test_an_event_type_expansion_names_a_consumer_that_actually_names_it
+      checks the LIVE contract for use rather than existence.
+  - member: cabinet_update_refused
+    member_class: central_event_types
+    gate_date: '2026-09-07'
+    models_run:
+      - Fable 5.1
+      - Opus 5
+    adjudication: docs/proposals/update-path-event-expansion-2026-09-07.md
+    merge_refuted: >-
+      framework/events/emitter.py::captain_gate_bounced — the existing "an act
+      was stopped at a gate" receipt, and the only other refusal vocabulary in
+      the ledger. Refused because its subject is an item in the Captain's
+      attention queue (framework/attention/escalation.py) and its aggregate is
+      the captain: it exists to say that a person must now look at something.
+      The commonest refusal here has no person in it at all — a bundle whose
+      diff touches the constitutional set, arriving from the landing lane with
+      nobody watching — and it must aggregate on the commit, not on the
+      Captain, or the successful retry lands on a different story from the
+      refusal it answers.
+    consumer: framework/frontdoor/run_briefing.py
+    provenance: >-
+      per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; contract
+      of record phase1-contracts-v2-2026-09-07 §5, two blind arms (Fable 5.1,
+      Opus 5) adjudicated in the document named above. CONSUMER CORRECTED
+      2026-09-07 (round-1 review): the first spelling named
+      framework/watchdog/receipts.py, whose RECEIPT_CLASSES frozenset holds
+      four watchdog classes and whose emit_receipt RAISES on anything else — it
+      could not consume this member and never will. The census's consumer field
+      is an existence-and-disjointness check by its own docstring, so the gate
+      passed on a false claim. It now names the surface that reads these three
+      types back by name (run_briefing._update_receipt_for, over
+      emitter.replay), and
+      test_an_event_type_expansion_names_a_consumer_that_actually_names_it
+      checks the LIVE contract for use rather than existence.
+  - member: cabinet_update_rolled_back
+    member_class: central_event_types
+    gate_date: '2026-09-07'
+    models_run:
+      - Fable 5.1
+      - Opus 5
+    adjudication: docs/proposals/update-path-event-expansion-2026-09-07.md
+    merge_refuted: >-
+      framework/events/emitter.py::cabinet_update_applied — the sibling this row
+      would most obviously fold into, as one event type with a status field.
+      Refused on the number that decides whether this path may run unattended:
+      "how often does an applied update roll back" is the safety measurement for
+      the whole leg, and every consumer in this tree selects on event TYPE
+      (_AGGREGATE_MAP, _COMPLETION_EVENT_TYPES, _EVENT_TYPE_TO_STATUS, the
+      receipts read model, the mirror allow-lists), so a status inside the
+      payload would be the one vocabulary none of them can filter. The payloads
+      do not share a shape either: a rollback carries a reason and a restored
+      sha and creates nothing, where an apply carries counts and a snapshot.
+    consumer: framework/frontdoor/run_briefing.py
+    provenance: >-
+      per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; contract
+      of record phase1-contracts-v2-2026-09-07 §5, two blind arms (Fable 5.1,
+      Opus 5) adjudicated in the document named above. CONSUMER CORRECTED
+      2026-09-07 (round-1 review): the first spelling named
+      framework/watchdog/receipts.py, whose RECEIPT_CLASSES frozenset holds
+      four watchdog classes and whose emit_receipt RAISES on anything else — it
+      could not consume this member and never will. The census's consumer field
+      is an existence-and-disjointness check by its own docstring, so the gate
+      passed on a false claim. It now names the surface that reads these three
+      types back by name (run_briefing._update_receipt_for, over
+      emitter.replay), and
+      test_an_event_type_expansion_names_a_consumer_that_actually_names_it
+      checks the LIVE contract for use rather than existence.
   - member: framework/onboarding/salience.py
     member_class: framework_production_modules
     gate_date: '2026-07-28'
@@ -2866,11 +3023,24 @@ expansions:
       arm A proposed work_item_released, arm B the claim-shaped name, and B was
       ruled because it is the claim that ends, not the item, and an item-shaped
       name reads as a completion to every replay that scans work_item_*.
-    consumer: framework/missions/supervisor.py
+    consumer: framework/missions/compiler.py
     provenance: >-
       per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; direction
       of record LAUNCH-DIRECTION one-owned-responsibility 2026-09-06, phase-1
-      item 2 (the supervisor honours claims)
+      item 2 (the supervisor honours claims). CONSUMER CORRECTED 2026-09-08 at
+      the update-path merge: the row shipped naming
+      framework/missions/supervisor.py, which does not contain the string
+      work_item_claim_released and cannot — the supervisor is PARKED
+      (services.yml) and honouring claims there is phase-2 work, so the field
+      named an intended future reader rather than a live one, and the census's
+      consumer field is an existence check that any real file satisfies. The
+      live reader is framework/missions/compiler.py, which maps the type in
+      _EVENT_TYPE_TO_STATUS to NodeStatus.PENDING — the same table this row's
+      own merge_refuted field cites, and the file its sibling row
+      (work_item_claim_renewed) already names. Caught by
+      test_an_event_type_expansion_names_a_consumer_that_actually_names_it,
+      which lands with the update path and checks the LIVE contract for use
+      rather than existence.
   - member: framework/outcomes/ratify.py
     member_class: framework_production_modules
     gate_date: '2026-09-07'

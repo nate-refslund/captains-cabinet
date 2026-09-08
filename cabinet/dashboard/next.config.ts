@@ -2,6 +2,22 @@ import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  // BUILD-TIME BUILD STAMP (update path, 2026-09-07). `env` is inlined by Next
+  // at BUILD time, which is exactly what /api/health's `build_commit` needs: a
+  // stale build must not be free to claim the new commit just because the
+  // process it runs in was handed a new environment variable. Baked here, the
+  // stamp can only be the commit the running build was made from.
+  //
+  // ONE VARIABLE IS DELIBERATELY ABSENT from this list. `CABINET_SOURCE_COMMIT`
+  // — the installed Cabinet's identity, which /api/health answers as
+  // `source_commit` — must stay a REQUEST-TIME read, because an update that
+  // changes no dashboard file does not rebuild, and an inlined value could then
+  // never become the new sha. Inlining it here would re-arm the defect where
+  // every framework-only update rolled itself back
+  // (cabinet/scripts/tests/test_dashboard_pwa_static.py pins the split).
+  env: {
+    CABINET_BUILD_SOURCE_COMMIT: process.env.CABINET_BUILD_SOURCE_COMMIT ?? '',
+  },
   async headers() {
     return [
       {
