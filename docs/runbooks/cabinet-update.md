@@ -222,7 +222,11 @@ take — tap Apply", over a bundle that had already been turned down.
 ledger`, and `status --json` says `event_fallback: true`. The file is one JSON
 object per line — `{id, event_type, actor, payload, ts}` — and needs nothing
 done to it: the next apply files it. `events.ingested-<ts>.jsonl` beside it is
-what has already been filed, kept so the bootstrap hop is readable afterwards.
+what has already been filed, kept so the bootstrap hop is readable afterwards,
+and `events.ingested` (no suffix) is the list of record ids already in the
+ledger — the thing that makes a second pass over the same records a no-op
+rather than a duplicate. Neither is content: nothing ships them and nothing
+reads them but the updater.
 
 ## First bootstrap
 
