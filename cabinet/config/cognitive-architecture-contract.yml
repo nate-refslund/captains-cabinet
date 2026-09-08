@@ -1221,8 +1221,29 @@ budgets:
     # code and API contract, not prose. RAISED VISIBLY, not bought with a
     # temporary allowance: an allowance promises a deletion gate, and the
     # deletion of this code is the routing plane going silent again.
+    #
+    # 66518 -> 66521 (+3 measured 2026-09-08 via cognitive-architecture-census.py,
+    # observed 81259 vs the then-effective 81256): the U3b round-2 review fixes,
+    # all three of them in the same holder-gap surface. (1) `observe_holder_gaps`
+    # gained a `muted` set so a Captain DECLINE on a standing holder gap sticks
+    # instead of being re-recorded and flipped back to open on the next tick —
+    # the producer-side half of the decision `capability_gaps._live_gap_with_id`
+    # hands to this module by name. (2) The record loop stopped authoring
+    # `unchanged`, which the resolve loop already owned, so a standing gap id no
+    # longer comes back twice from a contracted return value. (3) A `_warn`
+    # helper routes both failure paths through `claims.record_error` as well as
+    # stderr, because the pull path's only production caller runs it with
+    # `2>/dev/null` and a stderr-only failure there is discarded — the same
+    # invisible condition this whole module exists to remove, one layer down.
+    # Net +3 after the two `print(...)` blocks collapse into `_warn(...)` calls.
+    # Plus 3 more (81262 vs 81259) for the docstring in
+    # framework/learning/capability_gaps.py::_live_gap_with_id that HANDED that
+    # decline decision to this producer by name: it now records where the
+    # decision landed, so the handover cannot rot into a pointer at nothing.
+    # RAISED VISIBLY for the same reason as the paragraph above: none of the
+    # four has a deletion gate — each one is a correction that stays.
     # observed == maximum, zero headroom.
-    maximum: 66518
+    maximum: 66524
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

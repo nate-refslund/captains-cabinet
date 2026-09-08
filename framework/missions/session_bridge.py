@@ -193,6 +193,14 @@ def _pull_with_claim(
 # Never raises and never changes what the pull returns: the caller is a prompt
 # hook, and an observation that could cost a session or a task would be worse
 # than the silence it replaces.
+#
+# The failure goes to `claims.err`, NOT to stderr. The only production caller
+# is `cabinet/scripts/hooks/session-task-inject.sh`, which runs this as
+# `RESULT="$(python3 -c "..." 2>/dev/null)"`: a stderr line there is
+# discarded, so an observation failing on every tick would be invisible — the
+# same silence this unit exists to remove, one layer up. `record_error` is the
+# seam the claim path in this same function already uses, and it is durable,
+# beside the ledger, where a later pass can find it.
 def _observe_gaps(missions: list[dict[str, Any]], role_slug: str) -> None:
     """Record the pull path's silence, once per invocation."""
     try:
@@ -204,11 +212,10 @@ def _observe_gaps(missions: list[dict[str, Any]], role_slug: str) -> None:
         with _claims.claims_lock():
             _gaps.observe_holder_gaps(missions, active, actor=role_slug)
     except Exception as exc:  # noqa: BLE001 — see the module docstring
-        print(
+        _claims.record_error(
             "get_next_task({0!r}): holder-gap observation failed: {1}: {2}".format(
                 role_slug, type(exc).__name__, exc
-            ),
-            file=sys.stderr,
+            )
         )
 
 

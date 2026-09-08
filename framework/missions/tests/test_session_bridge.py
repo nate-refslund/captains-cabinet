@@ -212,6 +212,57 @@ class TestGetNextTask:
         assert payload["kind"] == "skill"
         assert payload["dedup_key"] == "holder:outcome-unowned:lonely-task"
 
+    def test_a_failing_observation_never_costs_the_pull(
+        self, outcomes_dir, sample_roles, monkeypatch, event_log_dir,
+    ):
+        """§3's caller invariant: the observation cannot cost a task.
+
+        `_observe_gaps` wraps the whole holder-gap pass because the caller is
+        the locked prompt hook: an exception here would kill the officer's
+        session, not just the observation. Nothing in the tree went red when
+        that `except` was deleted, so this is the arm that notices.
+
+        And the failure is recorded DURABLY. The only production caller is
+        cabinet/scripts/hooks/session-task-inject.sh, which runs the pull as
+        `RESULT="$(python3 -c "..." 2>/dev/null)"` — stderr is discarded
+        there, so an observation failing on every tick would be exactly the
+        silence this unit exists to remove, one layer up. The sibling claim
+        path in this same function already writes `claims.err` beside the
+        ledger; the observation joins it.
+        """
+        from framework.missions import gaps as gaps_module
+
+        cabinet_root = _write_outcomes(outcomes_dir, """outcomes:
+  - id: outcome-owned
+    name: "Somebody owns this"
+    measurable_criteria:
+      - node_id: owned-task
+        title: A thing with an owner
+        owner_role: engineering
+        depends_on: []
+    status: active
+""")
+        monkeypatch.setattr(
+            "framework.missions.compiler.list_roles",
+            lambda status="active": sample_roles,
+        )
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("the observer is down")
+
+        monkeypatch.setattr(gaps_module, "observe_holder_gaps", _boom)
+
+        task = get_next_task("engineering", cabinet_root=str(cabinet_root))
+
+        assert task is not None, "a failing observation swallowed the task"
+        assert task["task_id"] == "owned-task"
+
+        durable = claims.error_path()
+        assert durable.exists(), "the observation failure left no durable trace"
+        text = durable.read_text(encoding="utf-8")
+        assert "the observer is down" in text, text
+        assert "holder-gap observation failed" in text, text
+
     def test_claim_false_is_side_effect_free(
         self, outcomes_dir, sample_roles, monkeypatch, event_log_dir,
     ):

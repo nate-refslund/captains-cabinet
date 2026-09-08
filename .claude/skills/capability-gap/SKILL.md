@@ -58,7 +58,9 @@ The self-improvement loop picks up open gaps and routes by kind:
   on `/gaps` and resolves itself the moment a holder appears; `authority` and
   `information` are shown there AND counted in one line on the briefing card,
   because a permission or a fact only the Captain has is not something to leave
-  on a page he has to think to visit.
+  on a page he has to think to visit. If the Captain DECLINES one of these
+  self-recorded rows, it stays closed — the cabinet never re-opens a standing
+  condition he has answered, and never resolves one on his behalf either.
 
 ### When you've already TESTED the MCP/plugin (the one-tap self-proposal)
 

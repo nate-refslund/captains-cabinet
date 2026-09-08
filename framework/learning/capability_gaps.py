@@ -458,7 +458,10 @@ def _live_gap_with_id(gap_id: str, product_slug: str) -> dict[str, Any] | None:
     row grants nothing. The behaviour predates keys (`gap_id_for(need)` is
     equally stable); keys only make it regular. If the Captain should be able
     to silence a standing condition, that is a `resolve`/mute decision for
-    U3b's producer, not a change to this projection.
+    U3b's producer, not a change to this projection. MADE, 2026-09-08:
+    `framework/missions/gaps.py::observe_holder_gaps` treats a declined keyed
+    gap as MUTED — never re-recorded, never resolved — so the decline binds on
+    the surface too, and this projection stays as it is.
     """
     for g in project_gaps(product_slug=product_slug):
         if g["gap_id"] != gap_id:

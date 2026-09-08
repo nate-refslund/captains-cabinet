@@ -170,6 +170,39 @@ class TestFindUnassignedReady:
         second_pass = find_unassigned_ready_tasks(outcomes_path=outcomes_yml)
         assert first_task["task_id"] not in [d["task_id"] for d in second_pass]
 
+    def test_a_failing_observation_never_costs_the_pass(
+        self, outcomes_yml, seeded_roles, monkeypatch,
+    ):
+        """§3's invariant: the record plane dying never kills a routing pass.
+
+        `find_unassigned_ready_tasks` wraps the holder-gap observation for
+        exactly this — a supervisor that stopped routing because a gap row
+        could not be written would trade one silence for a louder one. Nothing
+        in the tree went red when that `except` was deleted, so this is the
+        arm that notices.
+        """
+        from framework.missions import gaps as gaps_module
+
+        # `mission_id` carries a per-compile digest and is not stable across
+        # two calls (measured 2026-09-08), so the comparison is over the
+        # routing decision itself — who is told to do what.
+        def _routed(decisions):
+            return sorted(
+                (d["task_id"], d["officer"], d["outcome_id"]) for d in decisions
+            )
+
+        control = _routed(find_unassigned_ready_tasks(outcomes_path=outcomes_yml))
+        assert len(control) >= 1, control
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("the observer is down")
+
+        monkeypatch.setattr(gaps_module, "observe_holder_gaps", _boom)
+
+        decisions = find_unassigned_ready_tasks(outcomes_path=outcomes_yml)
+
+        assert _routed(decisions) == control, decisions
+
     def test_completed_task_doesnt_appear(self, outcomes_yml, seeded_roles):
         """work_item_completed events also short-circuit routing (via compiler overlay)."""
         # Identify the first ready task

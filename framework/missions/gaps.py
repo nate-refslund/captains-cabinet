@@ -44,6 +44,24 @@ nothing.
 # invert the order on its own; the rule binds whoever adds a call in the other
 # direction.
 #
+# A DECLINE IS A MUTE, and it STICKS. `capability_gaps._live_gap_with_id`
+# answers None for a declined gap and hands the decision here verbatim ("that
+# is a resolve/mute decision for U3b's producer"). A keyed row is a STANDING
+# condition: without the mute the next pass re-records the key, the projection
+# flips the row back to open, and the Captain's answer is overturned on every
+# tick — the surface would show him a question he had already answered, and
+# the system would be quietly outvoting its own authority root. A muted key is
+# therefore never re-recorded AND never resolved: closed is closed, in both
+# directions, and only he re-opens it. It appears in none of the three lists.
+#
+# THE FAILURE CHANNEL IS DURABLE, not stderr alone. The only production caller
+# of the pull path is `cabinet/scripts/hooks/session-task-inject.sh`, which
+# runs it as `RESULT="$(python3 -c "..." 2>/dev/null)"` — a stderr line there
+# is discarded, so a record failing on every tick would be exactly the silence
+# this module exists to remove, one layer down. Failures go to `claims.err`
+# beside the ledger (the seam the claim path already uses) AND to stderr,
+# which is where the supervisor's cron log is read by a human.
+#
 # PYTHON 3.9. The locked prompt hook reaches this module through
 # `session_bridge.get_next_task`, and the reference box's `python3` is 3.9.6.
 # No runtime `X | Y`, no `match`, no 3.10+ stdlib (A0.3).
@@ -67,6 +85,7 @@ from framework.learning.capability_gaps import (  # noqa: E402
     record_gap,
     resolve_gap,
 )
+from framework.missions import claims as _claims  # noqa: E402
 
 # The dedup-key namespace. Every key this module mints starts here, which is
 # also how the resolve pass recognises its own rows in the projection: a gap
@@ -87,6 +106,12 @@ REASON_NOT_ON_ROSTER = "not_on_roster"
 # IN_PROGRESS are NOT terminal: the first still wants one, and the second is
 # held under a claim whose role may still be off the roster.
 _TERMINAL_STATUS_VALUES = frozenset({"done", "failed"})
+
+
+def _warn(message: str) -> None:
+    """Report a failure on BOTH channels — see the module comment."""
+    print("observe_holder_gaps: WARN " + message, file=sys.stderr)
+    _claims.record_error("observe_holder_gaps: " + message)
 
 
 def holder_key(outcome_id: str, task_id: str) -> str:
@@ -163,10 +188,13 @@ def _resolution(fact: Dict[str, Any]) -> str:
     return "holder on the roster: {0}".format(fact["assigned_role"])
 
 
-# THE THREE LISTS ARE ADVISORY under concurrency: two observers of one new
-# subject can both call it opened, because the projection is read before the
-# lock that settles the record. The RECORD is exact — one row per subject,
-# whatever the labels say — and the sensors count events, never labels.
+# THE THREE LISTS ARE SETS OF GAP IDS, one entry per subject: the record loop
+# owns `opened` and the resolve loop owns `resolved` and `unchanged`, so no
+# subject can be counted twice by two loops that both walked it. Under
+# concurrency the LABELS are still advisory — two observers of one new subject
+# can both call it opened, because the projection is read before the lock that
+# settles the record — but the RECORD is exact, one row per subject, and the
+# sensors count events, never labels.
 #
 # NEVER RAISES for a gap it could not record or resolve. A supervisor pass and
 # a prompt hook both call this, and neither may die because the record plane
@@ -198,7 +226,10 @@ def observe_holder_gaps(
             a second one is not added here).
 
     Returns:
-        `{"opened": [...], "resolved": [...], "unchanged": [...]}` of gap ids.
+        `{"opened": [...], "resolved": [...], "unchanged": [...]}` of gap ids,
+        each subject appearing at most once across the three. A gap the
+        Captain declined is MUTED and appears in none of them: it is neither
+        re-recorded nor resolved (see the module comment).
     """
     del now  # documented above: this path has no clock of its own
     slug = product_slug or os.environ.get("CABINET_PRODUCT_SLUG") or "default"
@@ -206,11 +237,19 @@ def observe_holder_gaps(
     facts = _node_facts(missions, active)
 
     live = {}  # type: Dict[str, Dict[str, Any]]
+    muted = set()  # type: Set[str]
     for gap in project_gaps(product_slug=slug):
         key = gap.get("dedup_key") or ""
         if not key.startswith(KEY_PREFIX + ":"):
             continue
-        if gap.get("status") in (STATUS_RESOLVED, STATUS_DECLINED):
+        status = gap.get("status")
+        if status == STATUS_DECLINED:
+            # He answered. Nothing here re-asks. A RESOLVED key is different
+            # and deliberately absent from this set: that condition was FIXED,
+            # so its recurrence is a new observation and re-opens the row.
+            muted.add(key)
+            continue
+        if status == STATUS_RESOLVED:
             continue
         live[key] = gap
 
@@ -222,8 +261,10 @@ def observe_holder_gaps(
         fact = facts[key]
         if not fact["ready"] or fact["terminal"] or fact["reason"] is None:
             continue
-        if key in live:
-            unchanged.append(live[key]["gap_id"])
+        # `unchanged` belongs to the resolve loop below, which walks exactly
+        # the same live keys: appending it here too made every standing gap id
+        # come back twice.
+        if key in live or key in muted:
             continue
         try:
             gap = record_gap(
@@ -236,12 +277,8 @@ def observe_holder_gaps(
                 dedup_key=key,
             )
         except Exception as exc:  # noqa: BLE001 — a pass survives the record plane
-            print(
-                "observe_holder_gaps: WARN could not record {0}: {1}: {2}".format(
-                    key, type(exc).__name__, exc
-                ),
-                file=sys.stderr,
-            )
+            _warn("could not record {0}: {1}: {2}".format(
+                key, type(exc).__name__, exc))
             continue
         opened.append(gap["gap_id"])
 
@@ -264,12 +301,8 @@ def observe_holder_gaps(
                 gap["gap_id"], _resolution(fact), actor=actor, product_slug=slug,
             )
         except Exception as exc:  # noqa: BLE001
-            print(
-                "observe_holder_gaps: WARN could not resolve {0}: {1}: {2}".format(
-                    gap["gap_id"], type(exc).__name__, exc
-                ),
-                file=sys.stderr,
-            )
+            _warn("could not resolve {0}: {1}: {2}".format(
+                gap["gap_id"], type(exc).__name__, exc))
             continue
         resolved.append(gap["gap_id"])
 

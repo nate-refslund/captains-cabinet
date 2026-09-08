@@ -303,7 +303,18 @@ def test_the_need_names_ids_and_nothing_else(isolated):
 
 
 def test_a_record_failure_never_kills_the_pass(isolated, monkeypatch, capsys):
-    """B §3.4: `record_gap` raising must not kill a supervisor pass."""
+    """B §3.4: `record_gap` raising must not kill a supervisor pass.
+
+    And it must not vanish either. The pull path's only production caller
+    (cabinet/scripts/hooks/session-task-inject.sh) runs the pull as
+    `RESULT="$(python3 -c "..." 2>/dev/null)"`, so a stderr line there is
+    DISCARDED: a record failing on every tick would be the same invisible
+    condition this module exists to remove, one layer down. The durable
+    channel is `claims.err` beside the ledger — the seam the claim path in
+    session_bridge already uses. stderr is kept for the supervisor's cron log,
+    which is a place a human actually reads."""
+    from framework.missions import claims as claims_module
+
     path = _outcomes(isolated, TWO_UNOWNED)
     missions = _missions(path)
 
@@ -319,6 +330,32 @@ def test_a_record_failure_never_kills_the_pass(isolated, monkeypatch, capsys):
     assert calls["n"] == 2, "the pass stopped at the first failure"
     assert result == {"opened": [], "resolved": [], "unchanged": []}
     assert "the record plane is down" in capsys.readouterr().err
+
+    durable = claims_module.error_path()
+    assert durable.exists(), "the record failure left no durable trace"
+    text = durable.read_text(encoding="utf-8")
+    assert text.count("the record plane is down") == 2, text
+    assert "observe_holder_gaps" in text
+
+
+def test_a_resolve_failure_is_recorded_durably_too(isolated, monkeypatch, capsys):
+    """The other half of the same channel: a resolve that cannot land."""
+    from framework.missions import claims as claims_module
+
+    path = _outcomes(isolated, GHOST)
+    missions = _missions(path)
+    observe_holder_gaps(missions, set(), actor="test")
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("the resolve plane is down")
+
+    monkeypatch.setattr(gaps_module, "resolve_gap", _boom)
+    result = observe_holder_gaps(missions, {"ghost-role"}, actor="test")
+
+    assert result == {"opened": [], "resolved": [], "unchanged": []}
+    assert "the resolve plane is down" in capsys.readouterr().err
+    assert "the resolve plane is down" in claims_module.error_path().read_text(
+        encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -434,3 +471,100 @@ def test_eight_concurrent_observers_of_two_subjects_record_twice(isolated):
         holder_key("outcome-two", "task-alpha"),
         holder_key("outcome-two", "task-beta"),
     }
+
+
+# ---------------------------------------------------------------------------
+# The steady state — round-2 review G1 (the contracted return value)
+# ---------------------------------------------------------------------------
+
+
+def _status(gap_id: str):
+    for gap in capability_gaps.project_gaps():
+        if gap["gap_id"] == gap_id:
+            return gap["status"]
+    return None
+
+
+def test_a_second_pass_reports_the_standing_gap_exactly_once(isolated):
+    """§3's return type: `unchanged` is gap IDS, one per standing subject.
+
+    The record loop and the resolve loop both walk the same standing key, and
+    both used to append it, so every pass after the first answered
+    `{"unchanged": [gid, gid]}` for ONE row — deterministic, single-threaded,
+    and wrong. Anything that counts the list (a card line, a supervisor log, a
+    digest) would say two subjects need a holder when one does. The resolve
+    loop owns the bucket now; the record loop only opens.
+    """
+    path = _outcomes(isolated, UNOWNED)
+    missions = _missions(path)
+
+    first = observe_holder_gaps(missions, set(), actor="test")
+    assert len(first["opened"]) == 1, first
+    gid = first["opened"][0]
+
+    for _ in range(3):
+        again = observe_holder_gaps(missions, set(), actor="test")
+        assert again == {"opened": [], "resolved": [], "unchanged": [gid]}, again
+
+    assert len(_recorded()) == 1, _recorded()
+
+
+def test_two_standing_subjects_are_two_unchanged_entries(isolated):
+    """The count is per SUBJECT: two rows, two entries, no duplicates."""
+    path = _outcomes(isolated, TWO_UNOWNED)
+    missions = _missions(path)
+
+    opened = sorted(observe_holder_gaps(missions, set(), actor="test")["opened"])
+    assert len(opened) == 2, opened
+
+    again = observe_holder_gaps(missions, set(), actor="test")
+    assert sorted(again["unchanged"]) == opened, again
+    assert len(again["unchanged"]) == len(set(again["unchanged"])), again
+
+
+# ---------------------------------------------------------------------------
+# The decline — round-2 review G4 (the U3a handover, decided here)
+# ---------------------------------------------------------------------------
+
+
+def test_a_declined_holder_gap_is_never_re_recorded(isolated):
+    """A Captain decline STICKS. The observer never re-opens what he closed.
+
+    `_live_gap_with_id` answers None for a declined gap on purpose, and U3a's
+    docstring handed the decision to this producer verbatim: "If the Captain
+    should be able to silence a standing condition, that is a resolve/mute
+    decision for U3b's producer". It is one, and this is it — a keyed row is a
+    STANDING condition, so re-recording it would overturn his decision on the
+    next tick, every tick, and the surface would show a row he had answered.
+    """
+    path = _outcomes(isolated, UNOWNED)
+    missions = _missions(path)
+    gid = observe_holder_gaps(missions, set(), actor="test")["opened"][0]
+
+    capability_gaps.decline_gap(gid, reason="nobody is needed here", actor="captain")
+    assert _status(gid) == capability_gaps.STATUS_DECLINED
+
+    for _ in range(3):
+        result = observe_holder_gaps(missions, set(), actor="test")
+        assert result == {"opened": [], "resolved": [], "unchanged": []}, result
+
+    assert len(_recorded()) == 1, _recorded()
+    assert _status(gid) == capability_gaps.STATUS_DECLINED
+
+
+def test_a_declined_holder_gap_is_not_resolved_either(isolated):
+    """Muted is CLOSED, both ways: the healing pass leaves it declined.
+
+    A resolve after a decline would rewrite the Captain's answer with the
+    cabinet's, and `/gaps` would then show a row he declined as one the
+    cabinet fixed."""
+    path = _outcomes(isolated, GHOST)
+    missions = _missions(path)
+    gid = observe_holder_gaps(missions, set(), actor="test")["opened"][0]
+    capability_gaps.decline_gap(gid, reason="the role is never coming", actor="captain")
+
+    result = observe_holder_gaps(missions, {"ghost-role"}, actor="test")
+
+    assert result == {"opened": [], "resolved": [], "unchanged": []}, result
+    assert _resolved() == []
+    assert _status(gid) == capability_gaps.STATUS_DECLINED
