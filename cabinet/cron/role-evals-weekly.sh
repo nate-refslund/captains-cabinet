@@ -27,9 +27,9 @@
 #           ratified soak): validated proposals are WITHHELD as would-apply,
 #           zero mutations. Auto-apply arms ONLY on an explicit REPORT_ONLY=0
 #           (a Captain-gated switch); even then it applies only what clears
-#           the validation gate — skeleton proposals stay
-#           pending_captain_approval (applied changes log
-#           `captain_auto_ratified: true` for audit)
+#           the validation gate — a pattern with no concrete candidate is
+#           recorded as a capability gap and never becomes a proposal at
+#           all (applied changes log `captain_auto_ratified: true` for audit)
 #         - proposes hat graduations (auto-applied only when armed)
 #         - induces + promotes draft skills
 #         - emits self_improvement_loop_completed bracketing the run

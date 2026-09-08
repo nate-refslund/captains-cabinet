@@ -1243,7 +1243,47 @@ budgets:
     # RAISED VISIBLY for the same reason as the paragraph above: none of the
     # four has a deletion gate — each one is a correction that stays.
     # observed == maximum, zero headroom.
-    maximum: 66524
+    # 66280 -> 66363 (+83 measured 2026-09-08 via cognitive-architecture-census.py,
+    # observed 81101 vs the then-effective 81018): NO SKELETON PROPOSALS (phase-1
+    # unit U6, contract §6 + amendment A6.1). All five shipped role-evolution
+    # templates are skeletons — each carries a `<TODO:` marker or a kind that
+    # asks someone to decide — so every pattern the generator has ever seen
+    # produced a form for someone to fill in, a file on disk and a
+    # role_charter_changed event announcing it. The unit routes those to ONE
+    # keyed capability gap per (role, failure_type) instead: no file, no event,
+    # and the same unanswerable pattern costs one row however often it recurs.
+    #   +65  framework/roles/evolution.py — TODO_RE (moved here from
+    #        self_improvement_loop.py so the writer that must refuse to WRITE a
+    #        placeholder and the gate that must refuse to APPLY one screen the
+    #        same single definition), the decide-this kind set, the
+    #        failure_type -> gap-kind map, skeleton_reason(), the gap branch of
+    #        propose_one with its gaps_out channel, and the CLI count of gaps
+    #        recorded — it used to print "no patterns to propose" on a run whose
+    #        patterns had every one of them become a gap.
+    #   +18  framework/learning/self_improvement_loop.py — the report's
+    #        gaps_recorded and skipped_skeleton counts, and the dry-run /
+    #        report-only preview naming the gap the live pass would record
+    #        instead of a skeleton it would skip.
+    # RAISED VISIBLY rather than paid by a temporary allowance: an allowance
+    # promises a deletion gate, and a generator that refuses to hand its
+    # operator a form to fill in is permanent. Zero new production MODULES
+    # (framework_production_modules unchanged at 252 — every function lands
+    # inside the two existing modules; the new suites are tests).
+    # observed == maximum, zero headroom.
+    #
+    # MERGE, 2026-09-08 (contract AMENDMENTS round 2, A0.9): the landed side of
+    # this file already carries U3b's GAP CALLERS (+238) and its round-2 fixes
+    # (+6) off the 66280 base; U6's NO SKELETON PROPOSALS raise (+83) was
+    # measured off that SAME base and its mass is disjoint from both
+    # (framework/roles/evolution.py and the proposal-stage counters in
+    # framework/learning/self_improvement_loop.py, against
+    # framework/missions/gaps.py, session_bridge.py, supervisor.py and
+    # framework/frontdoor/run_briefing.py), so the merged ceiling is the SUM of
+    # the raises — 66280 + 244 + 83 = 66607 — never the max of the two, and
+    # every expansion paragraph from both sides is kept. RE-MEASURED over this
+    # merge tree with cognitive-architecture-census.py rather than added on
+    # paper. observed == maximum, zero headroom.
+    maximum: 66607
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
