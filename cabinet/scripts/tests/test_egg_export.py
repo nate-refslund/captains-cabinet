@@ -802,10 +802,12 @@ def test_proposals_all_archived(export: Path):
                  "germline-window-4-deferral-2026-07-10.md",
                  "germline-window-addendum-2026-07-07.md",
                  "sovereign-posture-activation-2026-07-09.md",
-                 # BC boot-pack + library-retirement staged packages: plain
-                 # files directly under docs/proposals/ BY CONTRACT — a
-                 # subdirectory would crash t_proposals_archive's rm -f loop
-                 # under set -e (the leftover pin below also enforces no-subdir).
+                 # BC boot-pack + library-retirement staged packages, plain
+                 # files directly under docs/proposals/. Subdirectories are
+                 # allowed here since 2026-09-08 (t_proposals_archive uses
+                 # rm -rf; CG-36's germline bundle is the first package that
+                 # is a directory) — the leftover pin below is what enforces
+                 # the actual policy, for files and directories alike.
                  "germline-session-start-digest-addendum-2026-07-15.md",
                  "germline-session-start-digest-2026-07-15.patch",
                  "germline-library-retirement-addendum-2026-07-16.md",

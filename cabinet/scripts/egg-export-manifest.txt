@@ -280,6 +280,13 @@ delete shared/interfaces/reviews/*.md
 # ZERO captain data. Same self-exclusion class as test_egg_export.py /
 # test_appshell_build.py above.
 delete framework/tests/test_amendment_doc_lint.py
+# Same class (2026-09-08, CG-36): cabinet/scripts/tests/test_germline_bundle.py
+# is the sensor for THIS deployment's phase-1 germline BUNDLE — it reads
+# docs/proposals/germline-amendment-employee-phase1-2026-09* and the
+# docs/plans ledger/plan pair, all three of which archive out of the egg
+# (R145/R167). Shipping the test without its subject would put a red in a
+# stranger's fresh hatch for an artifact they were never given.
+delete cabinet/scripts/tests/test_germline_bundle.py
 # R120-class instance-split (Wave G scripts-sweep fix pass 2026-07-12): the
 # committed pensionist screenshot baselines are THIS instance's review
 # artifacts — pre-fixture-flip surface vocabulary is baked into the PIXELS,
@@ -776,6 +783,9 @@ expect-absent docs/runbooks/hatch-appshell-v05-2026-07-10.md
 # LANE C null-hatch fix: the amendment-package lint is dev/instance ceremony
 # tooling (paired delete rule above) — never ships.
 expect-absent framework/tests/test_amendment_doc_lint.py
+# CG-36: the phase-1 germline-bundle sensor is dev/instance ceremony tooling
+# whose subject archives out (paired delete rule above) — never ships.
+expect-absent cabinet/scripts/tests/test_germline_bundle.py
 # R168: the brain-audit skill is this deployment's memory-curator runbook
 # (paired delete rule above) — never ships.
 expect-absent .claude/skills/brain-audit
