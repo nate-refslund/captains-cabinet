@@ -170,6 +170,39 @@ class TestFindUnassignedReady:
         second_pass = find_unassigned_ready_tasks(outcomes_path=outcomes_yml)
         assert first_task["task_id"] not in [d["task_id"] for d in second_pass]
 
+    def test_a_failing_observation_never_costs_the_pass(
+        self, outcomes_yml, seeded_roles, monkeypatch,
+    ):
+        """§3's invariant: the record plane dying never kills a routing pass.
+
+        `find_unassigned_ready_tasks` wraps the holder-gap observation for
+        exactly this — a supervisor that stopped routing because a gap row
+        could not be written would trade one silence for a louder one. Nothing
+        in the tree went red when that `except` was deleted, so this is the
+        arm that notices.
+        """
+        from framework.missions import gaps as gaps_module
+
+        # `mission_id` carries a per-compile digest and is not stable across
+        # two calls (measured 2026-09-08), so the comparison is over the
+        # routing decision itself — who is told to do what.
+        def _routed(decisions):
+            return sorted(
+                (d["task_id"], d["officer"], d["outcome_id"]) for d in decisions
+            )
+
+        control = _routed(find_unassigned_ready_tasks(outcomes_path=outcomes_yml))
+        assert len(control) >= 1, control
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("the observer is down")
+
+        monkeypatch.setattr(gaps_module, "observe_holder_gaps", _boom)
+
+        decisions = find_unassigned_ready_tasks(outcomes_path=outcomes_yml)
+
+        assert _routed(decisions) == control, decisions
+
     def test_completed_task_doesnt_appear(self, outcomes_yml, seeded_roles):
         """work_item_completed events also short-circuit routing (via compiler overlay)."""
         # Identify the first ready task
@@ -222,12 +255,53 @@ class TestRoutePendingTasks:
         with pytest.raises(ValueError, match="direct assignment recording is disabled"):
             route_pending_tasks(outcomes_path=outcomes_yml, dry_run=False)
 
-    def test_unmatched_roles_skip_silently(self, outcomes_yml):
-        """When no roles match the criteria, no routing happens; no crash."""
+    def test_an_outcome_that_cannot_compile_routes_nothing(self, outcomes_yml):
+        """No roles at all: nothing routes, and nothing is recorded here.
+
+        RENAMED from `test_unmatched_roles_skip_silently`, which read as the
+        pin on supervisor.py's unowned-node branch and is not: this fixture's
+        second and third criteria are NON-ROOT nodes, and the work graph
+        validator refuses a non-root node with no `assigned_role`, so the
+        compile raises and `find_unassigned_ready_tasks` answers [] before any
+        node is ever looked at. Measured 2026-09-08. The branch that skips a
+        READY unowned node is a different code path and is pinned by
+        `test_a_ready_unowned_node_records_a_holder_gap` below.
+        """
         # No seeded_roles fixture this time — instance/roles/active is empty.
         decisions = route_pending_tasks(outcomes_path=outcomes_yml)
-        # All nodes will have assigned_role = None, so nothing to route
         assert decisions == []
+        assert replay(event_types=["capability_gap_recorded"]) == []
+
+    def test_a_ready_unowned_node_records_a_holder_gap(self, tmp_path):
+        """supervisor.py's unowned branch: skip, but leave a row behind.
+
+        The branch used to be a bare `continue` whose own comment said
+        "silently skip for now" — the whole record of a condition nobody could
+        see. Routing is unchanged; what changed is that the pass records it
+        (contract of record phase1-contracts-v2-2026-09-07 §3).
+
+        A ROOT node, because only a root may legally have no owner.
+        """
+        yml = tmp_path / "instance" / "config" / "outcomes.yml"
+        yml.write_text("""outcomes:
+  - id: outcome-unowned
+    name: Nobody owns this
+    measurable_criteria:
+      - node_id: lonely-task
+        title: A thing with no owner
+        depends_on: []
+    status: active
+    captain_ratified: true
+""")
+
+        assert route_pending_tasks(outcomes_path=yml) == []
+
+        recorded = replay(event_types=["capability_gap_recorded"])
+        assert len(recorded) == 1, recorded
+        payload = recorded[0]["payload"]
+        assert payload["kind"] == "skill"
+        assert payload["dedup_key"] == "holder:outcome-unowned:lonely-task"
+        assert json.loads(payload["evidence"])["reason"] == "no_match"
 
 
 class TestDeliveryConfirmation:

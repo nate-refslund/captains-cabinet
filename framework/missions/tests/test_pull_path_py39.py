@@ -43,10 +43,20 @@ PULL_PATH_MODULES = (
     "framework/missions/claims.py",
     "framework/missions/compiler.py",
     "framework/missions/supervisor.py",
+    "framework/missions/gaps.py",
+    "framework/learning/capability_gaps.py",
     "framework/events/emitter.py",
     "framework/roles/lifecycle.py",
     "cabinet/scripts/lib/work_graph.py",
 )
+
+#: LIMIT, said rather than implied: this tuple is hand-maintained, and the real
+#: transitive closure of `session_bridge` is larger than it (17 first-party
+#: modules, measured 2026-09-08). It is the set A0.3 names, not the set the
+#: import graph produces, so a module that arrives on the path without being
+#: added here is unpinned by the grammar arms. The EXECUTION arm below is what
+#: covers the remainder: it imports and calls the real entry point under a real
+#: 3.9, so anything reachable is exercised whether or not it is listed.
 
 #: Modules that arrived in 3.10 or later. An import of one of these is a hard
 #: failure on 3.9 regardless of how it is guarded at the top level.

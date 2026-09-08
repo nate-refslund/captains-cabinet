@@ -99,7 +99,17 @@ budgets:
     # framework/missions/receipts.py) landed off the SAME 208 base and name
     # disjoint members, so the merged ceiling is their SUM (208 + 1 + 3 = 212),
     # never the max of the two, and every expansion row from both sides is kept.
-    maximum: 212
+    #
+    # 212 -> 213 (2026-09-08, measured with cognitive-architecture-census.py:
+    # 253 observed against the then-effective 252): U3b's GAP CALLERS.
+    # framework/missions/gaps.py — the observer that turns a ready work item
+    # nobody can do into a keyed capability-gaps row instead of a `continue`.
+    # ONE module, and its expansion row below names the refuted merge by
+    # path::symbol and the consumer that reads its output. Raised VISIBLY
+    # rather than bought with a temporary allowance: an allowance promises a
+    # deletion gate, and there is no version of this program where the routing
+    # plane goes back to skipping silently.
+    maximum: 213
   framework_production_noncomment_lines:
     path: framework
     # 60067 -> 60164 (+97 measured 2026-07-26 via cognitive-architecture-census.py):
@@ -1195,6 +1205,44 @@ budgets:
     # cognitive-architecture-census.py rather than added on paper.
     # observed == maximum, zero headroom.
     #
+    # 66280 -> 66518 (+238 measured 2026-09-08 with
+    # cognitive-architecture-census.py: 81256 observed against the
+    # then-effective 81018): U3b's GAP CALLERS, contract of record
+    # phase1-contracts-v2-2026-09-07 §3 + A3.1/A3.3. The mass, per file:
+    # +172 framework/missions/gaps.py (the observer, its keying, its
+    # self-resolution and its two never-raise wrappers); +27
+    # framework/missions/session_bridge.py (the pull path's one observation
+    # under the claims lock); +9 framework/missions/supervisor.py (the same on
+    # the routing pass); +29 framework/frontdoor/run_briefing.py (_gaps_notice,
+    # the one card line A3.3 requires for the two gap kinds only the Captain
+    # can close); +1 framework/learning/capability_gaps.py (the /gaps ranking
+    # call, now that a keyed producer exists). Every explanatory paragraph in
+    # the new code is a `#` comment by construction, so what is counted here is
+    # code and API contract, not prose. RAISED VISIBLY, not bought with a
+    # temporary allowance: an allowance promises a deletion gate, and the
+    # deletion of this code is the routing plane going silent again.
+    #
+    # 66518 -> 66521 (+3 measured 2026-09-08 via cognitive-architecture-census.py,
+    # observed 81259 vs the then-effective 81256): the U3b round-2 review fixes,
+    # all three of them in the same holder-gap surface. (1) `observe_holder_gaps`
+    # gained a `muted` set so a Captain DECLINE on a standing holder gap sticks
+    # instead of being re-recorded and flipped back to open on the next tick —
+    # the producer-side half of the decision `capability_gaps._live_gap_with_id`
+    # hands to this module by name. (2) The record loop stopped authoring
+    # `unchanged`, which the resolve loop already owned, so a standing gap id no
+    # longer comes back twice from a contracted return value. (3) A `_warn`
+    # helper routes both failure paths through `claims.record_error` as well as
+    # stderr, because the pull path's only production caller runs it with
+    # `2>/dev/null` and a stderr-only failure there is discarded — the same
+    # invisible condition this whole module exists to remove, one layer down.
+    # Net +3 after the two `print(...)` blocks collapse into `_warn(...)` calls.
+    # Plus 3 more (81262 vs 81259) for the docstring in
+    # framework/learning/capability_gaps.py::_live_gap_with_id that HANDED that
+    # decline decision to this producer by name: it now records where the
+    # decision landed, so the handover cannot rot into a pointer at nothing.
+    # RAISED VISIBLY for the same reason as the paragraph above: none of the
+    # four has a deletion gate — each one is a correction that stays.
+    # observed == maximum, zero headroom.
     # 66280 -> 66363 (+83 measured 2026-09-08 via cognitive-architecture-census.py,
     # observed 81101 vs the then-effective 81018): NO SKELETON PROPOSALS (phase-1
     # unit U6, contract §6 + amendment A6.1). All five shipped role-evolution
@@ -1222,7 +1270,20 @@ budgets:
     # (framework_production_modules unchanged at 252 — every function lands
     # inside the two existing modules; the new suites are tests).
     # observed == maximum, zero headroom.
-    maximum: 66363
+    #
+    # MERGE, 2026-09-08 (contract AMENDMENTS round 2, A0.9): the landed side of
+    # this file already carries U3b's GAP CALLERS (+238) and its round-2 fixes
+    # (+6) off the 66280 base; U6's NO SKELETON PROPOSALS raise (+83) was
+    # measured off that SAME base and its mass is disjoint from both
+    # (framework/roles/evolution.py and the proposal-stage counters in
+    # framework/learning/self_improvement_loop.py, against
+    # framework/missions/gaps.py, session_bridge.py, supervisor.py and
+    # framework/frontdoor/run_briefing.py), so the merged ceiling is the SUM of
+    # the raises — 66280 + 244 + 83 = 66607 — never the max of the two, and
+    # every expansion paragraph from both sides is kept. RE-MEASURED over this
+    # merge tree with cognitive-architecture-census.py rather than added on
+    # paper. observed == maximum, zero headroom.
+    maximum: 66607
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
@@ -3147,6 +3208,41 @@ expansions:
       per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; two
       blind arms (Fable 5.1, Opus 5 1M) on identical briefs, adjudicated in
       writing before implementation, in the document named above
+  - member: framework/missions/gaps.py
+    member_class: framework_production_modules
+    gate_date: '2026-09-08'
+    models_run:
+      - Fable 5.1 (arm A)
+      - Opus 5 (arm B)
+    adjudication: docs/proposals/holder-gaps-expansion-2026-09-08.md
+    merge_refuted: >-
+      framework/learning/capability_gaps.py::record_gap — the nearest existing
+      organ and the obvious fold target: it already owns gap identity, the
+      dedupe lock, the projection and the routing, and the observer is a caller
+      of it. Refused on three properties rather than on preference. The fold
+      INVERTS THE DEPENDENCY: capability_gaps is the record plane and knows
+      nothing about work, while the observer's whole subject is a compiled work
+      graph (work_graph, ready_tasks, assigned_role, NodeStatus), so folding it
+      in would make framework/learning/ import framework/missions/compiler and
+      cabinet/scripts/lib/work_graph to record a row for anybody at all.
+      Different FAILURE CONTRACT: record_gap raises on a bad input, which is
+      right for a store, and the observer must never raise because its callers
+      are a supervisor pass and a locked prompt hook — putting the swallowing
+      wrapper inside the store would weaken the store for every other caller.
+      Different LIFETIME: a gap record is one durable fact, an observation is a
+      repeated idempotent sweep whose second half resolves rows on work-graph
+      state the record plane cannot read. The second candidate,
+      framework/missions/supervisor.py::find_unassigned_ready_tasks, is refused
+      by direction — the supervisor is disabled in cabinet/services.yml and push
+      is parked, so the live pull path would import a parked organ to record a
+      row.
+    consumer: framework/missions/session_bridge.py
+    provenance: >-
+      per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; direction
+      of record LAUNCH-DIRECTION one-owned-responsibility 2026-09-06 (three blind
+      arms, Captain GO the same day), phase-1 item 3; two blind arms (Fable 5.1,
+      Opus 5 1M) on identical briefs, adjudicated in writing before
+      implementation, in the document named above
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox
