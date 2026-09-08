@@ -65,7 +65,27 @@ budgets:
     # into session_bridge.py::get_next_task was refused on that function's
     # lifetime and its never-raise failure contract, both stated in
     # docs/proposals/claim-expansion-2026-09-07.md.
-    maximum: 209
+    #
+    # 208 -> 211 (2026-09-07): THE TAP — framework/outcomes/__init__.py,
+    # framework/outcomes/ratify.py and framework/missions/receipts.py. Until
+    # this landing the only shipped instruction for ratifying a proposed
+    # outcome was "move the row into the live mission file by hand", which no
+    # operator can follow from a phone; the tap is the ONE writer of both
+    # outcome files, reached through three doors, plus the read model that
+    # shows what a tap did. RAISED VISIBLY, same instrument and same reason as
+    # the two rows above: this is a bijection class, so its members are named
+    # in the expansion registry below and an allowance may not buy one
+    # anonymously. The adjudication — two blind arms, the refuted merges by
+    # path::symbol, and the consumer named for each member — is
+    # docs/proposals/tap-outcome-lifecycle-expansion-2026-09-07.md.
+    #
+    # MERGE, 2026-09-08 (contract AMENDMENTS round 2, A0.9): the U2 CLAIM raise
+    # (+1, framework/missions/claims.py) and the U1 TAP raise (+3,
+    # framework/outcomes/__init__.py, framework/outcomes/ratify.py,
+    # framework/missions/receipts.py) landed off the SAME 208 base and name
+    # disjoint members, so the merged ceiling is their SUM (208 + 1 + 3 = 212),
+    # never the max of the two, and every expansion row from both sides is kept.
+    maximum: 212
   framework_production_noncomment_lines:
     path: framework
     # 60067 -> 60164 (+97 measured 2026-07-26 via cognitive-architecture-census.py):
@@ -1135,7 +1155,32 @@ budgets:
     # of the two, and every expansion row from both sides is kept. RE-MEASURED
     # over this merge tree with cognitive-architecture-census.py rather than
     # added on paper. observed == maximum, zero headroom.
-    maximum: 65657
+    #
+    # 64741 -> 65364 (+623 measured 2026-09-07 with
+    # cognitive-architecture-census.py, observed 80014 vs the then-effective
+    # 79391): THE TAP. framework/outcomes/ratify.py (the one writer of both
+    # outcome files: schema-PROJECTION validation on the row that would land,
+    # copy-and-mark under one flock with tmp+os.replace per file, the receipt
+    # carrying door and principal, the terminal door's exit codes, and the
+    # git-worktree refusal that keeps a deployment's mission state out of
+    # source control) plus framework/missions/receipts.py (the declared work
+    # vocabulary as a read model) plus the door wiring and the dead-instruction
+    # healer in binder_wire.py / genesis.py / advisor.py / run_briefing.py.
+    # RAISED VISIBLY rather than paid by a temporary allowance, same reason as
+    # every row above: the tap is the ONLY way a proposed outcome becomes a
+    # responsibility, so it is a permanent organ and an allowance would promise
+    # a deletion gate that will never fire. observed == maximum, zero headroom.
+    #
+    # MERGE, 2026-09-08 (contract AMENDMENTS round 2, A0.9): the landed side of
+    # this file already carries U3a (+96, +2, +31) and the U2 CLAIM (+787) summed
+    # off the 64741 base; the U1 TAP raise (+623) was measured off that SAME base
+    # and its mass is disjoint from both (framework/outcomes/, receipts.py and the
+    # door wiring, against learning/capability_gaps.py and missions/claims.py), so
+    # the merged ceiling is the SUM of the raises — 64741 + 129 + 787 + 623 =
+    # 66280 — never the max of the two. RE-MEASURED over this merge tree with
+    # cognitive-architecture-census.py rather than added on paper.
+    # observed == maximum, zero headroom.
+    maximum: 66280
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
@@ -2826,6 +2871,84 @@ expansions:
       per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; direction
       of record LAUNCH-DIRECTION one-owned-responsibility 2026-09-06, phase-1
       item 2 (the supervisor honours claims)
+  - member: framework/outcomes/ratify.py
+    member_class: framework_production_modules
+    gate_date: '2026-09-07'
+    models_run:
+      - Fable 5.1
+      - Opus 5
+    adjudication: docs/proposals/tap-outcome-lifecycle-expansion-2026-09-07.md
+    merge_refuted: >-
+      framework/onboarding/genesis.py::merge_proposals — the nearest existing
+      organ and arm A's proposed home: it owns the proposals file, its row
+      digest and its atomic writer, so folding the tap into it looks free.
+      Refused on three properties of that function rather than on preference.
+      Different direction of authority: merge_proposals DERIVES drafts and its
+      whole contract is that nothing it writes can activate itself, while the
+      tap is the act that turns a draft into something the compiler may read —
+      putting the granting act inside the organ whose stated invariant is that
+      it grants none makes that invariant unreadable. Different lifetime and
+      different producers: genesis runs once at hatch, and proposals will come
+      from a discovery pass, a supervisor's gap or an operator's own words,
+      every one of which would then have to import the onboarding package to
+      ratify. Different blast radius: merge_proposals writes the one file the
+      mission compiler never reads by design, and the tap writes the file it
+      does — folding the second into the first deletes the first's safety
+      story. Second candidate refused: framework/onboarding/journey.py, a
+      constitutional path under the germline lock whose own header says its
+      state lives on a surface the mission compiler never reads.
+    consumer: cabinet/scripts/lib/org_runtime.py
+    provenance: >-
+      per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; two
+      blind arms (Fable 5.1, Opus 5 1M) on identical briefs, adjudicated in
+      writing before implementation, in the document named above
+  - member: framework/outcomes/__init__.py
+    member_class: framework_production_modules
+    gate_date: '2026-09-07'
+    models_run:
+      - Fable 5.1
+      - Opus 5
+    adjudication: docs/proposals/tap-outcome-lifecycle-expansion-2026-09-07.md
+    merge_refuted: >-
+      framework/onboarding/genesis.py::merge_proposals — this file exists ONLY
+      because that merge was refused: the package marker is import-inert (a
+      docstring and nothing else) and would not exist at all had ratification
+      been folded into the onboarding package beside the proposals writer. It
+      is registered as its own member because the census counts modules rather
+      than packages, and an unlisted file is an unregistered member whatever
+      its size. The refusal is recorded in full on the framework/outcomes/
+      ratify.py row and in the adjudication document.
+    consumer: framework/frontdoor/binder_wire.py
+    provenance: >-
+      per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; two
+      blind arms (Fable 5.1, Opus 5 1M) on identical briefs, adjudicated in
+      writing before implementation, in the document named above
+  - member: framework/missions/receipts.py
+    member_class: framework_production_modules
+    gate_date: '2026-09-07'
+    models_run:
+      - Fable 5.1
+      - Opus 5
+    adjudication: docs/proposals/tap-outcome-lifecycle-expansion-2026-09-07.md
+    merge_refuted: >-
+      framework/events/emitter.py::replay — the obvious fold, since the ledger
+      reader already exists and a caller can pass event types to it directly.
+      Refused on three counts. replay returns RAW ledger rows whose payload
+      shape differs per event type, so every surface wanting receipts would
+      re-derive the same per-type field mapping — the duplication this module
+      removes. The vocabulary is a DECISION rather than a filter argument:
+      which types appear on a receipts surface is a declaration about what the
+      org counts as part of a responsibility's life, and passing it per call
+      site lets two surfaces silently disagree about what a receipt is. And
+      emitter is a WRITER — it owns emission, the per-file lock and the valid
+      type registry — so a read model rendering for people has no business
+      inside the module every writer imports; the dashboard would import the
+      emitter in order to read.
+    consumer: dashboard
+    provenance: >-
+      per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; two
+      blind arms (Fable 5.1, Opus 5 1M) on identical briefs, adjudicated in
+      writing before implementation, in the document named above
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox

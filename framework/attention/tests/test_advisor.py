@@ -15,6 +15,7 @@ import json
 import yaml
 
 from framework.attention import advisor, charter
+from framework.onboarding import genesis
 
 NOW = "2026-07-14T12:00:00Z"
 
@@ -76,7 +77,13 @@ def test_aging_drafts_fires_on_old_draft(tmp_path):
     assert len(found) == 1                     # ONE summary card, not a nag each
     assert found[0]["id"] == "advisory-aging-drafts"
     assert "2 draft outcome card(s)" in found[0]["evidence"]
-    assert "outcomes.yml" in found[0]["action"]  # the ratify path is named
+    # The ratify path is named — and since the tap landed, that path is a tap
+    # rather than a file to open. This used to assert the outcomes filename,
+    # which pinned an instruction no operator could follow from a phone.
+    assert genesis.RATIFY_HINT in found[0]["action"]
+    # The staging file is still cited, in the half that describes WHERE the
+    # drafts are rather than the half that tells the operator what to do.
+    assert genesis.PROPOSALS_REL in found[0]["evidence"]
 
 
 def test_aging_drafts_quiet_on_fresh_ratified_or_absent(tmp_path):

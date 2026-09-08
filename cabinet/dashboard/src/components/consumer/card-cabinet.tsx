@@ -41,6 +41,7 @@
 import Link from 'next/link'
 import { isAlarming } from '@/lib/crew'
 import { readCrew, type CrewMember } from '@/lib/crew-state'
+import { latestRatified } from '@/lib/outcomes'
 import { readPosture, postureSentence, POSTURE_ALWAYS } from '@/lib/posture-status'
 import CrewWake from './crew-wake'
 
@@ -252,6 +253,12 @@ export default async function CardCabinet() {
   const now = Date.now()
   const crew = await readCrew(now)
   const posture = await readPosture()
+  // WHAT THE TAP LOOKS LIKE FROM HERE. A ratified outcome that only appears on
+  // a page the operator has to go and visit is a receipt nobody reads; the
+  // home card carries one line so the tap is visible where they already are.
+  // Read off the receipt, so this line can only exist when a tap actually
+  // happened — never derived from a file somebody could have edited.
+  const takenOn = await latestRatified()
 
   const shown = crew.members.filter((m) => !m.folded)
   const folded = crew.members.filter((m) => m.folded)
@@ -263,6 +270,16 @@ export default async function CardCabinet() {
           Your Cabinet
         </h2>
       </div>
+
+      {takenOn && (
+        <p className="mb-4 text-sm leading-snug text-zinc-200">
+          <span aria-hidden className="mr-2 text-violet-400">◆</span>
+          {takenOn.line}
+          {takenOn.door ? (
+            <span className="ml-1 text-zinc-500">(ratified via {takenOn.door})</span>
+          ) : null}
+        </p>
+      )}
 
       {crew.members.length === 0 ? (
         <div className="py-4 text-center">

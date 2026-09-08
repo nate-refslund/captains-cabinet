@@ -618,32 +618,62 @@ def cmd_outcome_propose(args: argparse.Namespace) -> None:
 
 
 def cmd_outcome_ratify(args: argparse.Namespace) -> None:
+    """THE DEAD TWIN, now delegating.
+
+    This verb wrote SQLite and an `outcome.ratified` store row and NEVER
+    touched instance/config/outcomes.yml — the only outcomes file the mission
+    compiler reads. So "ratified" here meant a row changed state in a cache
+    while the org's actual mission file was untouched: two ratify verbs, one of
+    which could not activate anything.
+
+    The one writer (framework/outcomes/ratify.py) is now authoritative and
+    runs FIRST through the terminal door. The SQLite mirror below still runs
+    when this store knows the outcome, because the org-runtime CLI's other
+    verbs read it — but it is a mirror of a decision made elsewhere, and a
+    store that has never heard of the id is no longer a reason to refuse.
+    """
+    sys.path.insert(0, str(repo_root()))
+    from framework.outcomes.ratify import ratify as _ratify_outcome  # noqa: E402
+
+    result = _ratify_outcome(
+        args.outcome_id, door="terminal",
+        principal=str(getattr(args, "ratified_by", "") or "operator"),
+        allow_repo=bool(getattr(args, "allow_repo", False)))
+    if result["status"] not in ("ratified", "already_ratified"):
+        raise SystemExit(
+            f"ratify {args.outcome_id}: {result['status']} — {result.get('reason') or ''}")
+
+    payload = {"outcome_id": args.outcome_id, "ratified_by": args.ratified_by,
+               "note": args.note}
     store = Store()
     outcome = store.row("SELECT * FROM captain_outcomes WHERE outcome_id = ?", (args.outcome_id,))
-    if not outcome:
-        raise SystemExit(f"unknown outcome_id: {args.outcome_id}")
-    payload = {"outcome_id": args.outcome_id, "ratified_by": args.ratified_by, "note": args.note}
-    event = store.append_event(
-        "outcome.ratified",
-        outcome["product_slug"],
-        "captain_outcome",
-        args.outcome_id,
-        args.ratified_by,
-        payload,
-    )
-    store.conn.execute(
-        """
-        UPDATE captain_outcomes
-           SET state = 'ratified',
-               ratified_by = ?,
-               ratified_event_id = ?,
-               updated_at = ?
-         WHERE outcome_id = ?
-        """,
-        (args.ratified_by, event["event_id"], utc_now(), args.outcome_id),
-    )
-    store.conn.commit()
-    print_json({**payload, "state": "ratified", "event_id": event["event_id"]})
+    if outcome:
+        event = store.append_event(
+            "outcome.ratified",
+            outcome["product_slug"],
+            "captain_outcome",
+            args.outcome_id,
+            args.ratified_by,
+            payload,
+        )
+        store.conn.execute(
+            """
+            UPDATE captain_outcomes
+               SET state = 'ratified',
+                   ratified_by = ?,
+                   ratified_event_id = ?,
+                   updated_at = ?
+             WHERE outcome_id = ?
+            """,
+            (args.ratified_by, event["event_id"], utc_now(), args.outcome_id),
+        )
+        store.conn.commit()
+
+    print_json({**payload, "state": "ratified",
+                "status": result["status"],
+                "event_id": result.get("event_id"),
+                "path": result.get("path"),
+                "ratified_via": "terminal"})
 
 
 def cmd_outcome_list(args: argparse.Namespace) -> None:
@@ -2039,6 +2069,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("outcome_id")
     p.add_argument("--ratified-by", default="captain")
     p.add_argument("--note", default="")
+    p.add_argument("--allow-repo", action="store_true",
+                   help="ratify even when the root is a git worktree")
     p.set_defaults(func=cmd_outcome_ratify)
     p = outcomes_sub.add_parser("list")
     add_common(p)
