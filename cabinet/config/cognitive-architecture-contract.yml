@@ -1194,7 +1194,34 @@ budgets:
     # 66280 — never the max of the two. RE-MEASURED over this merge tree with
     # cognitive-architecture-census.py rather than added on paper.
     # observed == maximum, zero headroom.
-    maximum: 66280
+    #
+    # 66280 -> 66311 (+31 measured 2026-09-08 with
+    # cognitive-architecture-census.py, observed 81049 vs the then-effective
+    # 81018): THE LEASE FLOOR (contract AMENDMENTS round 2, A2.9). The
+    # acceptance drill's kill-and-take-over stages need 2-5 s leases, and
+    # cabinet/scripts/drills/one-responsibility.sh:311 already exported
+    # CABINET_CLAIM_LEASE_FLOOR_SECONDS=1 for them - at a claim primitive that
+    # never read it, so every 3 s lease the drill asked for was silently
+    # clamped to a minute and the stage that waits for an expiry could not
+    # observe one. framework/missions/claims.py gains resolve_lease_floor()
+    # (the one function that decides how low a lease may go: the env lowers the
+    # floor and can NEVER raise it, a value under 1 is clamped to 1, and unset,
+    # empty or unparseable all mean the 60 s production floor with the
+    # unparseable case recorded), the ABSOLUTE_MIN_LEASE_SECONDS and
+    # LEASE_FLOOR_ENV constants, and the one-line change in resolve_lease that
+    # clamps against the floor instead of against MIN_LEASE_SECONDS.
+    # MIN_LEASE_SECONDS itself does not move: production keeps its 60 s floor
+    # and this is the ONLY sub-floor path in the tree.
+    # RAISED VISIBLY rather than paid by a temporary allowance, same reason as
+    # every row above: an allowance promises a deletion gate, and the drill
+    # that proves the whole claim path cannot be run at production lease
+    # lengths, so the sub-floor path is permanent. The majority of the +31 is
+    # docstring prose carrying the reason for each clamp, per the house rule,
+    # and is NOT reformatted into `#` comments to duck this budget. Zero new
+    # production MODULES (framework_production_modules unchanged at 252: both
+    # functions live inside the existing claims module, and the new arms are
+    # tests). observed == maximum, zero headroom.
+    maximum: 66311
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
