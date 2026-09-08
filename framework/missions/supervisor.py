@@ -53,6 +53,7 @@ if _FRAMEWORK_ROOT not in sys.path:
 
 from framework.events.emitter import emit, replay
 from framework.missions import claims as _claims
+from framework.missions import gaps as _gaps
 from framework.missions.compiler import compile_from_yaml
 from framework.missions.session_bridge import _outcomes_path
 from framework.roles.lifecycle import list_roles
@@ -199,6 +200,21 @@ def find_unassigned_ready_tasks(
     # for itself through the pull path, so this is a filter, not a handover.
     held = _claims.live_claims()
 
+    # Every ready node with no holder becomes a readable row before the routing
+    # loop skips it. ONE pass over the same missions and the same roster the
+    # loop below uses, so the record cannot disagree with the decision. It
+    # emits nothing when nothing is unowned, and it never raises: a supervisor
+    # pass that died because the record plane did would trade one silence for
+    # a louder one.
+    try:
+        _gaps.observe_holder_gaps(missions, active_slugs, actor=compile_actor)
+    except Exception as exc:  # noqa: BLE001 — never kill a pass over a gap row
+        print(
+            "mission-supervisor: WARN holder-gap observation failed: "
+            "{0}: {1}".format(type(exc).__name__, exc),
+            file=sys.stderr,
+        )
+
     decisions: list[dict[str, Any]] = []
     for mission in missions:
         graph = mission["work_graph"]
@@ -206,9 +222,11 @@ def find_unassigned_ready_tasks(
             if node.id in held:
                 continue
             if not node.assigned_role:
-                # No officer to route to — Captain may need to add a role
-                # with matching capabilities. Surface that gap later via OVI;
-                # silently skip for now.
+                # No officer to route to. NOT silent any more: the pass above
+                # recorded a holder gap keyed on this node, which is what makes
+                # "nothing is happening" answerable. Routing still skips it —
+                # there is nobody to route to — and the gap resolves itself the
+                # moment a matching role exists.
                 continue
             if node.assigned_role not in active_slugs:
                 # Ghost role: skip WITHOUT emitting work_item_assigned so the
