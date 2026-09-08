@@ -60,9 +60,11 @@ The loop is conservative by construction:
 
   1. A proposal is only **applied** if it is fully specified (no ``<TODO:>``
      placeholders) and passes validation. The default suggestion templates in
-     ``roles.evolution`` are skeletons with ``<TODO:>`` markers — those are
-     skipped, with the proposal staying on disk as ``pending_captain_approval``
-     for manual review later.
+     ``roles.evolution`` all carry ``<TODO:>`` markers, so a template-derived
+     amendment never becomes a proposal at all: the generator records a
+     capability gap and writes no file. A skeleton that predates that
+     behaviour, or one another writer puts on disk, still stops here as
+     ``pending_captain_approval``.
   2. Hat graduations only proceed for hats that have at least one concrete
      capability to promote — otherwise there is nothing to apply.
   3. Skill induction always writes drafts (never auto-promotes them to
@@ -132,7 +134,8 @@ if _FRAMEWORK_ROOT not in sys.path:
 from framework.events.emitter import emit  # noqa: E402
 from framework.learning.skill_induction import induce_drafts  # noqa: E402
 from framework.measurement.scenario_runner import run_all as run_all_scenarios  # noqa: E402
-from framework.roles.evolution import propose_from_patterns  # noqa: E402
+from framework.roles.evolution import (  # noqa: E402
+    TODO_RE as _TODO_RE, propose_from_patterns, skeleton_reason)
 from framework.roles.hat_graduation import propose_graduations  # noqa: E402
 from framework.roles.lifecycle import adapt_role, load_role  # noqa: E402
 
@@ -144,7 +147,9 @@ except ImportError:  # pragma: no cover — defended just in case
     _yaml_dump = None  # type: ignore[assignment]
 
 
-_TODO_RE = re.compile(r"<TODO:[^>]*>")
+# _TODO_RE now lives in framework/roles/evolution.py, imported above: the
+# writer that must refuse to write a placeholder and the gate that must refuse
+# to apply one screen the same shape, and one definition cannot drift.
 
 # [SOV-8/D15] Proposal kinds that carry a CODE DIFF. These never reach the
 # role-adapt apply path (_apply_proposal) — the Evidence Gate ratifies them
@@ -824,6 +829,9 @@ def run_loop(
     # + classified (and land in the would_apply summary) but nothing is
     # written to instance/roles/proposals/ until auto-apply is armed.
     proposed: list[tuple[Path | str, dict[str, Any]]]
+    # One entry per pattern the generator routed to a capability gap instead
+    # of a skeleton file (contract §6). Only the writing branch fills it.
+    evolution_gaps: list[dict[str, Any]] = []
     if dry_run or report_only:
         from framework.measurement.eval_pattern_detector import detect_patterns
         patterns = detect_patterns(
@@ -852,6 +860,7 @@ def run_loop(
             window_days=window_days,
             min_occurrences=min_occurrences,
             actor=actor,
+            gaps_out=evolution_gaps,
         )
 
     proposal_report: list[dict[str, Any]] = []
@@ -902,8 +911,18 @@ def run_loop(
             "path": str(path),
         }
 
+        # A skeleton never becomes a file now, so the preview must not report
+        # one as held for a Captain who will never be asked: it names the gap
+        # the live pass would record. `skipped_skeleton` therefore counts only
+        # skeletons that were ALREADY on disk.
+        would_gap = skeleton_reason(proposal)
+
         if dry_run:
-            record["status"] = "planned" if concrete else "skipped_skeleton"
+            if would_gap:
+                record["status"] = "would_record_gap"
+                record["skip_reason"] = would_gap
+            else:
+                record["status"] = "planned" if concrete else "skipped_skeleton"
             proposal_report.append(record)
             continue
 
@@ -912,7 +931,10 @@ def run_loop(
             # No status stamping (paths are in-memory placeholders), no
             # gate.ratify evidence packs, no adapt_role — observation only.
             # The gate result used here is REAL (evaluated above).
-            if not concrete:
+            if would_gap:
+                record["status"] = "would_record_gap"
+                record["skip_reason"] = would_gap
+            elif not concrete:
                 record["status"] = "would_stay_pending"
                 record["skip_reason"] = why
             elif _is_code_diff_proposal(proposal):
@@ -1060,6 +1082,10 @@ def run_loop(
         validation_gate_report = {"skipped": "skip_evals"}
     else:
         validation_gate_report = gate_detail
+    skipped_skeleton = (
+        sum(1 for g in evolution_gaps if g.get("existing_skeleton"))
+        + sum(1 for p in proposal_report if p.get("status") == "skipped_skeleton")
+    )
     summary = {
         "loop_id": loop_id,
         "window_days": window_days,
@@ -1076,6 +1102,13 @@ def run_loop(
             "blocked_by_validation": sum(
                 1 for p in proposal_report if p.get("status") == "blocked_by_validation"
             ),
+            # Skeleton patterns routed to a capability gap this pass, and the
+            # skeletons this pass did NOT write — a file left from before the
+            # generator stopped writing them, or one another writer put on
+            # disk. `skipped_skeleton` stays present and reads 0 on a fresh
+            # root: its absence must never be readable as a pass.
+            "gaps_recorded": len(evolution_gaps),
+            "skipped_skeleton": skipped_skeleton,
             "detail": proposal_report,
         },
         "hat_graduations": {
