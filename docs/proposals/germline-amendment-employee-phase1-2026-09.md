@@ -46,6 +46,18 @@ restart.
 | G1 | `cabinet/scripts/start-officer-mac.sh` | fail closed (exit 78) when the runtime constitution + safety bundle fails to assemble, instead of logging and booting anyway | pre-change bytes at `cabinet/scripts/start-officer-mac.sh:169-174` of `00c3acd3^`; landed on master as commit `00c3acd3` |
 | G3 | `cabinet/scripts/hooks/session-task-inject.sh` | pin `${CABINET_PYTHON:-python3.12}`; append stderr to `${CABINET_HOOK_LOG:-$HOME/Library/Logs/cabinet/hooks.err}` instead of `2>/dev/null`; export `CABINET_WORKER_ID="${OFFICER}@<session id>"` before the call | current bytes at `cabinet/scripts/hooks/session-task-inject.sh:28-34` (master `e34ff1b8`) |
 
+**The exact bytes, both ends.** A unified diff is a statement about a few lines,
+so it applies just as cleanly to a file that differs everywhere else — and then
+produces something nobody declared. Each row therefore pins the **pre-image
+sha256** it was built against as well as the post-image it produces, and
+`verify.sh` classifies the file in front of it by digest rather than by an
+assumption about which tree it is looking at:
+
+| id | pre-image sha256 (the bytes the diff expects) | post-image sha256 (what it produces) |
+|---|---|---|
+| G1 | `856db3fcd8952fbe21db051fd6597c1aaad81b9e2147c262f78378d3c398b1bd` | `bd5dcd464e9b81b694c5a24d2f66d3db0a61473cbff9804b0606b1656d481345` |
+| G3 | `8e37461fcb807a269cb6e59a6b7825e99cd592651fce6e6a947bd03fbafc553c` | `5f2e177b80d0e49949d9bde24b8ee7964aeea21b6281d6699913320e31934297` |
+
 ### G1 — `cabinet/scripts/start-officer-mac.sh` (LANDED, awaiting the window)
 
 The launcher assembled the officer's runtime constitution and safety boundaries
@@ -64,12 +76,15 @@ holds the two files with no manifest, no revision stamp and no completion
 marker, so both can be present and current while assembly failed *after* them,
 or present and stale when it failed *before* them. Presence is not completeness.
 
-`G1.diff` therefore takes the file **from the pre-change bytes the locked tree
-still holds to the bytes already on master**. On a clone of master the forward
-patch cannot apply and the reverse one can — `verify.sh` reports that as
-`already-at-target`, which is a pass, not a skip. On the Captain's box the
-forward patch applies, because schg refuses the checkout that would otherwise
-have updated the file.
+`G1.diff` therefore takes the file **from the pre-change bytes named above to
+the bytes already on master**. On a clone of master the target is byte-identical
+to the post-image — `verify.sh` reports `already-at-target`, which is a pass,
+not a skip. What the schg-locked tree holds is **not measurable from this
+repository**, so this document does not say: `verify.sh` digests the file that
+is actually there and answers, and the ceremony asks it **before the unlock**
+(§5 step 0). G1 is also the safer of the two shapes regardless of the answer,
+because step 3 re-materialises the landed bytes with `git checkout` rather than
+patching — the result is the declared post-image on any tree.
 
 ### G3 — `cabinet/scripts/hooks/session-task-inject.sh` (PROPOSED, not landed)
 
@@ -103,6 +118,17 @@ before first use, because appending to a path whose directory does not exist
 fails the redirection and would silently disable the injector — the exact class
 of failure this change exists to end.
 
+**G3 is the row that can need a rebuild, and here is exactly why.** Its diff was
+built against master's bytes. Master last changed this file on 2026-07-31
+(`5338cb42`), **outside G3's own hunk** — a GNU-first `stat` fallback ten lines
+above it. A locked copy that predates that commit therefore still takes G3.diff
+cleanly and produces
+`c89c578fc10de08e89668416b45fc51b9ac7b366a1efa10f2992e697f2b30348`, which is not
+the post-image declared above. Measured 2026-09-08; it is the reason the
+pre-image is pinned at all. If the box is in that state the answer is **rebuild
+the bundle against the bytes it actually holds and re-file this row** — never
+force-apply, and never spend the window finding out.
+
 ## 3. What is deliberately NOT here
 
 - **G3 is not landed on master.** Every other germline content fix in this
@@ -134,13 +160,17 @@ bundle's own gate and is runnable both in a clone and on the box that owns the
 locked bytes (an installed Cabinet has no git repository, so every check is done
 against files, never against revisions). For each row of its embedded table it:
 
-1. copies the CURRENT bytes of the target into a scratch tree and runs
-   `git apply --check`; if that fails it runs `git apply --check --reverse`, and
-   reports `already-at-target`. Neither ⇒ **drift**, exit 10 — the bundle is
-   rebuilt against the current bytes and is **never force-applied**;
-2. applies into the scratch tree and pins the post-image `sha256` against the
-   digest declared in the table (so a diff that applies to something else is
-   still caught);
+1. digests the CURRENT bytes of the target and compares them with the row's two
+   declared digests. Equal to the **pre-image sha256** ⇒ apply into a scratch
+   tree. Equal to the post-image ⇒ `already-at-target`, a pass. **Neither** ⇒
+   exit 10, naming all three digests: the bundle does not describe these bytes,
+   so it is rebuilt against them and is **never force-applied**. No `git apply`
+   is attempted in that case, deliberately — a diff applies to bytes it was
+   never built from and yields something nobody declared, which is the most
+   misleading answer available;
+2. pins the resulting post-image `sha256` against the digest declared in the
+   table, which catches a bundle whose diff was edited after its digest was
+   computed;
 3. runs `bash -n` over the post-image;
 4. digests every path of the parsed locked set before and after the run and
    fails (exit 12) if a single byte moved — the bundle must cost nothing to
@@ -166,6 +196,15 @@ a guard that cannot see the diff it guards is a disabled sensor, not a pass.
 
 Reply **"apply employee phase 1"**. The window, in order:
 
+0. **Before any sudo, and this is the step that matters:**
+   `bash docs/proposals/germline-amendment-employee-phase1-2026-09/verify.sh --checks-only`
+   against the tree that owns the locked bytes. It writes nothing and needs no
+   privilege. Every row must report `applies` or `already-at-target`. A row that
+   reports DRIFT means the bundle was built against different bytes — **rebuild
+   it against the ones printed and re-file this row; do not open the window**. A
+   Captain unlock cannot be delegated and is not the place to discover a
+   rebuild, which is precisely where the first draft of this package would have
+   discovered it (§2, G3).
 1. `bash cabinet/scripts/germline-lock.sh status` and `ls -lO` on both targets —
    lock state is re-verified fresh immediately before the edit, never assumed
    from an earlier session.
@@ -214,6 +253,13 @@ boots on an unverified constitution and its pull tick still swallows stderr. No
 sensor anywhere claims otherwise, and the phase-1 ledger status stays
 `in-flight` until the drill passes on the installed Cabinet (A0.8) — nobody
 writes `done` on a fixture pass.
+
+**What is NOT known here, stated as unknown.** Nothing in this repository can
+read the schg-locked tree, so the bytes each target currently holds there are
+**unmeasured**. The first draft of this package asserted them instead, and the
+assertion was wrong for G3 in the one case that matters (§2). The bytes are
+answered by digest at §5 step 0 and nowhere else, and G3's row is the one that
+may come back needing a rebuild.
 
 ## 8. Residuals recorded here
 

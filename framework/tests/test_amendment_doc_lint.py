@@ -225,6 +225,11 @@ _PACKAGES = {
             "byte-identical",
             "never force-applied",
             "presence is not completeness",
+            # the 2026-09-08 review: the bundle is decided by digest against
+            # the bytes that are actually there, and it is decided BEFORE the
+            # window, because the window cannot be delegated or re-opened
+            "pre-image sha256",
+            "before the unlock",
         ),
         # the unit's hard invariant — it wraps across doc lines, so it is
         # matched on flattened whitespace like the axes package's headings
@@ -233,7 +238,15 @@ _PACKAGES = {
         # A7.1 dropped the soft label and the contract's placeholder exit code:
         # a stage that labels itself unverified is a disabled sensor, and the
         # landed drill names 20/21, not 25. Neither phrasing may resurface here.
-        "forbidden_lower": ("unverified-until-ceremony", "exit 25"),
+        # The third phrase is the 2026-09-08 review's finding: this document
+        # asserted what the schg-locked tree holds, which nothing in this
+        # repository can measure. The bytes on the box are answered by digest,
+        # never by a claim in a document.
+        "forbidden_lower": (
+            "unverified-until-ceremony",
+            "exit 25",
+            "the forward patch applies",
+        ),
     },
 }
 

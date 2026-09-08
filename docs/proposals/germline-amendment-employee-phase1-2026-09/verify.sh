@@ -16,16 +16,36 @@
 # It also re-runs the golden evals, which is the ceremony's behavioural gate;
 # that stage needs a Redis endpoint and is the only one --checks-only skips.
 #
-# ALREADY-APPLIED IS A PASS, NOT A SKIP. G1's bytes are landed on master
-# (landed-then-ceremonied, CLAUDE.md §8), so in a clone of master the forward
-# patch cannot apply and the REVERSE one can — that is the file already being
-# at the target. On the Captain's box the same file is still the pre-image,
-# because schg refuses the checkout, and the forward patch applies. Both are
-# green; anything else is drift and exits non-zero.
+# EVERY ROW IS DECIDED BY DIGEST, NOT BY AN ASSUMPTION ABOUT WHICH TREE THIS IS
+# (rebuilt after the 2026-09-08 review). A unified diff is a statement about a
+# few lines, so it applies just as cleanly to a file that differs everywhere
+# else — and then produces bytes nobody declared. Measured: G3.diff applies
+# (rc 0) to the pre-2026-07-31 bytes of its target, the shape a locked tree
+# with no window since then is still in, and yields
+# c89c578fc10de08e89668416b45fc51b9ac7b366a1efa10f2992e697f2b30348 rather than
+# the post-image below. So each row pins the sha256 of BOTH the pre-image it
+# was built against and the post-image it produces, and the target is
+# classified by its own bytes:
+#
+#   current == pre-image   -> apply forward; the result must equal the declared
+#                             post-image (that second pin catches a bundle
+#                             edited after its digest was computed)
+#   current == post-image  -> already-at-target, a PASS not a skip: that is what
+#                             landed-then-ceremonied (CLAUDE.md §8) looks like
+#                             from a clone of master
+#   neither                -> the bundle does not describe these bytes. REBUILD
+#                             it against them (exit 10); never force-apply.
+#
+# Nothing here claims to know what the schg-locked tree holds — this script
+# measures it. Run it BEFORE the unlock (doc §5 step 0): it writes nothing and
+# needs no privilege, so a rebuild found there costs nothing, while the same
+# discovery after the unlock burns a window only the Captain can open.
 #
 # EXIT CODES
 #   0   every row verified
-#   10  a diff neither applies forward nor is already at the target (drift)
+#   10  the bundle does not describe this tree's bytes — the target matches
+#       neither the declared pre-image nor the declared post-image, or the diff
+#       no longer produces the post-image it declares. REBUILD, never force.
 #   11  a post-image failed `bash -n`
 #   12  a locked path changed while this script ran
 #   13  the golden evals went red
@@ -54,13 +74,19 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-# --- THE BUNDLE TABLE — id | target path | post-image sha256 | state ---------
+# --- THE BUNDLE TABLE --------------------------------------------------------
+#   id | target path | pre-image sha256 | post-image sha256 | state
 # Parsed by cabinet/scripts/tests/test_germline_bundle.py so the test and the
-# ceremony can never describe different bundles. `landed` = the post-image is
-# already on master; `proposed` = these bytes exist only here.
+# ceremony can never describe different bundles. Both digests cover the WHOLE
+# file, not the hunk. `landed` = the post-image is already on master and one
+# Captain window re-materialises it; `proposed` = these bytes exist only here.
+#   G1 pre-image  = cabinet/scripts/start-officer-mac.sh at 00c3acd3^
+#   G1 post-image = the same file at 00c3acd3 (on master today)
+#   G3 pre-image  = cabinet/scripts/hooks/session-task-inject.sh on master today
+#   G3 post-image = what G3.diff produces from it
 BUNDLE_ROWS="
-G1|cabinet/scripts/start-officer-mac.sh|bd5dcd464e9b81b694c5a24d2f66d3db0a61473cbff9804b0606b1656d481345|landed
-G3|cabinet/scripts/hooks/session-task-inject.sh|5f2e177b80d0e49949d9bde24b8ee7964aeea21b6281d6699913320e31934297|proposed
+G1|cabinet/scripts/start-officer-mac.sh|856db3fcd8952fbe21db051fd6597c1aaad81b9e2147c262f78378d3c398b1bd|bd5dcd464e9b81b694c5a24d2f66d3db0a61473cbff9804b0606b1656d481345|landed
+G3|cabinet/scripts/hooks/session-task-inject.sh|8e37461fcb807a269cb6e59a6b7825e99cd592651fce6e6a947bd03fbafc553c|5f2e177b80d0e49949d9bde24b8ee7964aeea21b6281d6699913320e31934297|proposed
 "
 
 command -v git >/dev/null 2>&1 || { echo "REFUSED: git absent — no patch applier to ask" >&2; exit 64; }
@@ -122,6 +148,7 @@ for row in $BUNDLE_ROWS; do
   [ -n "$row" ] || continue
   ID="${row%%|*}"; rest="${row#*|}"
   TARGET="${rest%%|*}"; rest="${rest#*|}"
+  PRE_SHA="${rest%%|*}"; rest="${rest#*|}"
   WANT_SHA="${rest%%|*}"
   STATE="${rest#*|}"
   N_ROWS=$((N_ROWS + 1))
@@ -134,18 +161,31 @@ for row in $BUNDLE_ROWS; do
   mkdir -p "$WORK/$(dirname "$TARGET")" || exit 64
   cp "$REPO/$TARGET" "$WORK/$TARGET" || exit 64
 
+  CUR_SHA="$(_sha256 "$REPO/$TARGET")" || exit 64
+
   VERDICT=""
-  if ( cd "$WORK" && git apply --check "$DIFF" ) 2>"$SCRATCH/$ID.apply.err"; then
+  if [ "$CUR_SHA" = "$PRE_SHA" ]; then
+    if ! ( cd "$WORK" && git apply --check "$DIFF" ) 2>"$SCRATCH/$ID.apply.err"; then
+      echo "[verify] $ID FAIL: $TARGET is byte-identical to the pre-image this bundle was built against, yet $ID.diff will not apply to it — the BUNDLE is corrupt, not the tree." >&2
+      sed 's/^/[verify]   /' "$SCRATCH/$ID.apply.err" >&2
+      RC=10
+      continue
+    fi
     ( cd "$WORK" && git apply "$DIFF" ) 2>>"$SCRATCH/$ID.apply.err" || { echo "[verify] $ID FAIL: apply --check passed but apply did not" >&2; RC=10; continue; }
     VERDICT="applies"
     N_APPLIES=$((N_APPLIES + 1))
-  elif ( cd "$WORK" && git apply --check --reverse "$DIFF" ) 2>>"$SCRATCH/$ID.apply.err"; then
+  elif [ "$CUR_SHA" = "$WANT_SHA" ]; then
     VERDICT="already-at-target"
     N_ALREADY=$((N_ALREADY + 1))
   else
-    echo "[verify] $ID FAIL: $TARGET is neither the pre-image nor the post-image — DRIFT." >&2
-    echo "[verify]   rebuild the bundle against the current bytes; never force-apply." >&2
-    sed 's/^/[verify]   /' "$SCRATCH/$ID.apply.err" >&2
+    # No `git apply` is attempted here, deliberately: a diff applies to bytes it
+    # was never built from and yields something nobody declared, so a clean
+    # apply at this point would be the most misleading answer available.
+    echo "[verify] $ID FAIL: $TARGET is neither the pre-image this bundle was built against nor the post-image it produces — DRIFT." >&2
+    echo "[verify]   current       sha256 $CUR_SHA" >&2
+    echo "[verify]   expected pre  sha256 $PRE_SHA" >&2
+    echo "[verify]   expected post sha256 $WANT_SHA" >&2
+    echo "[verify]   REBUILD the bundle against the current bytes; never force-apply." >&2
     RC=10
     continue
   fi
