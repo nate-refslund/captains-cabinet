@@ -770,3 +770,30 @@ class TestPytestLedgerFence:
             if e["payload"].get("role") == "fence-e2e"
         ]
         assert ev["id"] in {e["id"] for e in got}
+
+
+class TestClaimLifecycleTypes:
+    """The claim's own two event types are registered and aggregate correctly.
+
+    RED before: emit() raised ValueError("Unknown event type") for both, so a
+    renewal or a release could not be recorded at all — and the call site's
+    blanket except would have swallowed it, which is exactly how
+    captain_gate_bounced went missing for months.
+    """
+
+    def test_renewed_and_released_are_registered(self, event_log_dir):
+        for event_type in ("work_item_claim_renewed", "work_item_claim_released"):
+            assert event_type in VALID_EVENT_TYPES
+            event = emit(event_type, actor="engineering", payload={
+                "task_id": "outcome-x-task-000",
+                "outcome_id": "outcome-x",
+                "claim_id": "token-1",
+                "holder": "holder-1",
+            })
+            assert event["event_type"] == event_type
+
+    def test_they_aggregate_on_the_work_item(self):
+        from framework.events.emitter import _resolve_aggregate
+
+        for event_type in ("work_item_claim_renewed", "work_item_claim_released"):
+            assert _resolve_aggregate(event_type, {"task_id": "t1"}) == ("work_item", "t1")

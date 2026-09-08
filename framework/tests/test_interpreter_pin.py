@@ -63,7 +63,7 @@ COVERAGE BOUND, STATED
   It is keyed by exact code text, so one LINE is excused and the rest of the
   same file stays in scope, and ``test_sanctioned_lines_are_still_bare``
   reds if the line is pinned or deleted.
-* ``PENDING`` below is the honest half: two pull-path files belong to a unit
+* ``PENDING`` below is the honest half: a pull-path file belongs to a unit
   that has not landed.  Each entry is self-retiring — ``test_pending_entries``
   asserts the violation is still THERE, so the row goes red the moment its
   owner fixes the file, and cannot decay into a blanket waiver.
@@ -107,9 +107,10 @@ SUFFIXES = (".sh", ".ts", ".tsx")
 # Files on the plane whose pin belongs to a unit that has not landed. The value
 # is WHY, and it names the owner. Self-retiring: see test_pending_entries.
 PENDING: Dict[str, str] = {
-    "cabinet/scripts/work-graph-complete.sh":
-        "unit U2 (the claim) owns this file — phase-1 contract §2 file list; "
-        "A0.3 names :182/277/291 and the pin lands with `--claim`",
+    # cabinet/scripts/work-graph-complete.sh RETIRED 2026-09-08: unit U2 (the
+    # claim) landed the pin with `--claim`, so the row went red exactly as it
+    # was built to — deleted here in the same commit that merges U2, per the
+    # phase-1 contract AMENDMENTS round 2, A0.10.
     "cabinet/cron/mission-supervisor.sh":
         "the supervisor's own cron — units U2/U3b own the supervisor call path "
         "and rewrite these two exec strings",

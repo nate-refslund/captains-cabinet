@@ -338,7 +338,7 @@ services:
     label: com.cabinet.mission-supervisor
     kind: daemon
     disabled: true
-    disabled_reason: "STAYS PARKED after the 2026-07-26 arm-the-cabinet re-review: this is NOT class-(b) 'nobody got to it'. Arming the push router while officers also PULL double-dispatches the same task, and there is NO claim primitive anywhere in the tree to prevent it (`git grep -n 'def claim\\|claim_task\\|work_item_claimed' framework/ cabinet/` = 0 hits). Wiring one reaches cabinet/scripts/hooks/session-task-inject.sh, which is inside the schg-locked hooks dir — a Captain unlock ceremony, not a small change. Re-enable path: land a claim primitive on the pull path first, then flip."
+    disabled_reason: "STAYS PARKED. The 2026-07-26 reason (no claim primitive anywhere in the tree) was DISCHARGED on 2026-09-07: framework/missions/claims.py holds an atomic claim with a lease across replay+append, the pull path takes one on every tick, and find_unassigned_ready_tasks here already skips a live claim — so a push could no longer double-dispatch a held task. It stays parked on DIRECTION, not on capability (LAUNCH-DIRECTION one-owned-responsibility 2026-09-06): pull is the dispatch path and push is enabled only if pull is shown to be insufficient, with the interpreter pin. Re-enable path: evidence that pull alone leaves ready work unstarted, then flip — this row needs no further code."
     command: bash cabinet/cron/mission-supervisor.sh
     schedule: { interval_s: 300 }
     expected: "(staged — nothing asserted while disabled)"
