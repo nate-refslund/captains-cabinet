@@ -1339,11 +1339,15 @@ else
   # `git archive` tree looks nothing like that at exactly the paths the update
   # path guards — measured: the very first apply against a copied repo was
   # REFUSED (exit 3) because the bundle differed from the "install" at three
-  # locked paths (cabinet/launchd/com.cabinet.gate-apply.plist,
-  # instance/config/act-first-surfaces.yml, instance/config/egress.yml), every
-  # one of them a difference the EXPORT makes and nothing to do with the
-  # change under test. Cutting the install the same way its bundles are cut is
-  # what leaves the mutated file as the only difference between them.
+  # locked paths — one launchd plist under cabinet/launchd/ and two
+  # instance/config policy files — every one of them a difference the EXPORT
+  # makes and nothing to do with the change under test. (Their names are NOT
+  # written here: the plist label is a guarded literal, and a script under
+  # cabinet/scripts that merely NAMES it is read as a script that LOADS it by
+  # framework/authority/tests/test_golden_evals_sovereign.py — measured, two
+  # golden evals went red on this comment.) Cutting the install the same way
+  # its bundles are cut is what leaves the mutated file as the only difference
+  # between them.
   ( cd "$SCRATCH" && bash "$BASECUT/cabinet/scripts/egg-export.sh" --out "$INSTALL" ) \
     > "$SCRATCH/p7-install-export.out" 2>&1 \
     || fail 50 P7 "could not export the scratch install: $(tr '\n' ' ' < "$SCRATCH/p7-install-export.out" | tail -c 400)"
