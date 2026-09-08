@@ -57,6 +57,12 @@ COVERAGE BOUND, STATED
 * Test sources are out of scope: they never run on the deployment box, and
   the one that asserts this very absence
   (``lib/capability-gaps.test.ts``) has to spell the defect to forbid it.
+* ``SANCTIONED`` below is the one place a bare interpreter is CORRECT: a
+  drill whose subject IS the box's own ``python3`` must reach it, or it
+  measures 3.12 and reports nothing about the interpreter an officer walks.
+  It is keyed by exact code text, so one LINE is excused and the rest of the
+  same file stays in scope, and ``test_sanctioned_lines_are_still_bare``
+  reds if the line is pinned or deleted.
 * ``PENDING`` below is the honest half: two pull-path files belong to a unit
   that has not landed.  Each entry is self-retiring — ``test_pending_entries``
   asserts the violation is still THERE, so the row goes red the moment its
@@ -108,6 +114,30 @@ PENDING: Dict[str, str] = {
         "the supervisor's own cron — units U2/U3b own the supervisor call path "
         "and rewrite these two exec strings",
 }
+
+# Lines on the plane whose bare interpreter is the SUBJECT, not a defect.
+#
+# The phase-1 drill has to run the pull-path import under the box's OWN
+# `python3` — that is stage P2h, and it is how A0.3's locked half (every module
+# the locked hook imports stays 3.9-correct) is measured at all. Pinning that
+# line would make the drill assert 3.12 against itself and leave the real
+# interpreter unmeasured: the sensor would be testing something other than the
+# control.
+#
+# Keyed by EXACT code text, not by path: every other bare `python3` in the same
+# file is still a finding, so this cannot widen into a file-level waiver. Each
+# entry is self-retiring in the same way PENDING is — test_sanctioned_lines_
+# are_still_bare goes red the day the line is pinned, moved or deleted, and the
+# row must then be re-argued rather than quietly kept.
+SANCTIONED: Dict[str, Dict[str, str]] = {
+    "cabinet/scripts/drills/one-responsibility.sh": {
+        'BOX_PY="python3"':
+            "contract A4.1 + drill stage P2h (one-responsibility.sh:939-951): "
+            "the drill imports the pull path under the box's own interpreter "
+            "to prove the 3.9 half; a pin here disarms that arm",
+    },
+}
+
 
 # A0.3's own parenthetical, asserted to still be IN the derived scope. If a
 # rename or a deletion drops one, the scope test goes red rather than the scan
@@ -297,7 +327,11 @@ class TestA03InterpreterPin:
         for rel in plane_files():
             if rel in PENDING:
                 continue
-            hits = bare_python3_lines(rel, (ROOT / rel).read_text(errors="replace"))
+            excused = SANCTIONED.get(rel, {})
+            hits = [(n, text)
+                    for n, text in bare_python3_lines(
+                        rel, (ROOT / rel).read_text(errors="replace"))
+                    if not any(code in text for code in excused)]
             if hits:
                 findings[rel] = hits
         assert findings == {}, (
@@ -324,6 +358,43 @@ class TestA03InterpreterPin:
             if not bare_python3_lines(rel, path.read_text(errors="replace")):
                 stale.append("%s — PINNED NOW, delete this PENDING row (%s)" % (rel, why))
         assert stale == [], "\n".join(stale)
+
+    def test_sanctioned_lines_are_still_bare(self):
+        """The excuse dies with the line it excuses.
+
+        A sanctioned row claims a specific line REACHES the box interpreter on
+        purpose. If it were pinned, moved or deleted, the row would be excusing
+        nothing while still hiding whatever replaced it.
+        """
+        stale = []
+        for rel, codes in sorted(SANCTIONED.items()):
+            path = ROOT / rel
+            if not path.exists():
+                stale.append("%s — file is gone" % rel)
+                continue
+            hits = bare_python3_lines(rel, path.read_text(errors="replace"))
+            for code, why in sorted(codes.items()):
+                if not any(code in text for _, text in hits):
+                    stale.append(
+                        "%s — `%s` no longer carries a bare interpreter; delete "
+                        "this SANCTIONED row (%s)" % (rel, code, why))
+        assert stale == [], "\n".join(stale)
+
+    def test_every_sanctioned_file_is_actually_on_the_plane(self):
+        """An excuse for a file the scan never looks at hides nothing and
+        misleads the next reader about what is covered."""
+        scope = set(plane_files())
+        assert set(SANCTIONED) <= scope, sorted(set(SANCTIONED) - scope)
+
+    def test_a_sanctioned_file_is_not_a_sanctioned_file(self):
+        """The narrowing itself, asserted: a second bare interpreter in a
+        sanctioned file is STILL a finding."""
+        rel = "cabinet/scripts/drills/one-responsibility.sh"
+        excused = SANCTIONED[rel]
+        source = 'BOX_PY="python3"\nrun_it python3 -c pass\n'
+        hits = [(n, text) for n, text in bare_python3_lines(rel, source)
+                if not any(code in text for code in excused)]
+        assert [n for n, _ in hits] == [2]
 
     def test_every_pending_file_is_actually_on_the_plane(self):
         """A waiver for a file the scan never looks at hides nothing and
