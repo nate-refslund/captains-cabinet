@@ -1288,9 +1288,12 @@ else
   INSTALL="$SCRATCH/install"
   MUT="$SCRATCH/mutated"
   LOCKMUT="$SCRATCH/mutated-locked"
-  mkdir -p "$INSTALL" "$MUT" "$LOCKMUT"
-  tar -cf - -C "$ROOT" --exclude='./events' --exclude='./.git' . | tar -xf - -C "$INSTALL" \
-    || fail 50 P7 "could not stage the scratch install"
+  BASECUT="$SCRATCH/basecut"
+  # $INSTALL is deliberately NOT created here: the exporter makes it, and it
+  # refuses a --out that already has anything in it.
+  mkdir -p "$BASECUT" "$MUT" "$LOCKMUT"
+  tar -cf - -C "$SHIPPED" --exclude='./.git' . | tar -xf - -C "$BASECUT" \
+    || fail 50 P7 "could not stage the base cut"
   tar -cf - -C "$SHIPPED" --exclude='./.git' . | tar -xf - -C "$MUT" \
     || fail 50 P7 "could not stage the shipped tree"
   tar -cf - -C "$SHIPPED" --exclude='./.git' . | tar -xf - -C "$LOCKMUT" \
@@ -1322,10 +1325,32 @@ else
       && git -C "$1" -c user.email=drill@localhost -c user.name=drill \
              -c commit.gpgsign=false commit -q -m "$2" >> "$SCRATCH/p7-git.log" 2>&1
   }
+  commit_tree "$BASECUT" "the tree the install was cut from" \
+    || fail 50 P7 "could not make the base tree a checkout: $(tr '\n' ' ' < "$SCRATCH/p7-git.log" | tail -c 400)"
   commit_tree "$MUT" "the bundle under test" \
     || fail 50 P7 "could not make the shipped tree a checkout: $(tr '\n' ' ' < "$SCRATCH/p7-git.log" | tail -c 400)"
   commit_tree "$LOCKMUT" "the locked-path bundle under test" \
     || fail 50 P7 "could not make the locked-path tree a checkout: $(tr '\n' ' ' < "$SCRATCH/p7-git.log" | tail -c 400)"
+
+  # THE INSTALL IS AN EXPORT, not a copy of the repository. An installed
+  # Cabinet is an egg: the manifest pass has run over it, so its launchd plists
+  # are the portable ones, its shipped-empty interface files are empty, its
+  # instance tree is gone and it carries an egg-manifest.json identity. A raw
+  # `git archive` tree looks nothing like that at exactly the paths the update
+  # path guards — measured: the very first apply against a copied repo was
+  # REFUSED (exit 3) because the bundle differed from the "install" at three
+  # locked paths (cabinet/launchd/com.cabinet.gate-apply.plist,
+  # instance/config/act-first-surfaces.yml, instance/config/egress.yml), every
+  # one of them a difference the EXPORT makes and nothing to do with the
+  # change under test. Cutting the install the same way its bundles are cut is
+  # what leaves the mutated file as the only difference between them.
+  ( cd "$SCRATCH" && bash "$BASECUT/cabinet/scripts/egg-export.sh" --out "$INSTALL" ) \
+    > "$SCRATCH/p7-install-export.out" 2>&1 \
+    || fail 50 P7 "could not export the scratch install: $(tr '\n' ' ' < "$SCRATCH/p7-install-export.out" | tail -c 400)"
+  [ -f "$INSTALL/egg-manifest.json" ] \
+    || fail 50 P7 "the exported install carries no egg-manifest.json, so it has no identity for the update path to compare a bundle against"
+  [ -f "$INSTALL/cabinet/scripts/cabinet-update.sh" ] \
+    || fail 50 P7 "the exported install ships no updater, so the result could not reach it"
 
   # A preserved path with something in it: an update that quietly emptied this
   # would be the worst possible pass. The canary is a member of the same
@@ -1400,14 +1425,22 @@ print((d.get("latest") or {}).get("sha") or "")
   event_count P7 50 cabinet_update_rolled_back
   ROLLED_BEFORE="$EV_COUNT"
   ( cd "$INSTALL" && CABINET_ROOT="$INSTALL" CABINET_UPDATE_TEST_RESTART_CMD="/usr/bin/true" \
-      bash "$UPDATER" apply --bundle "$BUNDLE_SHA" --door terminal $REBUILD_ARG ) \
+      bash "$UPDATER" apply --bundle "$BUNDLE_SHA" --from terminal $REBUILD_ARG ) \
     > "$SCRATCH/p7-gate-red.out" 2>&1
   RED_RC=$?
   event_count P7 50 cabinet_update_rolled_back
   ROLLED_AFTER="$EV_COUNT"
   ROLLED_DELTA=$((ROLLED_AFTER - ROLLED_BEFORE))
-  if [ "$RED_RC" -eq 0 ]; then
-    fail 50 P7 "an apply whose dashboard never restarted exited 0 — an identity-only probe passes an old process that survived a failed restart"
+  # EXACTLY 1, not merely non-zero. 1 is the exit of an apply that rolled
+  # itself back (cabinet-update.sh roll_back_after); 2 is a usage error and 3 a
+  # refusal, and both of those are ALSO "not zero". Measured here: the drill
+  # spelled this verb `--door terminal` when the updater takes
+  # `--from terminal|web|chat`, the apply never ran at all, and the only thing
+  # that noticed was the event delta below — a leg that scored a mistyped
+  # command as a red health gate. "Not measured" and "measured red" are
+  # different facts, and an exit code is the cheapest place to keep them apart.
+  if [ "$RED_RC" -ne 1 ]; then
+    fail 50 P7 "an apply whose dashboard never restarted exited $RED_RC; 1 is the exit of an apply that rolled itself back, 0 would mean an identity-only probe passed an old process that survived a failed restart, and anything else means the apply never reached its health gate: $(tr '\n' ' ' < "$SCRATCH/p7-gate-red.out" | cut -c1-400)"
   fi
   [ "$ROLLED_DELTA" -eq 1 ] || fail 50 P7 "the failed health gate emitted $ROLLED_DELTA cabinet_update_rolled_back event(s) of its own (the ledger holds $ROLLED_AFTER in all); exactly one is what a rollback that happened looks like"
   if grep -q 'the one changed line this bundle ships' "$INSTALL/$MUTATED_REL" 2>/dev/null; then
@@ -1421,7 +1454,7 @@ print((d.get("latest") or {}).get("sha") or "")
   APPLIED_BEFORE="$EV_COUNT"
   dir_count P7 50 "$INSTALL/.updates/snapshots"
   SNAPS_BEFORE="$DIR_COUNT"
-  ( cd "$INSTALL" && CABINET_ROOT="$INSTALL" bash "$UPDATER" apply --bundle "$BUNDLE_SHA" --door terminal $REBUILD_ARG ) \
+  ( cd "$INSTALL" && CABINET_ROOT="$INSTALL" bash "$UPDATER" apply --bundle "$BUNDLE_SHA" --from terminal $REBUILD_ARG ) \
     > "$SCRATCH/p7-apply.out" 2>&1
   APPLY_RC=$?
   [ "$APPLY_RC" -eq 0 ] || fail 50 P7 "apply exited $APPLY_RC: $(tr '\n' ' ' < "$SCRATCH/p7-apply.out" | cut -c1-400)"
@@ -1460,7 +1493,7 @@ print((d.get("latest") or {}).get("sha") or "")
   [ -n "$LOCK_SHA" ] || fail 50 P7 "the inbox reports no bundle after the locked-path publish; an apply with an empty bundle id would be refused for the wrong reason and the drill would call it a locked-path refusal"
   event_count P7 50 cabinet_update_refused
   REFUSED_BEFORE="$EV_COUNT"
-  ( cd "$INSTALL" && CABINET_ROOT="$INSTALL" bash "$UPDATER" apply --bundle "$LOCK_SHA" --door terminal $REBUILD_ARG ) \
+  ( cd "$INSTALL" && CABINET_ROOT="$INSTALL" bash "$UPDATER" apply --bundle "$LOCK_SHA" --from terminal $REBUILD_ARG ) \
     > "$SCRATCH/p7-locked.out" 2>&1
   LOCK_RC=$?
   [ "$LOCK_RC" -eq 3 ] || fail 50 P7 "a bundle changing a locked path exited $LOCK_RC, expected 3"
