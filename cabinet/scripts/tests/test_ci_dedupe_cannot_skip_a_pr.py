@@ -202,10 +202,18 @@ def test_every_gate_job_is_present(workflow):
     condition as every other gate job here, so the arms below cover it on
     exactly the terms they cover the rest. Adding it to this set is the only
     correct response to that test going red — the set really did change, by
-    design, and the pin exists to make that a deliberate act."""
+    design, and the pin exists to make that a deliberate act.
+
+    ``pull-path-python39`` joined on 2026-09-07 (phase-1 claim): the prompt hook
+    that pulls work is schg-locked and runs the officer PATH's own ``python3``,
+    3.9 on the reference box, while every other job here runs 3.12 — so without
+    it CI structurally cannot execute a 3.10-only construct on the pull path and
+    would ship green over a tree that takes the pull down on the machine it runs
+    on. It carries the SAME guard condition as every other gate job, so the arms
+    below cover it on exactly the terms they cover the rest."""
     expected = {
         "ci", "framework-tests", "null-hatch", "cognitive-phase4", "gitleaks",
-        "world-frame",
+        "world-frame", "pull-path-python39",
     }
     assert set(_gate_jobs(workflow)) == expected
 

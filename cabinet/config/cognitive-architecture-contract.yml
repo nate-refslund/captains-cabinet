@@ -4,7 +4,14 @@ budgets:
   central_event_types:
     path: framework/events/emitter.py
     symbol: VALID_EVENT_TYPES
-    maximum: 91
+    # 91 -> 93 (2026-09-07): work_item_claim_renewed and work_item_claim_released,
+    # the CLAIM's own lifecycle. RAISED VISIBLY, not bought with an allowance —
+    # this is a bijection class, so an allowance naming it is refused at contract
+    # load and both members are named in the expansion registry below. The
+    # adjudication (two blind arms on the unit contract, two more attacking it,
+    # the refused merges and the consumers named before the producers landed) is
+    # docs/proposals/claim-expansion-2026-09-07.md.
+    maximum: 93
   central_action_types:
     path: framework/authority/classifier.py
     symbol: ACTION_TYPES
@@ -51,6 +58,14 @@ budgets:
     # research.py::probe_connectors, and the consumer named before the producer
     # landed) is docs/proposals/salience-ranking-expansion-2026-07-28.md.
     #
+    # 208 -> 209 (2026-09-07): framework/missions/claims.py, the atomic claim +
+    # lease the real pull path takes. RAISED VISIBLY, same instrument and same
+    # reason as the two rows above: a bijection class's members are named in the
+    # expansion registry and an allowance may not buy one anonymously. The merge
+    # into session_bridge.py::get_next_task was refused on that function's
+    # lifetime and its never-raise failure contract, both stated in
+    # docs/proposals/claim-expansion-2026-09-07.md.
+    #
     # 208 -> 211 (2026-09-07): THE TAP — framework/outcomes/__init__.py,
     # framework/outcomes/ratify.py and framework/missions/receipts.py. Until
     # this landing the only shipped instruction for ratifying a proposed
@@ -63,7 +78,14 @@ budgets:
     # anonymously. The adjudication — two blind arms, the refuted merges by
     # path::symbol, and the consumer named for each member — is
     # docs/proposals/tap-outcome-lifecycle-expansion-2026-09-07.md.
-    maximum: 211
+    #
+    # MERGE, 2026-09-08 (contract AMENDMENTS round 2, A0.9): the U2 CLAIM raise
+    # (+1, framework/missions/claims.py) and the U1 TAP raise (+3,
+    # framework/outcomes/__init__.py, framework/outcomes/ratify.py,
+    # framework/missions/receipts.py) landed off the SAME 208 base and name
+    # disjoint members, so the merged ceiling is their SUM (208 + 1 + 3 = 212),
+    # never the max of the two, and every expansion row from both sides is kept.
+    maximum: 212
   framework_production_noncomment_lines:
     path: framework
     # 60067 -> 60164 (+97 measured 2026-07-26 via cognitive-architecture-census.py):
@@ -1071,6 +1093,69 @@ budgets:
     # organ, and an allowance would promise a deletion gate that will never fire.
     # observed == maximum, zero headroom.
     #
+    # 64741 -> 64837 (+96 measured 2026-09-07 with
+    # cognitive-architecture-census.py: effective 79391 -> 79487, observed
+    # 79487): phase-1 unit U3a in framework/learning/capability_gaps.py — the
+    # three STRUCTURAL gap kinds (skill / authority / information) recorded
+    # surface-only, and `record_gap(dedup_key=...)`, an identity dedupe taken
+    # under a cross-process lock so the officer hook — a fresh process every
+    # tick — records a standing condition ONCE instead of once per tick. Half
+    # the mass is the three independent vetoes that keep the new kinds out of
+    # the propose and auto lanes (route, gate, config), which is deliberate:
+    # one veto is a line an edit can delete without a test noticing. Zero new
+    # production MODULES and zero expansion rows. RAISED VISIBLY rather than
+    # paid by a temporary allowance, same reason as every row above: a
+    # vocabulary the org records its own missing holders in is permanent, and
+    # an allowance would promise a deletion gate that will never fire.
+    # observed == maximum, zero headroom.
+    #
+    # 64837 -> 64839 (+2 measured 2026-09-07, same unit and same run:
+    # effective 79487 -> 79489, observed 79489): the `surfaced` count wired
+    # into self_improvement_loop.py's own summary, plus the one-line fallback
+    # dict becoming two. A routing bucket that no consumer reads is a bucket a
+    # later edit deletes without a test noticing, and conflating it with
+    # `skipped` would report a deliberate silence as a routing failure — so the
+    # loop counts it separately, and a sensor pins the count.
+    # observed == maximum, zero headroom.
+    #
+    # 64839 -> 64870 (+31 measured 2026-09-07, same unit, third and last bump:
+    # effective 79489 -> 79520, observed 79520): DOCSTRING MASS, not behaviour.
+    # `_gaps_lock`'s docstring gained the acquisition order the lock U2 has not
+    # landed yet must respect — claims-lock -> gaps-lock -> ledger-lock — and
+    # `record_gap`'s gained what a keyed gap's hit_count staying 1 for life does
+    # to the /gaps ranking. Zero new statements, zero new modules, zero
+    # expansion rows. Bumped rather than reworded because the census counts
+    # every line that is not a `#` line, so a docstring IS mass under this law
+    # and the honest move is to pay for it on the line the zero-headroom rule is
+    # read from; rewriting the prose as `#` comments to dodge the count would
+    # put the ordering rule somewhere `help()` and the egg's own reader never
+    # see it. Paid separately from the two bumps above because it was measured
+    # after them, and a budget row that hides when its mass arrived is a budget
+    # row nobody can audit. observed == maximum, zero headroom.
+    #
+    # 64741 -> 65528 (+787 measured 2026-09-07 via cognitive-architecture-census.py,
+    # observed 80178 vs the then-effective 79391): the phase-1 CLAIM. The mass is
+    # framework/missions/claims.py (the primitive, its lock, its lease, its fence
+    # and its CLI) plus the claim-aware halves of the four modules that read it —
+    # the pull path takes and renews a claim instead of handing one node to every
+    # caller; the status overlay holds a node IN_PROGRESS only while its lease
+    # runs and drops it back to PENDING when it does not, which is the whole of
+    # how a killed holder's task returns without a daemon; the router stops
+    # treating a held task as unassigned; and the completion script refuses a
+    # stale token with exit 4 instead of emitting a second completion.
+    # MEASURED, not summed on paper. RAISED VISIBLY rather than paid by a
+    # temporary allowance: an allowance promises a deletion gate, and the
+    # primitive the entire phase-1 acceptance drill runs through will not be
+    # deleted. observed == maximum, zero headroom.
+    #
+    # MERGE, 2026-09-08 (contract AMENDMENTS round 2, A0.9): the U3a raises
+    # (+96, +2, +31 = +129) and the U2 CLAIM raise (+787) landed off the SAME
+    # 64741 base and are disjoint — a gap vocabulary in learning/ and a claim
+    # primitive in missions/ — so the merged ceiling is their SUM, never the max
+    # of the two, and every expansion row from both sides is kept. RE-MEASURED
+    # over this merge tree with cognitive-architecture-census.py rather than
+    # added on paper. observed == maximum, zero headroom.
+    #
     # 64741 -> 65364 (+623 measured 2026-09-07 with
     # cognitive-architecture-census.py, observed 80014 vs the then-effective
     # 79391): THE TAP. framework/outcomes/ratify.py (the one writer of both
@@ -1085,7 +1170,17 @@ budgets:
     # every row above: the tap is the ONLY way a proposed outcome becomes a
     # responsibility, so it is a permanent organ and an allowance would promise
     # a deletion gate that will never fire. observed == maximum, zero headroom.
-    maximum: 65364
+    #
+    # MERGE, 2026-09-08 (contract AMENDMENTS round 2, A0.9): the landed side of
+    # this file already carries U3a (+96, +2, +31) and the U2 CLAIM (+787) summed
+    # off the 64741 base; the U1 TAP raise (+623) was measured off that SAME base
+    # and its mass is disjoint from both (framework/outcomes/, receipts.py and the
+    # door wiring, against learning/capability_gaps.py and missions/claims.py), so
+    # the merged ceiling is the SUM of the raises — 64741 + 129 + 787 + 623 =
+    # 66280 — never the max of the two. RE-MEASURED over this merge tree with
+    # cognitive-architecture-census.py rather than added on paper.
+    # observed == maximum, zero headroom.
+    maximum: 66280
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
@@ -2707,6 +2802,75 @@ expansions:
     merge_refuted: framework/onboarding/formation.py::_run_discovery — the merge candidates were genesis.py and formation.py, and both are refuted by direction. formation PRODUCES the estate (_run_discovery) while genesis and cabinet/scripts/generate-instance.py CONSUME it; putting the contract inside either consumer would make the producer import a consumer, and putting it inside the producer would make the generator import the formation stage machine to read a schema.
     consumer: cabinet/scripts/generate-instance.py
     provenance: per 2026-07-07 full-autonomy grant + the 2026-07-26 north-star/altitude Captain rulings
+  - member: framework/missions/claims.py
+    member_class: framework_production_modules
+    gate_date: '2026-09-07'
+    models_run:
+      - Fable 5.1 (arm A)
+      - Opus 5 (arm B)
+    adjudication: docs/proposals/claim-expansion-2026-09-07.md
+    merge_refuted: >-
+      framework/missions/session_bridge.py::get_next_task — the one production
+      caller, and the obvious fold target since the claim exists to make its
+      result exclusive. Refused on two properties of that function. Lifetime:
+      get_next_task is a per-tick projection that returns a dict and forgets it,
+      while a claim lives in ledger timestamps and is read back by the status
+      overlay, the routing filter and the completion fence — three consumers
+      that would each have to import the pull path to ask whether a task is
+      held. Failure contract: get_next_task must never raise (it runs from a
+      prompt hook, where an exception costs the session) and complete() must
+      raise by code on a stale token, which is what a fence is. The second
+      candidate, supervisor.py::find_unassigned_ready_tasks, is refused by
+      direction: the supervisor is disabled and push is parked, so the live pull
+      path would import a parked organ to take a lock.
+    consumer: framework/missions/compiler.py
+    provenance: >-
+      per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; direction
+      of record LAUNCH-DIRECTION one-owned-responsibility 2026-09-06 (three blind
+      arms, Captain GO the same day), phase-1 item 2
+  - member: work_item_claim_renewed
+    member_class: central_event_types
+    gate_date: '2026-09-07'
+    models_run:
+      - Fable 5.1 (arm A)
+      - Opus 5 (arm B)
+    adjudication: docs/proposals/claim-expansion-2026-09-07.md
+    merge_refuted: >-
+      framework/events/emitter.py::VALID_EVENT_TYPES — specifically
+      work_item_started, the zero-new-type option ("re-emit started with a later
+      expiry"). Refused because the claim chain is derived by replay: liveness is
+      the latest started carrying a claim_id with no terminal and no release
+      after it, so a renewal spelled as a second started would open a NEW chain
+      under the same token and the fence's "is this the latest claim?" question
+      would have two right answers. A distinct type is what lets the replay chain
+      a renewal to the claim it renews, and refuse one that chains to nothing.
+    consumer: framework/missions/compiler.py
+    provenance: >-
+      per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; direction
+      of record LAUNCH-DIRECTION one-owned-responsibility 2026-09-06, phase-1
+      item 2 (lease/expiry/reassignment/fencing)
+  - member: work_item_claim_released
+    member_class: central_event_types
+    gate_date: '2026-09-07'
+    models_run:
+      - Fable 5.1 (arm A)
+      - Opus 5 (arm B)
+    adjudication: docs/proposals/claim-expansion-2026-09-07.md
+    merge_refuted: >-
+      framework/missions/compiler.py::_EVENT_TYPE_TO_STATUS — the table a reuse
+      would have to re-map, and no existing type survives the re-map. work_item_
+      completed and work_item_failed are terminal and a release is not the end of
+      the work; work_item_failed additionally sets verification_passed False,
+      durably recording a verdict nobody reached; work_item_started is the very
+      thing being ended. The name was itself adjudicated between the arms —
+      arm A proposed work_item_released, arm B the claim-shaped name, and B was
+      ruled because it is the claim that ends, not the item, and an item-shaped
+      name reads as a completion to every replay that scans work_item_*.
+    consumer: framework/missions/supervisor.py
+    provenance: >-
+      per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; direction
+      of record LAUNCH-DIRECTION one-owned-responsibility 2026-09-06, phase-1
+      item 2 (the supervisor honours claims)
   - member: framework/outcomes/ratify.py
     member_class: framework_production_modules
     gate_date: '2026-09-07'

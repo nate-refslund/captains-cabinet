@@ -170,17 +170,25 @@ def test_resolve_returns_fresh_copies_mutation_cannot_poison():
     assert "task_id" in b["required"], "a caller mutation leaked into the registry"
 
 
+#: The central enum's size, pinned so a domain vocabulary cannot grow it by
+#: accident. It moves ONLY with a visible `maximum` raise plus an adjudicated
+#: expansion row in cabinet/config/cognitive-architecture-contract.yml.
+#: 91 -> 93 (2026-09-07): work_item_claim_renewed / work_item_claim_released,
+#: the claim's own lifecycle types (phase-1 claim). Ground @cbf52e49 was 91.
+CENTRAL_ENUM_SIZE = 93
+
+
 def test_m4_central_enum_untouched():
     """M4 mechanical proof: the registry absorbs domain vocabulary WITHOUT
-    growing the central enum — census stays 91/91 (ground @cbf52e49; S0
-    re-verified) and the domain's event types stay disjoint from it."""
+    growing the central enum — the count is pinned above and the domain's
+    event types stay disjoint from it."""
     from framework.events.emitter import VALID_EVENT_TYPES
     before = frozenset(VALID_EVENT_TYPES)
-    assert len(before) == 91
+    assert len(before) == CENTRAL_ENUM_SIZE
     R.resolve("tasks", "task-event", 1)
     R.event_type_known("tasks.status_changed")
     from framework.events.emitter import VALID_EVENT_TYPES as after
-    assert after == before and len(after) == 91
+    assert after == before and len(after) == CENTRAL_ENUM_SIZE
     assert R.event_types_for("tasks", "task-event", 1).isdisjoint(after)
 
 

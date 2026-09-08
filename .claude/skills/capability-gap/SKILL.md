@@ -48,6 +48,11 @@ The self-improvement loop picks up open gaps and routes by kind:
   if it passes. You'll see it appear in `.claude/skills/` / `memory/skills/`.
 - **tool / integration** → drafts a one-paragraph proposal and DMs the
   Captain a plain-language yes/no. **Nothing installs without approval.**
+- **skill / authority / information** → nothing. These three are recorded by
+  the cabinet itself when a piece of work has no holder, no permission or no
+  fact behind it; they are **surface-only** — shown on `/gaps` and never
+  proposed, DM'd or auto-applied, because none of them is a thing the loop can
+  build for itself. You record the three above; these three record themselves.
 
 ### When you've already TESTED the MCP/plugin (the one-tap self-proposal)
 

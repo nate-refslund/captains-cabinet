@@ -239,6 +239,21 @@ def _reasons(report: dict) -> set[str]:
     return {failure["reason"] for failure in report["failures"]}
 
 
+def _live_expansion_members(copy: Path, member_class: str) -> set[str]:
+    """Members the tree's OWN expansion registry adjudicates in *member_class*.
+
+    Read from the copied tree the census actually inspected, so the two answers
+    come from one source of truth and this helper cannot drift away from the
+    thing it is checking.
+    """
+    data = yaml.safe_load((copy / CONTRACT_REL).read_text())
+    return {
+        row["member"]
+        for row in (data.get("expansions") or [])
+        if row.get("member_class") == member_class
+    }
+
+
 class TestTheNamedResidual:
     """The purchase four shipped claim surfaces named as still open."""
 
@@ -252,19 +267,24 @@ class TestTheNamedResidual:
 
         report = _census(copy)
         assert report["ok"] is True, report["failures"]
-        # The LIVE registry's adjudicated members, and it grows by one each time
-        # an expansion lands. What the arm proves is unchanged and is the whole
-        # point: the PLANTED module is absent from this list, because a baseline
-        # line plus a raised ceiling bought it invisibly.
-        assert report["surplus_members"]["framework_production_modules"] == [
-            "framework/authority/ownership.py",
-            "framework/missions/receipts.py",
-            "framework/onboarding/estate.py",
-            "framework/onboarding/salience.py",
-            "framework/outcomes/__init__.py",
-            "framework/outcomes/ratify.py",
-            "framework/sources/local.py",
-        ], "the planted module must NOT be surplus — that is the whole purchase"
+        # The LIVE registry's adjudicated members, READ BACK FROM THE REGISTRY
+        # rather than typed here. It grows by one every time an expansion lands,
+        # and each time it was a literal this arm went red for a reason that had
+        # nothing to do with what it measures — the last author to hit that
+        # re-typed the list, which only moves the same breakage to the next
+        # expansion (2026-09-07, framework/missions/claims.py).
+        #
+        # Still EXACT equality, not a membership check: the arm's whole claim is
+        # that a baseline line plus a raised ceiling bought the PLANTED module
+        # invisibly, so it must be absent from the surplus while every
+        # adjudicated member is present. `in`/`not in` alone would pass on a
+        # tree whose surplus had grown something nobody registered.
+        assert set(report["surplus_members"]["framework_production_modules"]) == (
+            _live_expansion_members(copy, "framework_production_modules")
+        ), "the planted module must NOT be surplus — that is the whole purchase"
+        assert "framework/synthetic_purchase_probe.py" not in (
+            report["surplus_members"]["framework_production_modules"]
+        )
 
     def test_the_ratchet_reds_it(self, repo):
         copy, base = repo

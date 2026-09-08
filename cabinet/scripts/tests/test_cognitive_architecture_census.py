@@ -331,7 +331,12 @@ def test_live_allowance_raises_only_its_named_effective_budget(tmp_path: Path):
     assert report["ok"] is True
     assert report["maximums"]["claude_skills"] == 23
     assert report["maximums"]["organ_manifests"] == 5
-    assert report["maximums"]["central_event_types"] == 91
+    # 91 -> 93 (2026-09-07): the contract's own maximum was raised VISIBLY for
+    # work_item_claim_renewed / work_item_claim_released. These three are
+    # deliberate literals — the arm's whole claim is that an allowance naming
+    # claude_skills raises claude_skills and NOTHING else, and reading each
+    # number back out of the same contract the census read would assert nothing.
+    assert report["maximums"]["central_event_types"] == 93
 
 
 def test_expired_allowance_fails_even_when_observed_is_within_base_budget(tmp_path: Path):
@@ -1064,6 +1069,25 @@ def test_unregistered_set_member_is_red(tmp_path: Path):
     } == {(SYNTHETIC_CLASS, SYNTHETIC_MEMBER, "unregistered set member")}
 
 
+def _live_expansion_members(member_class: str) -> set:
+    """Members the REAL contract already registers in *member_class*.
+
+    Read from the shipped contract rather than hardcoded, and deliberately from
+    a different input than the census report this test checks: the copied tree
+    carries the live framework, so its surplus is the live rows PLUS whatever a
+    fixture plants. Spelling the live half as a literal was what made the
+    assertion below break the first time a real event type was registered here
+    (2026-09-07, work_item_claim_renewed/_released), and re-spelling it would
+    only move the same breakage to the next one.
+    """
+    data = yaml.safe_load(CONTRACT.read_text())
+    return {
+        row["member"]
+        for row in (data.get("expansions") or [])
+        if row.get("member_class") == member_class
+    }
+
+
 def test_registered_set_member_is_green(tmp_path: Path):
     """POSITIVE control: the same tree, the same member, one adjudicated row."""
 
@@ -1073,7 +1097,13 @@ def test_registered_set_member_is_green(tmp_path: Path):
     report = census.inspect_repository(tree)
 
     assert report["ok"] is True, report["failures"]
-    assert report["surplus_members"][SYNTHETIC_CLASS] == [SYNTHETIC_MEMBER]
+    # EXACT, not a membership check: the surplus is the live registry's members
+    # for this class plus the one this fixture planted, and nothing else. An
+    # `in` test here would pass on a tree whose surplus had grown an
+    # unaccounted member, which is the whole thing the registry exists to red.
+    assert set(report["surplus_members"][SYNTHETIC_CLASS]) == (
+        _live_expansion_members(SYNTHETIC_CLASS) | {SYNTHETIC_MEMBER}
+    )
 
 
 def test_expansion_row_naming_an_absent_member_is_red(tmp_path: Path):

@@ -141,3 +141,136 @@ def test_invalid_status_still_rejected(env):
     r = _run(["sys-001-parity", "--status", "shipped"], e)
     assert r.returncode == 2
     assert _events(events) == []
+
+
+# ---------------------------------------------------------------------------
+# The claim fence (2026-09-07)
+# ---------------------------------------------------------------------------
+
+
+def _claim(env_pair, task_id, outcome_id, holder):
+    """Take a real claim in the same ledger the script will write to."""
+    e, _ = env_pair
+    source = (
+        "import json, sys; sys.path.insert(0, %r)\n"
+        "from framework.missions import claims\n"
+        "print(json.dumps(claims.claim(%r, %r, %r)))\n"
+    ) % (str(REPO), task_id, outcome_id, holder)
+    out = subprocess.run(
+        [os.environ.get("CABINET_PYTHON", "python3.12"), "-c", source],
+        env=e, capture_output=True, text=True, timeout=120,
+    )
+    assert out.returncode == 0, out.stderr
+    return json.loads(out.stdout.strip())
+
+
+def test_completion_with_the_live_token_is_accepted(env):
+    """RED before: --claim did not exist and the script emitted unconditionally."""
+    e, events = env
+    held = _claim(env, "alpha-001-ci", "outcome-alpha-001", "holder-1")
+    r = _run(["alpha-001-ci", "--status", "done", "--evidence", "green",
+              "--claim", held["claim_id"]], e)
+    assert r.returncode == 0, r.stderr
+    completed = [ev for ev in _events(events) if ev["event_type"] == "work_item_completed"]
+    assert len(completed) == 1
+    assert completed[0]["payload"]["claim_id"] == held["claim_id"]
+    assert completed[0]["payload"]["task_index"] == 1
+    assert completed[0]["actor"] == "test-officer"
+
+
+def test_a_stale_token_exits_4_and_emits_nothing(env):
+    e, events = env
+    _claim(env, "alpha-001-ci", "outcome-alpha-001", "holder-1")
+    r = _run(["alpha-001-ci", "--status", "done", "--claim", "not-the-token"], e)
+    assert r.returncode == 4, (r.returncode, r.stdout, r.stderr)
+    assert [ev for ev in _events(events) if ev["event_type"] == "work_item_completed"] == []
+
+
+def test_a_second_completion_exits_4_and_the_replay_still_counts_one(env):
+    """RED before: the script emitted a second work_item_completed every time."""
+    e, events = env
+    held = _claim(env, "alpha-001-ci", "outcome-alpha-001", "holder-1")
+    first = _run(["alpha-001-ci", "--status", "done", "--claim", held["claim_id"]], e)
+    assert first.returncode == 0, first.stderr
+    second = _run(["alpha-001-ci", "--status", "done", "--claim", held["claim_id"]], e)
+    assert second.returncode == 4, (second.returncode, second.stderr)
+    completed = [ev for ev in _events(events) if ev["event_type"] == "work_item_completed"]
+    assert len(completed) == 1
+
+
+def test_a_completion_with_no_token_while_a_claim_is_live_exits_4(env):
+    e, events = env
+    _claim(env, "alpha-001-ci", "outcome-alpha-001", "holder-1")
+    r = _run(["alpha-001-ci", "--status", "done"], e)
+    assert r.returncode == 4, (r.returncode, r.stderr)
+    assert [ev for ev in _events(events) if ev["event_type"] == "work_item_completed"] == []
+
+
+def test_the_token_can_come_from_the_environment(env):
+    e, events = env
+    held = _claim(env, "alpha-001-ci", "outcome-alpha-001", "holder-1")
+    e = dict(e)
+    e["CABINET_CLAIM_ID"] = held["claim_id"]
+    r = subprocess.run(["bash", str(SCRIPT), "alpha-001-ci", "--status", "done"],
+                       env=e, capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stderr
+    completed = [ev for ev in _events(events) if ev["event_type"] == "work_item_completed"]
+    assert len(completed) == 1
+
+
+def test_a_wrong_holder_with_a_valid_token_exits_4(env):
+    e, events = env
+    held = _claim(env, "alpha-001-ci", "outcome-alpha-001", "holder-1")
+    e = dict(e)
+    e["CABINET_WORKER_ID"] = "somebody-else"
+    r = subprocess.run(
+        ["bash", str(SCRIPT), "alpha-001-ci", "--status", "done",
+         "--claim", held["claim_id"]],
+        env=e, capture_output=True, text=True, timeout=120,
+    )
+    assert r.returncode == 4, (r.returncode, r.stderr)
+    assert [ev for ev in _events(events) if ev["event_type"] == "work_item_completed"] == []
+
+
+def test_an_unclaimed_task_still_completes_without_a_token(env):
+    """The compatibility path: nothing holds it, so nothing is being fenced."""
+    e, events = env
+    r = _run(["alpha-001-uat", "--status", "done", "--evidence", "signed off"], e)
+    assert r.returncode == 0, r.stderr
+    completed = [ev for ev in _events(events) if ev["event_type"] == "work_item_completed"]
+    assert len(completed) == 1
+    assert completed[0]["payload"]["claim_id"] is None
+
+
+def test_verified_is_not_fenced_on_the_executors_claim(env):
+    """Separation of duties: the verifier holds no claim and must not need one."""
+    e, events = env
+    _claim(env, "alpha-001-ci", "outcome-alpha-001", "holder-1")
+    r = _run(["alpha-001-ci", "--status", "verified", "--actor", "auditor",
+              "--evidence", "checked"], e)
+    assert r.returncode == 0, r.stderr
+    verified = [ev for ev in _events(events) if ev["event_type"] == "work_item_verified"]
+    assert len(verified) == 1
+    assert verified[0]["actor"] == "auditor"
+
+
+def test_the_script_pins_its_interpreter():
+    """A0.3, for THIS script: no bare `python3` from whatever the PATH offers.
+
+    SCOPE, stated so this cannot be read as covering more than it does. A0.3
+    also names two dashboard exec strings (`actions/gaps.ts`,
+    `lib/capability-gaps.ts`), which are the GAP unit's files, not this one's —
+    widening this sensor to them would make it a red assertion about code no
+    commit on this branch may touch. They are an open residual against A0.3 and
+    are named as one on the PR; a checked file here is not a claim about them.
+    """
+    text = SCRIPT.read_text()
+    assert 'CABINET_PY="${CABINET_PYTHON:-python3.12}"' in text
+    offenders = [
+        (number, line)
+        for number, line in enumerate(text.splitlines(), 1)
+        if "python3" in line
+        and "CABINET_PYTHON" not in line
+        and not line.lstrip().startswith("#")
+    ]
+    assert offenders == [], "unpinned python3 in an unlocked script: %r" % offenders
