@@ -544,6 +544,17 @@ cites.
 - **Anchor:** `RESIDUAL, stated rather than implied: as of this change the core's CLI`
 - **Retirement:** `journey._cli` includes `exc.detail` in its refusal object (bounded there, not only here), and an arm drives the REAL core end to end and asserts the card renders the core's target rather than the reconstructed one. In the SAME commit this row flips to `retired` and the paragraph carrying the anchor shrinks to what is still true.
 
+### RES-028 — the phase-1 drill runs the expiry race at ONE lease length, not two
+
+- **Phase:** phase-1 acceptance drill, U4 authored-red (2026-09-07)
+- **Status:** open
+- **Closed:** the race itself is proved. P3/P4 kill the holder INSIDE the work while a renewal tick is due (tick 1 s inside a 3 s lease), wait past the lease inline, then assert that the expiry released the dead holder's claim, that the resuming holder took a NEW claim id, that it finished with no card, prompt or argument of its own — its only input is the durable state — and that the dead holder's late completion with the token it still remembers is refused with nothing written to the ledger.
+- **Open:** the second, shorter race the contract's §4 P4 ends with — "(task-002 repeats the race with lease 2 s.)" — is not run. The expiry path is proved at one lease length rather than two.
+- **Why open:** amendment A2.3 spends task-002 on the locked-hook stage instead ("the drill's hook stage claims task-002 THROUGH the hook"), the amendment supersedes the parenthetical, and the hook stage is the more valuable of the two because it is the path an officer actually walks. The seeded card carries two nodes and both are now spent, so repeating the race would mean a third node and a further stage on a drill whose cost is paid on every run — for a variation of a property already proved.
+- **Declared at:** `cabinet/scripts/drills/one-responsibility.sh`
+- **Anchor:** `RESIDUAL, written down rather than left to be re-derived`
+- **Retirement:** seed a third node on the drill's card and run the P4 race against it at lease 2 s, asserting the same released / new-claim / refused-late-token set; or the contract drops the parenthetical explicitly. In the SAME commit, delete the header paragraph carrying the anchor and flip this row to `retired`.
+
 ## Absorption — how a wave's residuals get here (COG-5 W2 done)
 
 The rule this section originally stated as a future obligation has now been
