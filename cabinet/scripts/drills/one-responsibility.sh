@@ -57,15 +57,17 @@
 #       P2 exit 20; a copy with the pull path removed must make the drill exit
 #       21; a copy carrying a stub ratify module lets P1 pass so P2's red is
 #       reachable on a tree that has no subjects at all.
-#   CABINET_DASH_RESTART_CMD
-#       the command the update path must run to restart the dashboard. The
-#       drill points it at its own stub server so the health gate can be made
-#       to go red on purpose (see P7). A5.14 renames the update path's two
-#       health-gate command seams to CABINET_UPDATE_TEST_*; P7 REFUSES TO RUN
-#       its gate-red leg unless the installed updater actually reads the name
-#       driven here, because a seam nothing reads would let the dashboard
-#       restart normally and turn the whole rollback arm into a measurement of
-#       a healthy server.
+#   CABINET_UPDATE_TEST_RESTART_CMD
+#       the command the update path runs INSTEAD of restarting the dashboard.
+#       The drill points it at its own stub server so the health gate can be
+#       made to go red on purpose (see P7). The name is the update path's own
+#       (cabinet-update.sh restart_dashboard) and carries the A5.14 prefix,
+#       because a variable that can decide a leg of the health gate must never
+#       read as a production knob. This drill first drove a dashboard-shaped
+#       name of its own invention that nothing on the other side read; the
+#       guard below refused the leg rather than measuring a dashboard that
+#       restarted perfectly well, and the reconciliation kept the update
+#       path's naming law and changed the side that was wrong — this one.
 #   CABINET_DRILL_DASH_PORT
 #       pin the stub server's port instead of picking a free one.
 #
@@ -137,6 +139,42 @@ BOX_PY="python3"          # what the locked hook pins (session-task-inject.sh:28
 # Read every CABINET_* input the drill takes BEFORE the environment is scrubbed
 # — the scrub is what makes the run hermetic, and it would eat these too.
 DASH_PORT_PIN="${CABINET_DRILL_DASH_PORT:-}"
+
+# THE BOX INTERPRETER'S LIBRARIES, resolved while the operator's own HOME is
+# still in place. `pip install --user` puts them under a directory DERIVED FROM
+# HOME (measured here: /Users/<me>/Library/Python/3.9/lib/python/site-packages),
+# and the hermetic scrub below repoints HOME at the scratch tree — so the locked
+# hook's own python3 loses pyyaml and P2h reds with "the locked hook's
+# interpreter cannot import the pull path", blaming a subject that is perfectly
+# 3.9-clean for an interpreter the DRILL stripped of its libraries. Scrubbing
+# HOME exists to keep this deployment's state out of the run, not to model a
+# python installation nobody has: production runs the hook under the officer's
+# real HOME, where these libraries are visible. PYTHONPATH restores exactly
+# that and nothing else — it is handed to the hook legs alone, never to the
+# python3.12 legs (a 3.9 site directory on a 3.12 path is a different bug), and
+# an interpreter that genuinely cannot import them yields an empty value here,
+# so a real ceremony-pending host still reds for its own true reason.
+# NO APOSTROPHE BELOW, and none in any heredoc nested inside $( ): bash 3.2
+# (the /bin/bash this ships against) keeps tracking quote characters inside a
+# command substitution even in a quoted heredoc body, so one contraction in a
+# python comment makes the WHOLE script a syntax error 150 lines later.
+# Measured on this host: "line 299: syntax error near unexpected token `(".
+BOX_PY_DEPS="$("$BOX_PY" - 2>/dev/null <<'PY' || true
+import os
+paths = []
+for name in ("yaml",):   # the only third-party import the pull path makes
+    try:
+        mod = __import__(name)
+    except Exception:
+        continue
+    f = getattr(mod, "__file__", None)
+    if f:
+        paths.append(os.path.dirname(os.path.dirname(os.path.abspath(f))))
+print(os.pathsep.join(dict.fromkeys(paths)))
+PY
+)"
+HOOK_PY_ENV=""
+[ -n "$BOX_PY_DEPS" ] && HOOK_PY_ENV="PYTHONPATH='$BOX_PY_DEPS'"
 # The kill/resume cadence: tick 1s inside a short lease, so a lease that only
 # renews when nearly spent shows up as a defect rather than as a slow test. The
 # contract's number is 3; a loaded host may need a longer window to observe the
@@ -342,6 +380,19 @@ else
     || fail 64 hatch "could not copy the gitless tree"
 fi
 note_stage hatch "staged from $TREE_SOURCE"
+
+# THE SHIPPED TREE, kept before anything runs in it. P7 cuts its bundles from
+# HERE and never from $ROOT: $ROOT becomes a RUNNING cabinet a few lines below
+# (the hatch writes instance/config/cabinet-init.answers.yml, a lock file, a
+# roster), and the exporter refuses a source that still carries live instance
+# state — "LIVE INSTANCE FILE SURVIVED THE PASS", measured. That refusal is the
+# exporter being right: a bundle is a cut of a checkout, not a copy of somebody
+# running deployment. This copy is taken before the manifest scrub too, so the
+# exporter does its own deleting exactly as it does on a real cut.
+SHIPPED="$SCRATCH/shipped"
+mkdir -p "$SHIPPED"
+tar -cf - -C "$ROOT" . | tar -xf - -C "$SHIPPED" \
+  || fail 64 hatch "could not keep a copy of the shipped tree for the update leg"
 
 # A fresh hatch is what a STRANGER gets, and the export's own manifest is the
 # authoritative answer to what a stranger does not get: every `delete
@@ -673,7 +724,44 @@ PY
 read_verdict P2 20 $? "$SCRATCH/p2-assert.out" "$SCRATCH/p2-assert.err"
 vfield P2 20 winner
 WINNER="$V_FIELD"
-pass_stage P2 "8 holders, 1 claim on $T1, holder $WINNER"
+vfield P2 20 claim_id
+P2_CLAIM="$V_FIELD"
+
+# THE RACE IS OVER AND THE WINNER IS STILL HOLDING THE ITEM. A claim outlives
+# the process that took it — that is the whole point of a lease — so on the
+# production default the item stays w-something's for 900 s and every later
+# stage that needs to claim it is handed nothing. Measured: P3 red with
+# `"task": null` because the pull path was working exactly as specified.
+# The winner therefore stands down through the claim module's own
+# `release()` — "a caller that knows it is done can hand the task back before
+# its lease runs out" (framework/missions/claims.py:615-622). The two
+# alternatives are both worse: racing on a short lease makes P2 fail for the
+# host's speed (eight interpreters must all reach the pull path inside the
+# lease or a second one takes over an expired claim and the race reports two
+# winners), and waiting out a production lease is not a bounded poll. The
+# stand-down reason is `released`, never `expired`, so P4's expired-release
+# arm still has exactly one row to find and it is the killed holder's.
+ROOTDIR="$ROOT" TID="$T1" CLAIMID="$P2_CLAIM" HOLDER="$WINNER" "$PY" - \
+  > "$SCRATCH/p2-standdown.out" 2> "$SCRATCH/p2-standdown.err" <<'PY'
+import json, os, sys
+from pathlib import Path
+root = Path(os.environ["ROOTDIR"]); sys.path.insert(0, str(root))
+from framework.missions.claims import live_claim, release
+tid, claim_id, holder = os.environ["TID"], os.environ["CLAIMID"], os.environ["HOLDER"]
+problems = []
+if not release(claim_id, holder, "released"):
+    problems.append("the race winner %r could not hand %s back (claim %r); the kill stage "
+                    "needs a free item and would otherwise measure a pull that found nothing"
+                    % (holder, tid, claim_id))
+live = live_claim(tid)
+if live:
+    problems.append("%s is still held by %r after the winner stood down"
+                    % (tid, live.get("holder")))
+print(json.dumps({"code": 0 if not problems else 20, "problems": problems}, sort_keys=True))
+print(os.environ["DRILL_VERDICT_SENTINEL"])
+PY
+read_verdict P2 20 $? "$SCRATCH/p2-standdown.out" "$SCRATCH/p2-standdown.err"
+pass_stage P2 "8 holders, 1 claim on $T1, holder $WINNER; the winner stood down so the kill stage starts from a free item"
 
 # ---------------------------------------------------------------------------
 # P2b — the assignment fallback. A real card carries string criteria and
@@ -714,9 +802,20 @@ if node2.assigned_role is not None:
     problems.append("two roles on the roster and an unowned node was assigned to %r; "
                     "with no owner and no match it must become a gap" % node2.assigned_role)
 res = observe_holder_gaps([m2], {slug, "drill-second"}, actor="drill")
-if res.get("opened") != 1:
-    problems.append("observe_holder_gaps opened %r holder gaps on a two-role roster, expected 1"
-                    % res.get("opened"))
+# `opened` is the LIST of gap ids the pass opened (gaps.py:229 — "of gap ids,
+# each subject appearing at most once across the three"), not a count. This
+# drill first read it as a count and reported a correct single gap as wrong,
+# which is a sensor that reds on a subject doing exactly what it promises.
+# Anything that is not a list is a shape change, and it is named as one rather
+# than crashing this block with a TypeError the verdict would report as
+# "the assertion could not run".
+opened = res.get("opened")
+if not isinstance(opened, list):
+    problems.append("observe_holder_gaps returned %r for 'opened'; the contract is a list "
+                    "of gap ids and this drill counts it as one" % (opened,))
+elif len(opened) != 1:
+    problems.append("observe_holder_gaps opened %d holder gaps (%r) on a two-role roster, "
+                    "expected exactly 1" % (len(opened), opened))
 from framework.learning.capability_gaps import project_gaps
 no_match = [g for g in project_gaps() if "no_match" in json.dumps(g, default=str)]
 if len(no_match) != 1:
@@ -942,7 +1041,7 @@ pass_stage P4 "expired lease released w1's claim; w2 took a new one and finished
 # ---------------------------------------------------------------------------
 HOOK="$ROOT/cabinet/scripts/hooks/session-task-inject.sh"
 [ -f "$HOOK" ] || fail 20 P2h "the locked hook is absent at cabinet/scripts/hooks/session-task-inject.sh"
-( cd "$ROOT" && "$BOX_PY" -c "
+( cd "$ROOT" && PYTHONPATH="$BOX_PY_DEPS" "$BOX_PY" -c "
 import sys; sys.path.insert(0, '$ROOT')
 from framework.missions.session_bridge import get_next_task, format_task_for_session
 " ) > "$SCRATCH/p2h-import.out" 2>&1
@@ -955,10 +1054,10 @@ rm -f "$SENTINEL"
 unset CABINET_WORKER_ID 2>/dev/null || true
 # Two ticks from two DISTINCT parent shells with no worker id set: two live
 # sessions of one role must still resolve to one claim.
-bash -c "printf '{\"session_id\":\"a\"}' | OFFICER_NAME='$SLUG' CABINET_ROOT='$ROOT' bash '$HOOK'" \
+bash -c "printf '{\"session_id\":\"a\"}' | $HOOK_PY_ENV OFFICER_NAME='$SLUG' CABINET_ROOT='$ROOT' bash '$HOOK'" \
   > "$SCRATCH/p2h-a.json" 2>"$SCRATCH/p2h-a.err" &
 HA=$!
-bash -c "printf '{\"session_id\":\"b\"}' | OFFICER_NAME='$SLUG' CABINET_ROOT='$ROOT' bash '$HOOK'" \
+bash -c "printf '{\"session_id\":\"b\"}' | $HOOK_PY_ENV OFFICER_NAME='$SLUG' CABINET_ROOT='$ROOT' bash '$HOOK'" \
   > "$SCRATCH/p2h-b.json" 2>"$SCRATCH/p2h-b.err" &
 HB=$!
 WORKER_PIDS="$WORKER_PIDS $HA $HB"
@@ -1030,7 +1129,7 @@ HOOK_CLAIM="$V_FIELD"
 # a hook that re-injects what it already holds re-injects it for the whole life
 # of the session.
 rm -f "$SENTINEL"
-CABINET_WORKER_ID="$HOOK_HOLDER" bash -c "printf '{\"session_id\":\"a\"}' | OFFICER_NAME='$SLUG' CABINET_ROOT='$ROOT' bash '$HOOK'" \
+CABINET_WORKER_ID="$HOOK_HOLDER" bash -c "printf '{\"session_id\":\"a\"}' | $HOOK_PY_ENV OFFICER_NAME='$SLUG' CABINET_ROOT='$ROOT' bash '$HOOK'" \
   > "$SCRATCH/p2h-again.json" 2>"$SCRATCH/p2h-again.err"
 AGAIN_RC=$?
 # This leg is the one where an empty output IS the pass condition, so a leg
@@ -1192,13 +1291,41 @@ else
   mkdir -p "$INSTALL" "$MUT" "$LOCKMUT"
   tar -cf - -C "$ROOT" --exclude='./events' --exclude='./.git' . | tar -xf - -C "$INSTALL" \
     || fail 50 P7 "could not stage the scratch install"
-  tar -cf - -C "$ROOT" --exclude='./events' --exclude='./.git' . | tar -xf - -C "$MUT" \
+  tar -cf - -C "$SHIPPED" --exclude='./.git' . | tar -xf - -C "$MUT" \
     || fail 50 P7 "could not stage the shipped tree"
-  tar -cf - -C "$ROOT" --exclude='./events' --exclude='./.git' . | tar -xf - -C "$LOCKMUT" \
+  tar -cf - -C "$SHIPPED" --exclude='./.git' . | tar -xf - -C "$LOCKMUT" \
     || fail 50 P7 "could not stage the locked-path tree"
   MUTATED_REL="framework/missions/session_bridge.py"
   printf '\n# the one changed line this bundle ships\n' >> "$MUT/$MUTATED_REL"
   printf '\n# a change under the locked hooks directory\n' >> "$LOCKMUT/cabinet/scripts/hooks/session-task-inject.sh"
+
+  # A BUNDLE IS A CUT OF A CHECKOUT. `publish` runs the exporter, and the
+  # exporter cuts `git archive HEAD` (egg-export.sh:154-156); publish refuses a
+  # source with no .git before it ever gets there (cabinet-update.sh:343).
+  # This drill handed it a tar copy and P7 red with "--from is not a checkout"
+  # — the drill was wrong, not the update path: the contract's P7 is "two
+  # egg-export.sh --bundle cuts of HEAD (second with one framework file
+  # altered)", and a cut of HEAD needs a HEAD. Each mutated tree therefore
+  # becomes a throwaway one-commit repository, which is also what gives the two
+  # bundles two DISTINCT source shas — the ids the apply legs address them by.
+  command -v git >/dev/null 2>&1 \
+    || fail 50 P7 "this host has no git, and a bundle is a cut of a checkout — the update leg cannot be run here (use --skip-update, which says so rather than passing)"
+  # `add -A -f`, not `add -A`: the tree carries paths the REAL repository both
+  # tracks and gitignores (shared/interfaces/*.md), and a throwaway repo that
+  # honoured the ignore file would commit a HEAD with those files missing —
+  # the exporter then reds with "expected in export but missing", measured.
+  # This repository exists for exactly one job: give the exporter a HEAD that
+  # is the tree it was handed.
+  commit_tree() {  # commit_tree <dir> <subject>
+    git -C "$1" init -q >> "$SCRATCH/p7-git.log" 2>&1 \
+      && git -C "$1" add -A -f >> "$SCRATCH/p7-git.log" 2>&1 \
+      && git -C "$1" -c user.email=drill@localhost -c user.name=drill \
+             -c commit.gpgsign=false commit -q -m "$2" >> "$SCRATCH/p7-git.log" 2>&1
+  }
+  commit_tree "$MUT" "the bundle under test" \
+    || fail 50 P7 "could not make the shipped tree a checkout: $(tr '\n' ' ' < "$SCRATCH/p7-git.log" | tail -c 400)"
+  commit_tree "$LOCKMUT" "the locked-path bundle under test" \
+    || fail 50 P7 "could not make the locked-path tree a checkout: $(tr '\n' ' ' < "$SCRATCH/p7-git.log" | tail -c 400)"
 
   # A preserved path with something in it: an update that quietly emptied this
   # would be the worst possible pass. The canary is a member of the same
@@ -1225,7 +1352,7 @@ else
     --state-file "$STUB_STATE" --service "$SERVICE" \
     || fail 50 P7 "the stub health server would not start on $PORT"
   export CABINET_DASHBOARD_PORT="$PORT"
-  export CABINET_DASH_RESTART_CMD="$PY $LIB_DIR/stub_dashboard.py restart --port $PORT --stamp-file $STAMP_FILE --state-file $STUB_STATE --service $SERVICE"
+  export CABINET_UPDATE_TEST_RESTART_CMD="$PY $LIB_DIR/stub_dashboard.py restart --port $PORT --stamp-file $STAMP_FILE --state-file $STUB_STATE --service $SERVICE"
 
   ( cd "$ROOT" && bash "$UPDATER" publish --from "$MUT" --to "$INSTALL" ) \
     > "$SCRATCH/p7-publish.out" 2>&1
@@ -1234,11 +1361,15 @@ else
 
   BUNDLE_SHA="$(CABINET_ROOT="$INSTALL" bash "$UPDATER" status --json 2>/dev/null | "$PY" -c '
 import json, sys
+# `status --json` names the bundle id `sha` on each inbox row and puts the
+# newest one under `latest` (cabinet-update.sh:426, :458). This drill read
+# `latest.source_sha` — the manifest key, not the status key — and got an
+# empty id from a publish that had worked perfectly.
 try:
     d = json.load(sys.stdin)
 except Exception:
     print(""); raise SystemExit(0)
-print(d.get("latest", {}).get("source_sha") or d.get("latest_sha") or "")
+print((d.get("latest") or {}).get("sha") or "")
 ')"
   [ -n "$BUNDLE_SHA" ] || fail 50 P7 "the inbox reports no latest bundle after publish"
   printf '%s\n' "$BUNDLE_SHA" > "$STAMP_FILE"
@@ -1255,9 +1386,8 @@ print(d.get("latest", {}).get("source_sha") or d.get("latest_sha") or "")
   # sensor pointed at a seam that does not exist is the disabled sensor this
   # unit exists to be the opposite of. Whoever lands the updater reconciles the
   # name here in the same commit.
-  grep -q 'CABINET_DASH_RESTART_CMD' "$INSTALL/cabinet/scripts/cabinet-update.sh" \
-       "$INSTALL/cabinet/scripts/lib/dashboard.sh" 2>/dev/null \
-    || fail 50 P7 "nothing in the installed update path reads CABINET_DASH_RESTART_CMD, so the gate-red leg would drive nothing and the rollback arm would be measuring a dashboard that restarted perfectly well (A5.14 renames the update path's command seams to CABINET_UPDATE_TEST_* — reconcile the name here)"
+  grep -q 'CABINET_UPDATE_TEST_RESTART_CMD' "$INSTALL/cabinet/scripts/cabinet-update.sh" \
+    || fail 50 P7 "nothing in the installed update path reads CABINET_UPDATE_TEST_RESTART_CMD, so the gate-red leg would drive nothing and the rollback arm would be measuring a dashboard that restarted perfectly well — reconcile the name (cabinet/scripts/tests/test_drill_wiring.py::test_the_drill_and_the_updater_name_the_same_restart_seam is the same claim, mechanically, and reds first)"
 
   # (a) the gate goes RED because the restart did not happen: the old process
   # answers, with the old stamp and the old start time. The apply must roll the
@@ -1269,7 +1399,7 @@ print(d.get("latest", {}).get("source_sha") or d.get("latest_sha") or "")
   # back, and only a delta says that.
   event_count P7 50 cabinet_update_rolled_back
   ROLLED_BEFORE="$EV_COUNT"
-  ( cd "$INSTALL" && CABINET_ROOT="$INSTALL" CABINET_DASH_RESTART_CMD="/usr/bin/true" \
+  ( cd "$INSTALL" && CABINET_ROOT="$INSTALL" CABINET_UPDATE_TEST_RESTART_CMD="/usr/bin/true" \
       bash "$UPDATER" apply --bundle "$BUNDLE_SHA" --door terminal $REBUILD_ARG ) \
     > "$SCRATCH/p7-gate-red.out" 2>&1
   RED_RC=$?
@@ -1317,11 +1447,15 @@ print(d.get("latest", {}).get("source_sha") or d.get("latest_sha") or "")
   [ "$LOCK_PUB_RC" -eq 0 ] || fail 50 P7 "publishing the locked-path bundle exited $LOCK_PUB_RC, so the refusal leg would be run against no bundle at all: $(tr '\n' ' ' < "$SCRATCH/p7-publish-locked.out" | cut -c1-400)"
   LOCK_SHA="$(CABINET_ROOT="$INSTALL" bash "$UPDATER" status --json 2>/dev/null | "$PY" -c '
 import json, sys
+# `status --json` names the bundle id `sha` on each inbox row and puts the
+# newest one under `latest` (cabinet-update.sh:426, :458). This drill read
+# `latest.source_sha` — the manifest key, not the status key — and got an
+# empty id from a publish that had worked perfectly.
 try:
     d = json.load(sys.stdin)
 except Exception:
     print(""); raise SystemExit(0)
-print(d.get("latest", {}).get("source_sha") or d.get("latest_sha") or "")
+print((d.get("latest") or {}).get("sha") or "")
 ')"
   [ -n "$LOCK_SHA" ] || fail 50 P7 "the inbox reports no bundle after the locked-path publish; an apply with an empty bundle id would be refused for the wrong reason and the drill would call it a locked-path refusal"
   event_count P7 50 cabinet_update_refused
