@@ -79,14 +79,31 @@ done
 # Parsed by cabinet/scripts/tests/test_germline_bundle.py so the test and the
 # ceremony can never describe different bundles. Both digests cover the WHOLE
 # file, not the hunk. `landed` = the post-image is already on master and one
-# Captain window re-materialises it; `proposed` = these bytes exist only here.
+# Captain window re-materialises it with `git checkout`; `proposed` = these
+# bytes exist only here and the window would have to APPLY them.
 #   G1 pre-image  = cabinet/scripts/start-officer-mac.sh at 00c3acd3^
 #   G1 post-image = the same file at 00c3acd3 (on master today)
-#   G3 pre-image  = cabinet/scripts/hooks/session-task-inject.sh on master today
-#   G3 post-image = what G3.diff produces from it
+#   G3 pre-image  = cabinet/scripts/hooks/session-task-inject.sh at 8bd3e0c2^
+#   G3 post-image = the same file at 8bd3e0c2 (on master today) — the bytes
+#                   G3.diff produces from the pre-image, landed in the
+#                   unlocked lane per contract amendment A7.7 (the hooks
+#                   directory's schg lock is a fact of the LIVE checkout, not
+#                   of git; precedent 5338cb42).
+# BOTH rows are `landed` as of A7.7, so the ceremony re-materialises both the
+# same way and no diff is applied inside a window that cannot be re-opened.
+# The diffs stay in this directory as the apply contract and as the rollback
+# handle (`git apply --reverse`), and verify.sh still applies them forward on
+# any tree that is at the pre-image — which is what a box with no window since
+# the landing is.
+# The rows named here are also the ONLY paths this package's landing
+# acknowledgement can vouch for (A7.6): the guard in
+# cabinet/scripts/tests/test_germline_bundle.py reads this table, never the
+# document's prose, so a locked path that the doc merely MENTIONS — the
+# dropped G2 residual, or germline-lock.sh itself — can never ride the
+# exemption.
 BUNDLE_ROWS="
 G1|cabinet/scripts/start-officer-mac.sh|856db3fcd8952fbe21db051fd6597c1aaad81b9e2147c262f78378d3c398b1bd|bd5dcd464e9b81b694c5a24d2f66d3db0a61473cbff9804b0606b1656d481345|landed
-G3|cabinet/scripts/hooks/session-task-inject.sh|8e37461fcb807a269cb6e59a6b7825e99cd592651fce6e6a947bd03fbafc553c|5f2e177b80d0e49949d9bde24b8ee7964aeea21b6281d6699913320e31934297|proposed
+G3|cabinet/scripts/hooks/session-task-inject.sh|8e37461fcb807a269cb6e59a6b7825e99cd592651fce6e6a947bd03fbafc553c|5f2e177b80d0e49949d9bde24b8ee7964aeea21b6281d6699913320e31934297|landed
 "
 
 command -v git >/dev/null 2>&1 || { echo "REFUSED: git absent — no patch applier to ask" >&2; exit 64; }
