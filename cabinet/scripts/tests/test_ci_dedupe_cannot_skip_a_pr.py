@@ -210,10 +210,20 @@ def test_every_gate_job_is_present(workflow):
     it CI structurally cannot execute a 3.10-only construct on the pull path and
     would ship green over a tree that takes the pull down on the machine it runs
     on. It carries the SAME guard condition as every other gate job, so the arms
-    below cover it on exactly the terms they cover the rest."""
+    below cover it on exactly the terms they cover the rest.
+
+    ``responsibility-drill`` joined on 2026-09-08 (phase-1 acceptance): it runs
+    ``cabinet/scripts/drills/one-responsibility.sh`` — one declared
+    responsibility ratified, claimed once out of a crowd of eight, surviving its
+    holder being killed, finished by another holder, visible as receipts and
+    reaching an installed Cabinet — plus the claim and update-path suites whose
+    subject it walks. It is its own job rather than a step in ``framework-tests``
+    because that job already runs a 24 m median under a 40 m guard and its own
+    comments say the honest fix is a split, not another passenger. It carries
+    the SAME guard condition as every other gate job here."""
     expected = {
         "ci", "framework-tests", "null-hatch", "cognitive-phase4", "gitleaks",
-        "world-frame", "pull-path-python39",
+        "world-frame", "pull-path-python39", "responsibility-drill",
     }
     assert set(_gate_jobs(workflow)) == expected
 
