@@ -24,6 +24,12 @@ appends a line to ``claims.err`` beside the ledger: the hook that calls this
 runs on every prompt submit, and an exception there costs the session, not just
 the task.
 
+GAPS, NOT SILENCE.  Ready work with no holder on the roster is recorded as one
+keyed row per subject (``framework/missions/gaps.py``) instead of being skipped
+without a trace.  Once per invocation, on the CLAIMING path only —
+``claim=False`` is a projection and keeps its event-free contract — after the
+pull, under the claims lock, and unable to change what the pull answered.
+
 Python 3.9 compatible — the locked hook imports this module and the reference
 box's ``python3`` is 3.9.
 
@@ -49,6 +55,8 @@ if _FRAMEWORK_ROOT not in sys.path:
 
 from cabinet.scripts.lib.work_graph import WorkGraph, NodeStatus
 from framework.missions import claims as _claims
+from framework.missions import compiler as _compiler
+from framework.missions import gaps as _gaps
 from framework.missions.compiler import compile_from_yaml
 
 
@@ -168,6 +176,42 @@ def _pull_with_claim(
     return None
 
 
+# THE ROSTER IS THE COMPILER'S OWN.  `_compiler.list_roles` rather than a
+# second import of the same function: the roster that decides "is there a
+# holder" has to be the roster the compile used to stamp `assigned_role`, or a
+# caller who supplies one and not the other gets a gap naming a mismatch that
+# does not exist.
+#
+# UNDER THE CLAIMS LOCK (A3.1), which fixes the acquisition order at
+# claims -> gaps -> ledger.  It runs AFTER the pull rather than around it:
+# `claims.claim` takes the same lock, and `flock` is per open file description,
+# so a nested acquire in one process waits on itself forever.  This is the ONE
+# place the pull path holds the claims lock while recording a gap, and
+# `test_gaps.py::test_the_pull_path_takes_the_locks_in_order` pins the order
+# here.
+#
+# Never raises and never changes what the pull returns: the caller is a prompt
+# hook, and an observation that could cost a session or a task would be worse
+# than the silence it replaces.
+def _observe_gaps(missions: list[dict[str, Any]], role_slug: str) -> None:
+    """Record the pull path's silence, once per invocation."""
+    try:
+        active = {
+            role.get("slug")
+            for role in _compiler.list_roles(status="active")
+            if role.get("slug")
+        }
+        with _claims.claims_lock():
+            _gaps.observe_holder_gaps(missions, active, actor=role_slug)
+    except Exception as exc:  # noqa: BLE001 — see the module docstring
+        print(
+            "get_next_task({0!r}): holder-gap observation failed: {1}: {2}".format(
+                role_slug, type(exc).__name__, exc
+            ),
+            file=sys.stderr,
+        )
+
+
 def get_next_task(
     role_slug: str,
     cabinet_root: str | None = None,
@@ -189,7 +233,8 @@ def get_next_task(
         holder: the claim identity; derived per ``claims.derive_holder`` when
             absent, so two sessions of one role never share a claim.
         lease_s: lease override in seconds.
-        claim: when False, a side-effect-free projection — no claim, no event.
+        claim: when False, a side-effect-free projection — no claim, no event,
+            and no gap observation (that path emits).
         include_own: when True, a tick that renews its own live claim returns
             that task instead of ``None``.
 
@@ -209,14 +254,19 @@ def get_next_task(
     # The claim path is best-effort BY CONTRACT: the caller is a prompt hook.
     try:
         resolved = holder or _claims.derive_holder(role_slug)
-        return _pull_with_claim(missions, role_slug, resolved, lease_s, include_own)
+        task = _pull_with_claim(missions, role_slug, resolved, lease_s, include_own)
     except Exception as exc:  # noqa: BLE001 — see the module docstring
         _claims.record_error(
             "get_next_task({0!r}): claim path failed: {1}: {2}".format(
                 role_slug, type(exc).__name__, exc
             )
         )
-        return None
+        task = None
+
+    # Whatever the pull answered, the nodes it could not take are now a row
+    # somebody can read. Last, so nothing here can change what it answered.
+    _observe_gaps(missions, role_slug)
+    return task
 
 
 def format_task_for_session(task: dict[str, Any]) -> str:

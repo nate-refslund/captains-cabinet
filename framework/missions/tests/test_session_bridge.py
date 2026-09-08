@@ -187,6 +187,31 @@ class TestGetNextTask:
 
         assert replay(event_types=["mission_created"]) == []
 
+    def test_pull_records_holder_gap(self, outcomes_dir, event_log_dir):
+        """A §3 sensor 4: the pull path's silence leaves a row behind.
+
+        No roster and no owner on the node, which is the state a fresh
+        instance is actually in. Before this the pull answered None and wrote
+        nothing at all, so "why is nothing happening" had no answer anywhere
+        in the tree."""
+        cabinet_root = _write_outcomes(outcomes_dir, """outcomes:
+  - id: outcome-unowned
+    name: "Nobody owns this"
+    measurable_criteria:
+      - node_id: lonely-task
+        title: A thing with no owner
+        depends_on: []
+    status: active
+""")
+
+        assert get_next_task("engineering", cabinet_root=str(cabinet_root)) is None
+
+        recorded = replay(event_types=["capability_gap_recorded"])
+        assert len(recorded) == 1, recorded
+        payload = recorded[0]["payload"]
+        assert payload["kind"] == "skill"
+        assert payload["dedup_key"] == "holder:outcome-unowned:lonely-task"
+
     def test_claim_false_is_side_effect_free(
         self, outcomes_dir, sample_roles, monkeypatch, event_log_dir,
     ):

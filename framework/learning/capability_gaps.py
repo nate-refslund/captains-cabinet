@@ -518,11 +518,12 @@ def record_gap(need: str, kind: str | None = None, evidence: str = "",
     the contract's shape, not a defect): a keyed gap's `hit_count` stays 1 for
     its whole life. `project_gaps` ranks by `-hit_count` — frequency = priority
     for free-text gaps — so a standing condition observed on every tick sorts
-    BELOW a free-text gap seen twice. Nothing keyed is emitted today; when
-    U3b's producer starts emitting keyed gaps, the `/gaps` ranking is the call
-    to make then (rank keyed rows by `last_seen`/age, or accept the order).
-    Deliberately not pre-empted here: a ranking rule with no producer is a
-    guess about a surface nobody has looked at yet.
+    BELOW a free-text gap seen twice. The producer now exists
+    (`framework/missions/gaps.py`) and the call is MADE: the order STANDS.
+    hit_count 1 is the honest count — the row was recorded once — and
+    re-ranking would move every existing free-text row to fix an order nobody
+    has yet found wrong on the page. Rank keyed rows by `last_seen` when
+    somebody has read that page and says it reads wrong; not before.
 
     Returns the gap dict (new, keyed-existing, or merged-into).
     """

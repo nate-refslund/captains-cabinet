@@ -222,12 +222,53 @@ class TestRoutePendingTasks:
         with pytest.raises(ValueError, match="direct assignment recording is disabled"):
             route_pending_tasks(outcomes_path=outcomes_yml, dry_run=False)
 
-    def test_unmatched_roles_skip_silently(self, outcomes_yml):
-        """When no roles match the criteria, no routing happens; no crash."""
+    def test_an_outcome_that_cannot_compile_routes_nothing(self, outcomes_yml):
+        """No roles at all: nothing routes, and nothing is recorded here.
+
+        RENAMED from `test_unmatched_roles_skip_silently`, which read as the
+        pin on supervisor.py's unowned-node branch and is not: this fixture's
+        second and third criteria are NON-ROOT nodes, and the work graph
+        validator refuses a non-root node with no `assigned_role`, so the
+        compile raises and `find_unassigned_ready_tasks` answers [] before any
+        node is ever looked at. Measured 2026-09-08. The branch that skips a
+        READY unowned node is a different code path and is pinned by
+        `test_a_ready_unowned_node_records_a_holder_gap` below.
+        """
         # No seeded_roles fixture this time — instance/roles/active is empty.
         decisions = route_pending_tasks(outcomes_path=outcomes_yml)
-        # All nodes will have assigned_role = None, so nothing to route
         assert decisions == []
+        assert replay(event_types=["capability_gap_recorded"]) == []
+
+    def test_a_ready_unowned_node_records_a_holder_gap(self, tmp_path):
+        """supervisor.py's unowned branch: skip, but leave a row behind.
+
+        The branch used to be a bare `continue` whose own comment said
+        "silently skip for now" — the whole record of a condition nobody could
+        see. Routing is unchanged; what changed is that the pass records it
+        (contract of record phase1-contracts-v2-2026-09-07 §3).
+
+        A ROOT node, because only a root may legally have no owner.
+        """
+        yml = tmp_path / "instance" / "config" / "outcomes.yml"
+        yml.write_text("""outcomes:
+  - id: outcome-unowned
+    name: Nobody owns this
+    measurable_criteria:
+      - node_id: lonely-task
+        title: A thing with no owner
+        depends_on: []
+    status: active
+    captain_ratified: true
+""")
+
+        assert route_pending_tasks(outcomes_path=yml) == []
+
+        recorded = replay(event_types=["capability_gap_recorded"])
+        assert len(recorded) == 1, recorded
+        payload = recorded[0]["payload"]
+        assert payload["kind"] == "skill"
+        assert payload["dedup_key"] == "holder:outcome-unowned:lonely-task"
+        assert json.loads(payload["evidence"])["reason"] == "no_match"
 
 
 class TestDeliveryConfirmation:
