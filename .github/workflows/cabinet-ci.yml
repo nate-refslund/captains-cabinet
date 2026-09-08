@@ -1168,8 +1168,33 @@ jobs:
         run: python3.12 -m pytest cabinet/scripts/tests/test_cabinet_update.py -q
       - name: "The drill is wired, and it can still go red"
         run: python3.12 -m pytest cabinet/scripts/tests/test_drill_wiring.py -q
+      # THE REPORT IS READ, not just the exit code. A drill that exits 0 having
+      # run three of its twelve stages would pass an exit-code check; the
+      # stages array is where "every stage was reached, and none of them
+      # failed" is written down (contract §4).
       - name: "One responsibility, carried end to end"
-        run: bash cabinet/scripts/drills/one-responsibility.sh --json
+        run: |
+          set -uo pipefail
+          bash cabinet/scripts/drills/one-responsibility.sh --json > "$RUNNER_TEMP/drill.json"
+          rc=$?
+          python3.12 - "$RUNNER_TEMP/drill.json" "$rc" <<'PY'
+          import json, sys
+          report = json.load(open(sys.argv[1]))
+          rc = int(sys.argv[2])
+          stages = {}
+          for row in report["stages"]:
+              stages.setdefault(row["stage"], []).append(row["verdict"])
+          print(json.dumps(stages, indent=2, sort_keys=True))
+          required = ["hatch", "seed", "P1", "P2", "P2b", "P3", "P4", "P2h",
+                      "P5", "P6", "P7", "hermeticity"]
+          missing = [s for s in required if s not in stages]
+          failed = sorted(s for s, v in stages.items() if "fail" in v)
+          if rc != 0 or report.get("verdict") != "pass" or missing or failed:
+              raise SystemExit(
+                  "the drill did not carry one responsibility end to end: "
+                  "exit=%d verdict=%r stages-never-reached=%s stages-failed=%s"
+                  % (rc, report.get("verdict"), missing, failed))
+          PY
 
   # THE 3.9 FLOOR (2026-09-07, phase-1 claim). The prompt hook that pulls work
   # is schg-locked and runs `python3` from the officer's own PATH — 3.9.6 on the

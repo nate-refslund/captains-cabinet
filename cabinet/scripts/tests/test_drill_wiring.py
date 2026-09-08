@@ -87,6 +87,13 @@ def test_the_workflow_carries_the_responsibility_drill_job():
                 for step in job["steps"] if "setup-python" in str(step.get("uses", ""))]
     assert "3.12" in versions, (
         f"{_JOB} must pin python 3.12 (the drill's own interpreter law): {versions!r}")
+    # And the job READS the drill's report. A drill that exited 0 having run
+    # three of its twelve stages would satisfy an exit-code check; §4 says the
+    # top-level json is asserted on the stages array, never on exit 0 alone.
+    assert '["stages"]' in body, (
+        f"the {_JOB} job gates on the drill's exit code alone; the stages array "
+        "is where 'every stage was reached and none failed' is written down, and "
+        "reading it means subscripting it")
 
 
 def test_the_drill_job_carries_the_claims_and_update_path_suites():
