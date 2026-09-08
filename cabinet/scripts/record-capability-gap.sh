@@ -11,6 +11,9 @@
 # Usage:
 #   record-capability-gap.sh --need "<one line: what I couldn't do>" \
 #       [--kind procedure|tool|integration] \
+#         (the three ACTIONABLE kinds — this script is the officer's lane.
+#          skill|authority|information are recorded by the cabinet itself and
+#          are surface-only: never proposed, never auto-applied.)
 #       [--evidence "<what I tried / why I'm stuck>"] \
 #       [--touches secrets,spending,...]    # hard-ceiling categories, if known
 #
@@ -29,7 +32,7 @@ while [ $# -gt 0 ]; do
     --kind) KIND="$2"; shift 2 ;;
     --evidence) EVIDENCE="$2"; shift 2 ;;
     --touches) TOUCHES="$2"; shift 2 ;;
-    -h|--help) sed -n '1,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '1,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "record-capability-gap: unknown arg: $1" >&2; exit 64 ;;
   esac
 done
@@ -41,9 +44,14 @@ fi
 
 OFFICER="${OFFICER_NAME:-${CABINET_OFFICER:-unknown}}"
 
+# A0.3: pin the interpreter. `python3` on the deployment box is 3.9.6 and
+# python3.12 is installed beside it, so a bare token here does not name an
+# interpreter — it names whatever PATH answers with. The shell still expands
+# this, so an operator overrides with one variable. (The module stays
+# 3.9-correct regardless: the schg-locked hook imports it and cannot be pinned.)
 CABINET_ROOT="$CABINET_ROOT" OFFICER="$OFFICER" \
 NEED="$NEED" KIND="$KIND" EVIDENCE="$EVIDENCE" TOUCHES="$TOUCHES" \
-python3 - <<'PY'
+"${CABINET_PYTHON:-python3.12}" - <<'PY'
 import os, sys
 sys.path.insert(0, os.environ["CABINET_ROOT"])
 from framework.learning.capability_gaps import record_gap
@@ -59,8 +67,13 @@ g = record_gap(
 )
 print(f"capability gap recorded: {g['gap_id']} [{g['kind']}] status={g['status']} hit_count={g['hit_count']}")
 print(f"  need: {g['need']}")
+from framework.learning.capability_gaps import STRUCTURAL_KINDS
 if g['kind'] == 'procedure':
     print("  → procedure: the self-improvement loop will try to auto-skill this (eval-gated).")
+elif g['kind'] in STRUCTURAL_KINDS:
+    # Say the truth rather than the old catch-all: nothing proposes these.
+    print(f"  → {g['kind']}: surface-only. It is recorded and shown on the gaps"
+          " surface; no proposal is drafted and nothing is auto-applied.")
 else:
     print("  → tool/integration: the loop will propose a fix to the Captain (nothing installs without approval).")
 PY

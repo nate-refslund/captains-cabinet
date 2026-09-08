@@ -18,7 +18,22 @@
 
 import { dockerExec } from '@/lib/docker'
 
-export type GapKind = 'procedure' | 'tool' | 'integration'
+/**
+ * The recorded kinds. `procedure | tool | integration` are the ones the cabinet
+ * acts on (auto-skill, or a proposal the Captain approves). `skill | authority |
+ * information` are structural: a missing holder, a missing permission, a missing
+ * fact — recorded and rendered here, never proposed and never auto-applied
+ * (framework/learning/capability_gaps.py STRUCTURAL_KINDS). This page is the
+ * whole behaviour for those three, so it renders any kind it is handed rather
+ * than only the ones it was written knowing about.
+ */
+export type GapKind =
+  | 'procedure'
+  | 'tool'
+  | 'integration'
+  | 'skill'
+  | 'authority'
+  | 'information'
 
 export type GapStatus =
   | 'open'
@@ -52,7 +67,10 @@ export interface CapabilityGap {
  * to run because it has no store — or a non-array payload → [].
  */
 export async function listCapabilityGaps(): Promise<CapabilityGap[]> {
-  const cmd = 'python3 cabinet/scripts/org-runtime.py gaps list --json'
+  // A0.3: pin the interpreter — the box's bare `python3` is 3.9, and an
+  // unlocked exec string that says `python3` reads whatever is first on PATH.
+  const cmd =
+    '${CABINET_PYTHON:-python3.12} cabinet/scripts/org-runtime.py gaps list --json'
 
   try {
     const { stdout } = await dockerExec(cmd)
