@@ -134,7 +134,11 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 LIB_DIR="$SCRIPT_DIR/lib"
 
 PY="${CABINET_PYTHON:-python3.12}"
-BOX_PY="python3"          # what the locked hook pins (session-task-inject.sh:28)
+# What a locked copy that has not had its unlock window still runs
+# (session-task-inject.sh:28). Master's bytes pin ${CABINET_PYTHON:-python3.12}
+# since the A7.7 landing; the box's copy does not change until the ceremony,
+# and this stage exists to measure the interpreter the box actually walks.
+BOX_PY="python3"
 
 # Read every CABINET_* input the drill takes BEFORE the environment is scrubbed
 # — the scrub is what makes the run hermetic, and it would eat these too.
@@ -341,6 +345,16 @@ export HOME="$HOME_DIR"
 export CABINET_ROOT="$ROOT"
 export CABINET_EVENT_LOG_DIR="$EVENTS"
 export SESSION_TASK_INJECT_DEBOUNCE_S=0
+# The locked hook's stderr channel, pointed at this run's own scratch. The
+# germline bundle's G3 bytes (landed 2026-09-08, contract amendment A7.7) send
+# the pull call's stderr to ${CABINET_HOOK_LOG:-$HOME/Library/Logs/cabinet/
+# hooks.err} and CREATE that directory, which is the whole point — a broken
+# import and an empty queue used to look identical. Left at its default here it
+# would create four paths under the scratch HOME and the hermeticity stage
+# would report a write outside the root (measured: it did). Pinning it drives
+# the override seam the bundle added instead of suppressing the channel, and
+# keeps the "nothing outside the root" claim strict rather than allow-listed.
+export CABINET_HOOK_LOG="$SCRATCH/locked-hook.err"
 # A2.9. Production keeps MIN_LEASE_SECONDS = 60 and this variable is the ONLY
 # sub-floor path. Without it P3's 3 s lease is clamped to 60, P4's bounded wait
 # for the expiry can never observe one, and the kill/resume stage would red for
@@ -1128,8 +1142,25 @@ HOOK_CLAIM="$V_FIELD"
 # The same session ticks again. Its own live claim is renewed, not re-injected:
 # a hook that re-injects what it already holds re-injects it for the whole life
 # of the session.
+#
+# "THE SAME SESSION" IS A PROPERTY OF THE PAYLOAD, not of the environment, and
+# this line used to assume it was `a`. The germline bundle's G3 bytes (landed
+# 2026-09-08, contract amendment A7.7) derive the holder from the payload's
+# `session_id` and EXPORT `CABINET_WORKER_ID` over whatever was inherited, so a
+# re-tick that carried `a` after leg `b` won the race above is a DIFFERENT
+# holder — and being handed the item again is then correct behaviour, not the
+# defect this leg names. Measured: with the landed bytes and a hardcoded `a`,
+# P2h fails ~half its runs with "the holder's own tick did not renew its
+# claim". The winning session id is therefore read back out of the holder the
+# race actually produced (`<role>@<session id>`). `CABINET_WORKER_ID` is still
+# set as well, because a box whose locked copy predates the window runs the
+# unpinned bytes, which export nothing and fall back to `<role>@session:<pid>`.
+case "$HOOK_HOLDER" in
+  *@*) HOOK_SESSION="${HOOK_HOLDER##*@}" ;;
+  *) fail 20 P2h "the hook's claim holder '$HOOK_HOLDER' carries no session part, so two sessions of one role cannot be told apart and this leg cannot re-tick as the holder" ;;
+esac
 rm -f "$SENTINEL"
-CABINET_WORKER_ID="$HOOK_HOLDER" bash -c "printf '{\"session_id\":\"a\"}' | $HOOK_PY_ENV OFFICER_NAME='$SLUG' CABINET_ROOT='$ROOT' bash '$HOOK'" \
+CABINET_WORKER_ID="$HOOK_HOLDER" bash -c "printf '{\"session_id\":\"$HOOK_SESSION\"}' | $HOOK_PY_ENV OFFICER_NAME='$SLUG' CABINET_ROOT='$ROOT' bash '$HOOK'" \
   > "$SCRATCH/p2h-again.json" 2>"$SCRATCH/p2h-again.err"
 AGAIN_RC=$?
 # This leg is the one where an empty output IS the pass condition, so a leg

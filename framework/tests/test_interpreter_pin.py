@@ -10,13 +10,19 @@ whatever is first on ``PATH`` at that moment, on that box, under whatever
 environment launchd or the dashboard container happens to hand it.  A0.3 splits
 the plane in two and this module owns the second half:
 
-* **Locked** paths (the hooks dir, ``session-task-inject.sh``) cannot be
-  pinned — editing them is a Captain ceremony — so every module they can
-  import stays importable and correct under 3.9.  That half is asserted
-  directly, per module, in ``framework/learning/tests/test_capability_gaps.py``
-  (grammar parse, evaluated-union walk) and
+* **Locked** paths (the hooks dir, ``session-task-inject.sh``) are out of this
+  scan's scope, because the copy that runs on a box only changes in a Captain
+  ceremony — so every module they can import stays importable and correct
+  under 3.9.  That half is asserted directly, per module, in
+  ``framework/learning/tests/test_capability_gaps.py`` (grammar parse,
+  evaluated-union walk) and
   ``cabinet/scripts/tests/test_record_capability_gap_script.py`` (a LIVE import
-  under the box's bare ``python3``).
+  under the box's bare ``python3``).  Master's copy of
+  ``session-task-inject.sh`` DOES carry the pin as of 2026-09-08 (contract
+  amendment A7.7 landed the germline bundle's G3 bytes in the unlocked lane),
+  and the exclusion is unchanged by that: the deployment keeps running its
+  locked copy until the window re-materialises the landed bytes, so the 3.9
+  half above is still the thing that protects it.
 * **Unlocked** exec strings pin ``${CABINET_PYTHON:-python3.12}`` — the shell
   still expands it, so an operator overrides with one variable.  A0.3 names
   three anchors and then asks for "a grep sensor over bare ``python3`` in
@@ -403,20 +409,36 @@ class TestA03InterpreterPin:
         scope = set(plane_files())
         assert set(PENDING) <= scope, sorted(set(PENDING) - scope)
 
-    def test_the_locked_hook_is_excluded_because_it_cannot_be_pinned(self):
+    def test_the_locked_hook_is_excluded_from_the_scan_and_now_carries_the_pin(self):
         """The other half of A0.3, asserted as an exclusion rather than assumed.
 
-        `session-task-inject.sh` execs bare `python3` and is schg-locked: it is
-        NOT a finding here, and the reason it is safe is that every module it
-        imports is 3.9-correct — which its own tests assert.
+        The arm this replaces required the hook to still exec a BARE
+        interpreter, and said in its own message that the row was obsolete if a
+        ceremony ever pinned it. That is a self-retiring sensor and it retired:
+        contract amendment A7.7 landed the germline bundle's G3 bytes in the
+        unlocked lane on 2026-09-08, so master's copy carries the pin. The
+        exclusion itself is unchanged and is still asserted — the path is
+        schg-locked and out of scope by the locked-set rule, not by its
+        contents — but the assertion about the contents is inverted rather than
+        deleted, because deleting it would leave the landing with no sensor at
+        all and a silent revert would read as green.
         """
         rel = "cabinet/scripts/hooks/session-task-inject.sh"
         assert (ROOT / rel).exists()
         assert _is_locked(rel), "the hook left the locked set — A0.3's premise moved"
-        assert rel not in plane_files()
-        assert bare_python3_lines(rel, (ROOT / rel).read_text()), (
-            "the locked hook no longer execs a bare interpreter — if it was "
-            "pinned by a ceremony, this exclusion is obsolete"
+        assert rel not in plane_files(), (
+            "the locked hook entered the scan's scope; the scope is derived "
+            "from the locked set, so this means the boundary moved"
+        )
+        source = (ROOT / rel).read_text()
+        assert PIN in source, (
+            "the locked hook lost the `%s` pin that A7.7 landed (the germline "
+            "bundle's G3 bytes, docs/proposals/"
+            "germline-amendment-employee-phase1-2026-09/G3.diff)" % PIN
+        )
+        assert not bare_python3_lines(rel, source), (
+            "the locked hook exec\'s a bare interpreter again on master, so "
+            "the pull path's interpreter is chosen by PATH once more"
         )
 
 
