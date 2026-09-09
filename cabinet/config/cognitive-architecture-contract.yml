@@ -1360,7 +1360,25 @@ budgets:
     # refusal to its bundle identically — the round-1 defect was precisely the
     # two surfaces disagreeing. RAISED VISIBLY, same reason as every row above.
     # observed == maximum, zero headroom.
-    maximum: 66667
+    #
+    # 66667 -> 66669 (+2 measured 2026-09-09 via cognitive-architecture-census.py,
+    # 81405 -> 81407 against the effective ceiling): U5b round 3, the THIRD of the
+    # three rules this line and the card's `refusalToShow` are meant to share. The
+    # card opened with `phase === 'applying' -> null`; `_update_refusal_line` had
+    # no applying guard at all, so through every retry of a digest-mismatch,
+    # unreadable or busy refusal — the retry the card is deliberately built for,
+    # since it keeps Apply for exactly those — the card said "Taking an update"
+    # while this line said "Update refused", and with a locked-path refusal on
+    # record it said "needs the Captain" over a running apply. Durable, too: a
+    # killed apply leaves `phase: applying` and its snapshot on disk by design, so
+    # the wrong sentence outlived the process. The mass is exactly the guard
+    # (`if state.get("phase") == "applying": return ""`). The other half of the
+    # fix — hoisting the `applying` arm of `_update_notice` ahead of the
+    # waiting-bundle arm that made it unreachable — is a MOVE and costs nothing,
+    # and the six-state parity fixture that now holds the claim is a test file,
+    # outside this budget by construction. RAISED VISIBLY, same reason as every
+    # row above. observed == maximum, zero headroom.
+    maximum: 66669
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

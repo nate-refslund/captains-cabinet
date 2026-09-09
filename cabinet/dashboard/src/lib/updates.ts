@@ -132,8 +132,18 @@ function refusalIsAboutTheBundle(refusal: UpdateRefusal): boolean {
  * arrived afterwards and withdrew Apply with them — and Apply is the only
  * no-terminal way to take the update that would have cleared the phase. The
  * door this whole leg exists to open, bricked by the record of one refusal.
- * The same three lines are `run_briefing._update_refusal_line`, deliberately:
- * two surfaces reading one state file must not be able to disagree.
+ * The same three rules are `run_briefing._update_refusal_line`, deliberately:
+ * two surfaces reading one state file must not be able to disagree. Round 2
+ * WROTE that claim with only two of the three actually mirrored — the briefing
+ * had no `applying` guard at all — so through every retry of a digest-mismatch
+ * or busy refusal (the two this card deliberately keeps Apply for) the card
+ * said "Taking an update" while the briefing said "Update refused", and an
+ * interrupted apply made that disagreement durable. It is no longer only a
+ * claim: the six states the two surfaces must agree on are one checked-in
+ * fixture, `framework/frontdoor/tests/update_surface_parity.json`, driven
+ * through BOTH readers — the parity block in `updates.test.ts` and its twin in
+ * `framework/frontdoor/tests/test_card_update_notice.py`. Change one side's
+ * ranking and the other side's suite is what goes red.
  */
 export function refusalToShow(status: UpdateStatus | null): UpdateRefusal | null {
   if (!status || status.phase === 'applying') return null

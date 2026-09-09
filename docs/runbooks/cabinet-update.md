@@ -134,12 +134,25 @@ of that scope.** Nothing moves `phase` out of `refused` except a later apply,
 so a refusal that spoke for as long as the phase said `refused` would speak
 over every bundle published afterwards — including the one cut right after the
 Captain's ceremony — and would withdraw Apply with it, which is the only
-no-terminal way to take the update that clears the phase. So: nothing waiting,
-the refusal is the last thing that happened and it speaks; something waiting,
-it speaks only about the same sha, and only when it is a verdict on those bytes.
+no-terminal way to take the update that clears the phase. So the three rules are: an
+apply IN FLIGHT outranks the refusal and neither surface speaks it, because
+`applying` is what is true right now and the refusal is a note about the
+request that led to it; nothing waiting, the refusal is the last thing that
+happened and it speaks; something waiting, it speaks only about the same sha,
+and only when it is a verdict on those bytes.
 The card (`lib/updates.refusalToShow`) and the briefing line
-(`run_briefing._update_refusal_line`) are the same three rules written twice on
-purpose — two surfaces reading one state file must not be able to disagree.
+(`run_briefing._update_refusal_line`) are those same three rules written twice
+on purpose — two surfaces reading one state file must not be able to disagree.
+Rule one was written on the card only until 2026-09-09, and the disagreement it
+let through was the ordinary retry: the card keeps Apply for a digest-mismatch,
+unreadable or busy refusal (a retry is a reasonable thing to do about all
+three), so tapping it moved `phase` to `applying` with the same sha still in
+`last_refusal` and the bundle still in the inbox — the card said "Taking an
+update", the briefing said "Update refused", and an interrupted apply, which
+leaves `phase: applying` on disk on purpose, made that permanent. The claim is
+no longer a claim: the six states the two must agree about live in
+`framework/frontdoor/tests/update_surface_parity.json` and are driven through
+BOTH readers, by `test_card_update_notice.py` and by `lib/updates.test.ts`.
 
 Two deliberate exceptions, both about not letting one durability feature eat
 another:

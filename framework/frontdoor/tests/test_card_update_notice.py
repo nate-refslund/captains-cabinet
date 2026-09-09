@@ -370,3 +370,181 @@ def test_a_held_record_with_no_fault_does_not_raise_an_alarm(tmp_path, monkeypat
     line = run_briefing._update_notice(str(root))
     assert line.startswith("An update is ready to take"), line
     assert "fault" not in line, line
+
+
+# ---------------------------------------------------------------------------
+# A5.15 rule 3 — AN APPLY IN FLIGHT OUTRANKS THE REFUSAL OF THE BUNDLE IT IS
+# TAKING.
+#
+# The card has had this since round 2 (`refusalToShow` opens with
+# `phase === 'applying' -> null`); this side had no `applying` guard at all,
+# and `_update_notice`'s own `applying` arm sat AFTER the waiting-bundle arm,
+# which a waiting bundle makes unreachable. So on the one state where the two
+# surfaces are most likely to be read together — the Captain taps Apply on the
+# card and then looks at his briefing — the card said "Taking an update to
+# bbbbbbbb" and this line said "Update refused — failed per-file digest
+# verification (bbbbbbbb)", or, with a locked-path refusal on record, "needs
+# the Captain" over an apply that was running.
+#
+# REACHABLE BY DESIGN, not by accident: the card deliberately keeps Apply for a
+# digest-mismatch, unreadable or busy refusal, because a retry is a reasonable
+# thing to do about all three. Tap it and `phase` becomes `applying` with the
+# same sha still in `last_refusal` (the state write carries that field) and the
+# bundle still in the inbox, which is where it stays until the apply lands. And
+# durable with it: a killed apply leaves `phase: applying` plus its snapshot on
+# disk on purpose, so the wrong sentence outlives the process that caused it.
+# ---------------------------------------------------------------------------
+
+def _applying_over_a_refusal(root, refusal_reason, refusal_paths):
+    _waiting(root, files=7)
+    _state(root, {
+        "phase": "applying", "to_sha": NEW, "snapshot": "20260908T185800-aaaaaaaa",
+        "last_refusal": {"bundle": NEW, "reason": refusal_reason,
+                         "paths": list(refusal_paths), "ts": "2026-09-08T18:58:00Z",
+                         "door": "web"},
+    })
+
+
+def test_an_apply_in_flight_outranks_the_refusal_of_the_bundle_it_is_taking(
+        tmp_path, monkeypatch):
+    """The retry, mid-flight: the line is about the apply, not the refusal."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _applying_over_a_refusal(root, "failed per-file digest verification", [])
+    line = run_briefing._update_notice(str(root))
+    assert line == "An update is being taken right now", line
+    assert "refused" not in line.lower(), line
+    assert run_briefing._update_refusal_line(root, NEW) == ""
+
+
+def test_an_apply_in_flight_outranks_even_a_constitutional_refusal_on_record(
+        tmp_path, monkeypatch):
+    """The worse half of the same defect: "needs the Captain", over a running
+    apply, for as long as it runs — and after a kill, for ever."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _applying_over_a_refusal(root, "bundle changes locked constitutional paths",
+                             ["cabinet/scripts/start-officer-mac.sh"])
+    line = run_briefing._update_notice(str(root))
+    assert line == "An update is being taken right now", line
+    assert "Captain" not in line, line
+
+
+def test_the_apply_in_flight_sentence_is_reachable_with_a_bundle_in_the_inbox(
+        tmp_path, monkeypatch):
+    """`_update_notice`'s `applying` arm sat last, after the waiting-bundle arm.
+
+    An apply is running BECAUSE a bundle is in the inbox — the entry is not
+    removed until it lands — so the only situation that sentence describes was
+    the only situation it could not be reached in. It said "An update is ready
+    to take — tap Apply" instead, over an apply already in flight, which is an
+    invitation to start a second one."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _waiting(root, files=7)
+    _state(root, {"phase": "applying", "to_sha": NEW,
+                  "snapshot": "20260908T185800-aaaaaaaa"})
+    assert run_briefing._update_notice(str(root)) == "An update is being taken right now"
+
+
+def test_a_refusal_still_speaks_once_the_apply_is_no_longer_in_flight(tmp_path,
+                                                                      monkeypatch):
+    """The inverse arm, so the guard is a RANKING and not a mute button.
+
+    The retry failed the same way: phase leaves `applying`, and the refusal of
+    the bundle still in the inbox is the sentence again."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _waiting(root, files=7)
+    _state(root, {"phase": "refused", "bundle": NEW,
+                  "reason": "failed per-file digest verification", "paths": [],
+                  "ts": "2026-09-08T19:02:00Z", "door": "web",
+                  "last_refusal": {"bundle": NEW,
+                                   "reason": "failed per-file digest verification",
+                                   "paths": [], "ts": "2026-09-08T19:02:00Z",
+                                   "door": "web"}})
+    line = run_briefing._update_notice(str(root))
+    assert line.startswith("Update refused"), line
+    assert "digest" in line
+
+
+# ---------------------------------------------------------------------------
+# PARITY — the same state file, both readers, one fixture set on disk.
+#
+# `update_surface_parity.json` beside this file is the whole contract: the
+# states the home card and this line must agree about. The card's half is
+# `cabinet/dashboard/src/lib/updates.test.ts` ("surface parity"), reading the
+# SAME file. Two independently-authored fixture sets could not have caught the
+# defect above — each side proved only itself, and both sides carried a comment
+# claiming they could not disagree.
+#
+# The wording differs on purpose (a card headline is not a briefing line), so
+# what is asserted is: the KIND each sentence classifies to, that no sentence
+# names a bundle other than the one the case is about, and any wording the two
+# genuinely share. The classifier is total — an unrecognised sentence is
+# `unclassified` and fails naming itself, never a silent pass.
+# ---------------------------------------------------------------------------
+
+import re  # noqa: E402
+
+PARITY_FIXTURES = Path(__file__).parent / "update_surface_parity.json"
+_SHA_TOKEN = re.compile(r"\b[0-9a-f]{8}\b")
+
+
+def _classify(line: str) -> str:
+    if not line:
+        return "silent"
+    if line.startswith("An update is being taken right now"):
+        return "apply-in-flight"
+    if line.startswith("Update refused") or "REFUSED" in line:
+        return "refusal"
+    if line.startswith("An update is ready to take"):
+        return "ready"
+    if line.startswith("Updated to "):
+        return "applied"
+    if line.startswith("An update was rolled back"):
+        return "rolled-back"
+    return "unclassified"
+
+
+def _install_case(tmp_path, case) -> Path:
+    root = _install(tmp_path, source_commit=case["installed"])
+    if case["waiting"]:
+        _waiting(root, sha=case["waiting"]["sha"], files=case["waiting"]["file_count"],
+                 built_at=case["waiting"]["built_at"])
+    if case["state"] is not None:
+        _state(root, case["state"])
+    return root
+
+
+def test_the_parity_fixture_carries_every_state_the_two_surfaces_argue_about():
+    """A fixture set that quietly shrank would take both suites with it."""
+    doc = json.loads(PARITY_FIXTURES.read_text(encoding="utf-8"))
+    kinds = [case["agree"]["kind"] for case in doc["cases"]]
+    assert len(doc["cases"]) == 6, kinds
+    assert kinds.count("apply-in-flight") == 1, kinds
+    assert kinds.count("refusal") == 1, kinds
+    assert kinds.count("ready") == 3, kinds
+    assert kinds.count("applied") == 1, kinds
+
+
+def test_the_briefing_says_what_the_card_says_on_every_shared_state(tmp_path,
+                                                                    monkeypatch):
+    """This half. The card's half asserts the same table in vitest."""
+    _ledger(monkeypatch, tmp_path)
+    doc = json.loads(PARITY_FIXTURES.read_text(encoding="utf-8"))
+    for index, case in enumerate(doc["cases"]):
+        root = _install_case(tmp_path / ("case%d" % index), case)
+        line = run_briefing._update_notice(str(root))
+        agree = case["agree"]
+        assert _classify(line) == agree["kind"], (case["name"], line)
+        named = set(_SHA_TOKEN.findall(line))
+        assert named <= {agree["bundle"]}, (case["name"], line, named)
+        for wording in agree["shared_wording"]:
+            assert wording in line, (case["name"], wording, line)
+        # The card's `refusalToShow` is null on everything but a refusal, and
+        # that is what withdraws Apply and names the files. Its twin here is
+        # the helper the notice asks first, so it is pinned on the same states.
+        waiting_sha = (case["waiting"] or {}).get("sha", "")
+        spoke = bool(run_briefing._update_refusal_line(root, waiting_sha))
+        assert spoke == (agree["kind"] == "refusal"), (case["name"], line)

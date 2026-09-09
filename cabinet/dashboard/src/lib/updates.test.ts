@@ -247,3 +247,115 @@ describe('refusalToShow', () => {
     })).toBeNull()
   })
 })
+
+// ---------------------------------------------------------------------------
+// SURFACE PARITY — the same state file, both readers, one fixture set on disk.
+//
+// `framework/frontdoor/tests/update_surface_parity.json` is the contract: the
+// states this card and the briefing line must agree about. The briefing's half
+// of it is `test_card_update_notice.py::test_the_briefing_says_what_the_card_
+// says_on_every_shared_state`, reading the SAME file.
+//
+// WHY A SHARED FILE. Both sides carried the comment "two surfaces reading one
+// state file must not be able to disagree" while the third of the three rules
+// was written here only: `refusalToShow` opens with `applying -> null` and
+// `_update_refusal_line` had no applying guard, so through every retry of a
+// digest-mismatch refusal — the retry this card is deliberately designed for,
+// because it keeps Apply for exactly those — this card said "Taking an update"
+// and the briefing said "Update refused". Two independently-authored fixture
+// sets cannot catch that: each side proves only itself.
+//
+// The wording differs on purpose, so what is asserted is the KIND each
+// sentence classifies to, that no sentence names a bundle other than the one
+// the case is about, and any wording the two genuinely share. The classifier
+// is total: an unrecognised sentence is `unclassified` and fails naming
+// itself, never a silent pass. A missing fixture file FAILS — parity that
+// cannot be verified is drift, not a skip.
+// ---------------------------------------------------------------------------
+import fs from 'node:fs'
+import path from 'node:path'
+
+// <root>/cabinet/dashboard/src/lib → four levels up = <root>
+const PARITY_FIXTURES = path.resolve(
+  __dirname, '..', '..', '..', '..',
+  'framework', 'frontdoor', 'tests', 'update_surface_parity.json'
+)
+const SHA_TOKEN = /\b[0-9a-f]{8}\b/g
+
+type ParityCase = {
+  name: string
+  installed: string
+  waiting: { sha: string; file_count: number; built_at: string } | null
+  state: Record<string, unknown> | null
+  agree: { kind: string; bundle: string; shared_wording: string[] }
+}
+
+function classify(line: string | null): string {
+  if (!line) return 'silent'
+  if (line.startsWith('Taking an update')) return 'apply-in-flight'
+  if (line.startsWith('Update refused')) return 'refusal'
+  if (line.startsWith('Update ready')) return 'ready'
+  if (line.startsWith('Updated to ')) return 'applied'
+  if (line.startsWith('An update was rolled back')) return 'rolled-back'
+  return 'unclassified'
+}
+
+/** The fixture as `cabinet-update.sh status --json` would report it — the
+ *  same derivation, field for field, so this is the state file and not a
+ *  hand-shaped object that agrees with the card by construction. */
+function statusOf(c: ParityCase): UpdateStatus {
+  const state = (c.state || {}) as Record<string, never>
+  const latest = c.waiting
+    ? {
+        sha: c.waiting.sha, short: c.waiting.sha.slice(0, 8),
+        built_at: c.waiting.built_at, from_sha: null,
+        file_count: c.waiting.file_count, changelog: [],
+        owner: 'someone', mtime: c.waiting.built_at,
+      }
+    : null
+  return {
+    installed_sha: c.installed,
+    installed_short: c.installed.slice(0, 8),
+    phase: (state.phase as string) || 'idle',
+    last: c.state ? (c.state as never) : null,
+    available: latest ? [latest] : [],
+    latest,
+    snapshots: [],
+    last_refusal: (state.last_refusal as never) ?? null,
+    event_fallback: Boolean(state.event_fallback),
+    ledger_error: (state.ledger_error as string) || '',
+  } as UpdateStatus
+}
+
+describe('surface parity with the briefing line', () => {
+  const doc = JSON.parse(fs.readFileSync(PARITY_FIXTURES, 'utf-8'))
+  const cases = doc.cases as ParityCase[]
+
+  it('the fixture set carries every state the two surfaces argue about', () => {
+    const kinds = cases.map((c) => c.agree.kind)
+    expect(kinds.length).toBe(6)
+    expect(kinds.filter((k) => k === 'apply-in-flight').length).toBe(1)
+    expect(kinds.filter((k) => k === 'refusal').length).toBe(1)
+    expect(kinds.filter((k) => k === 'ready').length).toBe(3)
+    expect(kinds.filter((k) => k === 'applied').length).toBe(1)
+  })
+
+  for (const c of cases) {
+    it(`says what the briefing says: ${c.name}`, () => {
+      const status = statusOf(c)
+      const line = updateHeadline(status)
+      expect([c.name, classify(line), line]).toEqual([c.name, c.agree.kind, line])
+      for (const token of line?.match(SHA_TOKEN) ?? []) {
+        expect([c.name, token]).toEqual([c.name, c.agree.bundle])
+      }
+      for (const wording of c.agree.shared_wording) {
+        expect(line).toContain(wording)
+      }
+      // The half of the card that is not the headline: `refusalToShow` is what
+      // withdraws Apply and names the files, and its twin on the briefing side
+      // is the helper `_update_notice` asks first. Same states, same verdict.
+      expect([c.name, refusalToShow(status) !== null])
+        .toEqual([c.name, c.agree.kind === 'refusal'])
+    })
+  }
+})

@@ -230,17 +230,24 @@ def _update_receipt_for(sha: str, days: int = 30) -> "dict | None":
 # Apply", over a bundle that had already been turned down. So the state file is
 # asked first and the ledger stays as the second channel.
 #
-# SCOPED TO THE BUNDLE IN FRONT OF HIM, and `phase` is not part of the scope.
-# Nothing is waiting: the refusal is the last thing that happened and it
-# speaks. Something is waiting: it speaks only if it is a verdict ON THOSE
+# SCOPED TO THE BUNDLE IN FRONT OF HIM. `phase` is not part of that scope with
+# one exception, and the three rules are: an apply IN FLIGHT outranks the
+# refusal and neither surface speaks it (`applying` is the live state, and a
+# refusal recorded before the retry that is running now is a note about a
+# request). Nothing is waiting: the refusal is the last thing that happened and
+# it speaks. Something is waiting: it speaks only if it is a verdict ON THOSE
 # BYTES — the same sha, and a reason that is about the bundle rather than about
 # timing (`busy` means another updater held the lock, which says nothing about
 # what is in the inbox). Round 1 let `busy` through for as long as the phase
 # still said `refused`, which is the whole window after any refusal, so this
-# line announced a refusal of a bundle nothing had judged. These are the three
-# lines of `lib/updates.refusalToShow` in Python: two surfaces reading one
-# state file must not be able to disagree about it, and a card offering Apply
-# under a briefing line that says the bundle was refused is exactly that.
+# line announced a refusal of a bundle nothing had judged; round 2 wrote rule
+# one on the card only. These are the three rules of `lib/updates.refusalToShow`
+# in Python: two surfaces reading one state file must not be able to disagree
+# about it, and a card offering Apply under a briefing line that says the bundle
+# was refused is exactly that. The claim is no longer only a claim — the six
+# states both surfaces must agree on are one checked-in fixture
+# (`tests/update_surface_parity.json`) driven through BOTH readers, here and in
+# `cabinet/dashboard/src/lib/updates.test.ts`.
 # Counts only, never the path text on a card surface — the files themselves are
 # named on the home card, which is where the decision is made. Fail-open like
 # everything else on this path: any error is silence.
@@ -255,6 +262,21 @@ def _update_state(base) -> dict:
 
 def _update_refusal_line(base, waiting_sha: str = "") -> str:
     state = _update_state(base)
+    # RULE 3 — AN APPLY IN FLIGHT OUTRANKS A REFUSAL. Written on the card since
+    # round 2 and not here until 2026-09-09, which made the "same three rules
+    # written twice" claim above false on the third one. The card deliberately
+    # KEEPS Apply for a digest-mismatch, unreadable or busy refusal, because a
+    # retry is a reasonable thing to do about all three — so tap it and `phase`
+    # goes to `applying` with that same sha still in `last_refusal` and the
+    # bundle still in the inbox (the inbox entry is not removed until the apply
+    # lands). For the whole of every designed retry the card said "Taking an
+    # update" while this line said "Update refused", and with a locked-path
+    # refusal on record it said "needs the Captain" over an apply that was
+    # running. `applying` is durable by design — a killed apply leaves it on
+    # disk with its snapshot, which is how the restore finds its way back — so
+    # the wrong sentence was durable with it.
+    if state.get("phase") == "applying":
+        return ""
     record = state if state.get("phase") == "refused" else (state.get("last_refusal") or {})
     bundle = str(record.get("bundle") or "")
     if not bundle or (waiting_sha and (bundle != waiting_sha
@@ -286,8 +308,8 @@ def _update_notice(root: "str | None" = None) -> str:
     at all, yields "" — an unaskable question is answered with silence, never
     with "you are up to date".
 
-    A REFUSAL LEADS (A5.15, `_update_refusal_line` above): a bundle the updater
-    has already turned down must never be announced as ready to take."""
+    A REFUSAL LEADS, and an apply in flight leads both (A5.15,
+    `_update_refusal_line`): neither may ever read as "ready to take"."""
     import json
     from pathlib import Path
 
@@ -316,10 +338,23 @@ def _update_notice(root: "str | None" = None) -> str:
         # were. A full disk announced as a version number is a fault nobody
         # ever goes back to look at, so it leads the waiting bundle: the
         # records of what this box did are not being written down.
-        fault = str(_update_state(base).get("ledger_error") or "")
+        state = _update_state(base)
+        fault = str(state.get("ledger_error") or "")
         if fault:
             return ("Update records are not reaching the ledger — ledger fault: %s"
                     % fault)
+        # An apply IN FLIGHT is the live state and outranks the bundle in the
+        # inbox — that bundle is usually the very one being taken, and "ready
+        # to take — tap Apply" over a running apply invites a second one. This
+        # arm sat last until 2026-09-09, i.e. after the waiting-bundle arm,
+        # which made "An update is being taken right now" unreachable whenever
+        # anything was in the inbox: the only time it can be reached is the
+        # only time it was not. It stays BELOW the ledger fault because this is
+        # a one-line surface and that fault is the sentence nobody goes back to
+        # look at; the card, which has room for both, shows the fault beside
+        # whatever its headline says.
+        if state.get("phase") == "applying":
+            return "An update is being taken right now"
         if waiting:
             _, sha, count = max(waiting)
             receipt = _update_receipt_for(sha) or {}
@@ -337,15 +372,12 @@ def _update_notice(root: "str | None" = None) -> str:
             # something is sitting here to be taken.
             return ("An update is ready to take (%s, %d files) — open the home page "
                     "and tap Apply" % (sha[:8], count))
-        state = _update_state(base)
         if state.get("phase") == "applied" and state.get("to_sha"):
             return "Updated to %s: %s changes" % (
                 str(state["to_sha"])[:8], state.get("changed", 0))
         if state.get("phase") == "rolled_back":
             return ("An update was rolled back: %s"
                     % (state.get("reason") or "it did not come up healthy"))
-        if state.get("phase") == "applying":
-            return "An update is being taken right now"
     except Exception:  # noqa: BLE001
         return ""
     return ""

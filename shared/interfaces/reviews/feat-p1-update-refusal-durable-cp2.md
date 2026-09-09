@@ -32,6 +32,23 @@ unit's own comments say cannot disagree, disagreed.
 
 The runbook now states the rule and names both readers.
 
+**CORRECTION, 2026-09-09 (round 3).** The third bullet was TRUE OF THE CARD AND
+FALSE OF THE BRIEFING when this checkpoint was written, and the round-2
+independent review proved it: `refusalToShow` opened with `phase === 'applying'
+-> null`; `_update_refusal_line` had no `applying` guard at all, and
+`_update_notice`'s own `applying` arm sat after the waiting-bundle arm, which a
+waiting bundle makes unreachable. So on the retry this card is deliberately
+built for — it keeps Apply for a digest-mismatch, unreadable or busy refusal —
+the card said "Taking an update to bbbbbbbb" while the briefing said "Update
+refused", and with a locked-path refusal on record, "needs the Captain" over a
+running apply. An interrupted apply leaves `phase: applying` on disk by design,
+so the wrong sentence was durable with it. Closed in cp3: the guard is in
+`_update_refusal_line`, the `applying` arm is hoisted ahead of the waiting one,
+and the claim is no longer a claim — the six states are one checked-in fixture
+driven through BOTH readers. Recorded here rather than rewritten, because the
+lesson is that a parity claim written on the strength of "I wrote the same
+three rules on both sides" is an assertion, not a measurement.
+
 ## 2. MUST-FIX — a busy refusal could revert a concurrent apply's state
 
 `record_refusal` and `record_event → update_state` did an unlocked

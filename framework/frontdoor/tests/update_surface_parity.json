@@ -1,0 +1,167 @@
+{
+  "_what_this_is": [
+    "The states the two update surfaces must agree about, written once and driven",
+    "through BOTH of them: the home card (cabinet/dashboard/src/lib/updates.ts,",
+    "updateHeadline + refusalToShow, vitest) and the briefing line",
+    "(framework/frontdoor/run_briefing._update_notice, pytest). Each reader gets",
+    "the SAME bytes -- `state` is written verbatim as .updates/state.json, and the",
+    "card fixture is derived from these same fields exactly as `cabinet-update.sh",
+    "status --json` derives its report from them.",
+    "",
+    "WHY IT IS ONE FILE. Both sides carried the comment 'two surfaces reading one",
+    "state file must not be able to disagree' while the third of the three rules",
+    "was written on the card only: `refusalToShow` opened with `applying -> null`",
+    "and `_update_refusal_line` had no applying guard, so through every retry of a",
+    "digest-mismatch refusal the card said 'Taking an update' and the briefing said",
+    "'Update refused'. Two independently-authored fixture sets cannot catch that --",
+    "each side proves only itself. One fixture set, two readers, can.",
+    "",
+    "`agree.kind` is the classification both sentences must land on; the wording",
+    "differs on purpose (one is a card headline, one is a briefing line), so what",
+    "is asserted is the kind, the bundle every sha-shaped token in the sentence",
+    "names, and any wording the two genuinely share. Add a state here and BOTH",
+    "suites start asserting it."
+  ],
+  "shas": {
+    "installed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "waiting": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "other": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "cases": [
+    {
+      "name": "idle, one bundle waiting",
+      "installed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "waiting": {
+        "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "file_count": 12,
+        "built_at": "2026-09-07T00:00:00Z"
+      },
+      "state": null,
+      "agree": { "kind": "ready", "bundle": "bbbbbbbb", "shared_wording": [] }
+    },
+    {
+      "name": "refused, same sha, constitutional paths",
+      "installed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "waiting": {
+        "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "file_count": 12,
+        "built_at": "2026-09-07T00:00:00Z"
+      },
+      "state": {
+        "phase": "refused",
+        "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "reason": "bundle changes locked constitutional paths",
+        "paths": ["cabinet/scripts/start-officer-mac.sh"],
+        "ts": "2026-09-08T18:58:00Z",
+        "door": "terminal",
+        "last_refusal": {
+          "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "reason": "bundle changes locked constitutional paths",
+          "paths": ["cabinet/scripts/start-officer-mac.sh"],
+          "ts": "2026-09-08T18:58:00Z",
+          "door": "terminal"
+        }
+      },
+      "agree": {
+        "kind": "refusal",
+        "bundle": "bbbbbbbb",
+        "shared_wording": ["Update refused", "1 constitutional file", "needs the Captain"]
+      }
+    },
+    {
+      "name": "refused, same sha, busy -- timing, never a verdict on the bytes",
+      "installed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "waiting": {
+        "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "file_count": 12,
+        "built_at": "2026-09-07T00:00:00Z"
+      },
+      "state": {
+        "phase": "refused",
+        "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "reason": "busy",
+        "paths": [],
+        "ts": "2026-09-08T18:58:00Z",
+        "door": "web",
+        "last_refusal": {
+          "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "reason": "busy",
+          "paths": [],
+          "ts": "2026-09-08T18:58:00Z",
+          "door": "web"
+        }
+      },
+      "agree": { "kind": "ready", "bundle": "bbbbbbbb", "shared_wording": [] }
+    },
+    {
+      "name": "refused, some OTHER sha -- never silences the one that is waiting",
+      "installed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "waiting": {
+        "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "file_count": 12,
+        "built_at": "2026-09-07T00:00:00Z"
+      },
+      "state": {
+        "phase": "refused",
+        "bundle": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "reason": "bundle changes locked constitutional paths",
+        "paths": ["cabinet/scripts/start-officer-mac.sh"],
+        "ts": "2026-09-08T18:00:00Z",
+        "door": "terminal",
+        "last_refusal": {
+          "bundle": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "reason": "bundle changes locked constitutional paths",
+          "paths": ["cabinet/scripts/start-officer-mac.sh"],
+          "ts": "2026-09-08T18:00:00Z",
+          "door": "terminal"
+        }
+      },
+      "agree": { "kind": "ready", "bundle": "bbbbbbbb", "shared_wording": [] }
+    },
+    {
+      "name": "applying, the same bundle still waiting, its refusal still on record",
+      "_why": [
+        "The retry the card is designed for: it KEEPS Apply for a digest-mismatch,",
+        "unreadable or busy refusal, tapping it moves phase to `applying` with that",
+        "same sha still in `last_refusal` (the write carries that field) and the",
+        "bundle still in the inbox until the apply lands. Durable, too: a killed",
+        "apply leaves `phase: applying` and its snapshot on disk. This is the state",
+        "the two surfaces disagreed about until 2026-09-09."
+      ],
+      "installed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "waiting": {
+        "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "file_count": 12,
+        "built_at": "2026-09-07T00:00:00Z"
+      },
+      "state": {
+        "phase": "applying",
+        "to_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "snapshot": "20260908T185800-aaaaaaaa",
+        "last_refusal": {
+          "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "reason": "failed per-file digest verification",
+          "paths": [],
+          "ts": "2026-09-08T18:58:00Z",
+          "door": "web"
+        }
+      },
+      "agree": { "kind": "apply-in-flight", "bundle": "bbbbbbbb", "shared_wording": [] }
+    },
+    {
+      "name": "applied, nothing left waiting",
+      "installed": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "waiting": null,
+      "state": {
+        "phase": "applied",
+        "to_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "changed": 4
+      },
+      "agree": {
+        "kind": "applied",
+        "bundle": "bbbbbbbb",
+        "shared_wording": ["Updated to bbbbbbbb", "4 change"]
+      }
+    }
+  ]
+}
