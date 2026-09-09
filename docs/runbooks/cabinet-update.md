@@ -17,7 +17,8 @@ inbox, and for reading a refusal.
 | Bundle | `<root>/.updates/inbox/<sha>.tar.gz` + `<sha>.manifest.json` |
 | Identity | `egg-manifest.json` → `source_commit`. There is no second version file |
 | Snapshots | `<root>/.updates/snapshots/<stamp>-<from-sha>/`, newest 3 kept |
-| State | `<root>/.updates/state.json` — what the card reads, refusals included |
+| State | `<root>/.updates/state.json` — phase, the legacy refusal mirror, `last_busy` |
+| Refusal markers | `<root>/.updates/refusals/<sha>.json` — one verdict per bundle, the durable store a whole-document state replace cannot reach |
 | Log | `<root>/.updates/update.log` |
 | Receipts | `cabinet_update_applied` / `_refused` / `_rolled_back` in the ledger |
 | Held records | `<root>/.updates/events.jsonl` — receipts this install's ledger would not take yet, replayed by the next apply |
@@ -111,136 +112,139 @@ application is never a legal state.
 
 ### Every refusal is durable, and every surface reads it
 
-A refusal is written down TWICE, by one call, in one order: `state.json` —
-`{phase: "refused", bundle, reason, paths, ts, door}`, kept under
-`last_refusal` — and a `cabinet_update_refused` receipt in the ledger. Either
-half can be the only one that survives: the state write can fail (the updater
-logs `STATE WRITE FAILED` and the recorder returns `state_error`), the file can
-be truncated or removed, and an install whose emitter predates the update path
-refuses the event kind outright and holds the record in the sidecar instead.
+**Two classes, and they are not the same record (A5.17).** A **verdict** is
+about the bundle's bytes — a locked constitutional path, a digest mismatch, an
+unreadable bundle. A **timing note** is `busy`, or any record naming no bundle
+at all: another updater held the lock, which says nothing about what is in the
+inbox. A verdict binds its sha until a strictly newer apply or rollback names
+that sha. A timing note is about no bundle: it never resolves, never occupies a
+verdict store, never moves `phase` to `refused`, and never supersedes or is
+superseded by anything.
 
-**`status --json` is the one reader of both channels.** It resolves ONE
-`last_refusal` — the state file's record if it has one, else the ledger's
-CURRENT refusal — and says which channel answered:
+**A verdict is written down three times, by one call, in this order:**
+
+| | |
+|---|---|
+| `<root>/.updates/refusals/<sha>.json` | `{bundle, reason, paths, ts, door}` — the DURABLE store, one file per refused bundle |
+| `cabinet_update_refused` | the ledger receipt, through the recorder that survives an older emitter |
+| `<root>/.updates/state.json` | `phase: refused` plus the fields, and `last_refusal` as a legacy MIRROR of the newest verdict — unless `phase` is `applying` |
+
+A timing note writes its receipt and `state.json.last_busy {bundle, ts, door}`,
+and nothing else.
+
+**Why a file per bundle rather than a field.** Every write to `state.json` is a
+whole-document replace, by several writers, and during an update one of them
+can be an OLDER updater copy that has never heard of the field — the install
+carries the updater it was cut with, and an update is exactly the moment two
+versions exist on one box. A single slot is lost the moment anything else
+happens; a map is lost the moment an older copy writes. The marker survives
+both. It is deleted by the apply or rollback that NAMES its sha (the verdict is
+spent when the tree moves), never while its sha is still in the inbox, and the
+store is bounded at 64 with the same exemption.
+
+A failed marker or state write is NAMED, never swallowed and never raised:
+`record-refusal` returns `state_error`, the updater logs `STATE WRITE FAILED`,
+and `status --json` carries it — raising would lose the receipt the ledger
+already took.
+
+**Time is the record's own.** Every update event carries `recorded_at` in its
+payload, stamped by the updater when the record was made, and every marker
+carries `ts`. The ledger's insertion time is never used for ordering: a record
+held for an older emitter is replayed by the NEXT apply, so under insertion
+order a refusal from last week is newer than the update that overtook it.
+Position in the ledger is not an input either — only times among records naming
+the same sha are ever compared.
+
+**`status --json` resolves ONE answer, about ONE bundle.**
 
 ```json
 { "phase": "refused",
   "last_refusal_source": "state",
   "last_refusal": { "bundle": "113b52c4…", "reason": "bundle 113b52c4… changes
     locked constitutional paths", "paths": ["cabinet/scripts/start-officer-mac.sh"],
-    "ts": "2026-09-08T18:58:00Z", "door": "terminal" } }
+    "ts": "2026-09-08T18:58:00Z", "door": "terminal" },
+  "waiting_rollback": null,
+  "last_busy": { "bundle": "", "ts": "2026-09-09T10:00:30Z", "door": "web" },
+  "state_error": "" }
 ```
 
-`last_refusal_source` is `state`, `receipt`, or empty when there is none, and
-`cabinet-update.sh status` prints *(from the ledger receipt; the state file
-carries no refusal)* beside the line when it is `receipt`. Nothing renders off
-it — it is there so a state file that has gone missing is a fact on the report
-rather than a silence. Currency on the receipt channel is the receipt spelling
-of `phase: refused`: the newest `cabinet_update_refused` receipt is the
-resolved one only while nothing has happened to that bundle since.
+`last_refusal` is `current(W)` for the bundle W that is waiting: the newest
+verdict about W — from its marker, from the ledger, or (only on an install with
+no marker store at all) from the legacy `last_refusal` — that no strictly newer
+apply or rollback about W has superseded, on either channel. Equal times keep
+the refusal: a relock landing in the same second as the verdict has not proved
+the bytes acceptable. When nothing is waiting, it is the newest verdict
+anywhere that is newer than every applied and rolled-back record; else null.
+`last_refusal_source` is `state`, `receipt`, or empty, and ties go to `state`.
+The report never writes.
 
-Until 2026-09-09 this report read the state file alone while the briefing read
-both — and read the second one outside the four rules below. A `busy` refusal
-of the bundle still in the inbox gave the briefing *An update is waiting but
-was REFUSED: busy* while the card said *Update ready* with Apply live; a
-locked-path refusal that had reached only the ledger gave the briefing *REFUSED:
-it changes locked constitutional paths* while the card rendered Apply — the
-button that fails identically every tap, which is the whole reason a refusal is
-durable at all.
+**Both surfaces consume only that.** No surface reads a receipt or a state
+field to speak a refusal. In this order, identically on the home card and the
+briefing line:
 
-The home card and the briefing line read that: *Update refused — 1
-constitutional file differs; needs the Captain*, with the files named on the
-card and the Apply button withdrawn, because those bytes change by a ceremony
-and no number of taps will do it. That same bundle is never offered as "Update
-ready" again while it is still in the inbox — `last_refusal` survives later
-state writes, so an unrelated apply landing in between does not resurrect the
-offer.
+1. `phase: applying` → the applying sentence, no refusal.
+2. W waiting with a current verdict naming locked paths → *Update refused — N
+   constitutional files differ; needs the Captain (W)*, the files named on the
+   card, **Apply withdrawn** — those bytes change by a ceremony and no number
+   of taps will do it.
+3. W waiting with any other current verdict → *Update refused — <reason> (W)*,
+   **Apply kept**: a retry re-tests.
+4. W waiting, no current verdict, and the newest record about W is a rollback
+   FROM W → *Update rolled back — <reason>; still waiting (W)*, Apply kept.
+5. W waiting otherwise → *Update ready*, regardless of any other bundle's
+   records.
+6. Nothing waiting → the resolved verdict if any, else the existing applied /
+   rolled-back / quiet ladder.
 
-**A refusal is about ONE bundle and about ONE moment.** Nothing moves `phase`
-out of `refused` except a later apply, and nothing ever CLEARS `last_refusal` —
-the updater carries it onto every later state document on purpose, because a
-refusal is still true after the next thing happens. Both halves of that have
-bitten. A refusal that spoke for as long as the phase said `refused` spoke over
-every bundle published afterwards — including the one cut right after the
-Captain's ceremony — and withdrew Apply with it, which is the only no-terminal
-way to take the update that clears the phase. A refusal that spoke for as long
-as it was ON RECORD outlived the apply that overtook it: the busy race ends
-with the winner's bundle installed and nothing waiting, and both surfaces said
-*Update refused — busy* over a Cabinet running exactly those bytes, for ever.
+`busy` is never a headline anywhere; `cabinet-update.sh status` and `last_busy`
+carry it.
 
-So there are four rules:
+**What each round of review paid for.** A refusal that spoke for as long as the
+phase said `refused` spoke over every bundle published afterwards — including
+the one cut right after the Captain's ceremony — and withdrew Apply with it,
+which is the only no-terminal way to take an update (round 1). Rule 1's
+`applying` guard was written on the card only, so through every designed retry
+the card said "Taking an update" and the briefing said "Update refused" (round
+2). A refusal that spoke for as long as it was ON RECORD outlived the apply
+that overtook it, and both surfaces then said *Update refused — busy* over a
+Cabinet running exactly those bytes, for ever (round 3). The rules were applied
+to ONE of two channels, so a locked-path refusal that had reached only the
+ledger gave the briefing *REFUSED* while the card rendered Apply (round 4).
+And the resolution itself took the newest refusal receipt GLOBALLY: a `busy`
+note written by a rollback that lost the lock — a record about no bundle at all
+— blanked the constitutional verdict on the bundle in the inbox, and both
+surfaces said *ready to take — tap Apply* over it (round 5). Round 4 was
+card-wrong and briefing-right; round 5 was both wrong, in agreement, which is
+worse.
 
-1. no refusal on record, nothing to say;
-2. an apply IN FLIGHT outranks it and neither surface speaks it, because
-   `applying` is what is true right now and the refusal is a note about the
-   request that led to it;
-3. nothing waiting, it speaks only while it is still the LAST THING THAT
-   HAPPENED — `phase` still `refused`; an apply or a rollback since has
-   overtaken it, and the applied and rolled-back sentences are the news;
-4. something waiting, it speaks only about the same sha, and only when it is a
-   verdict on those bytes rather than about timing.
+None of that is a claim, and it is no longer proved by the states somebody
+thought of. Two checked-in fixtures under `framework/frontdoor/tests/` are
+driven through all THREE readers — the briefing (`test_card_update_notice.py`),
+the resolver the card is fed by (`test_cabinet_update.py`) and the card itself
+(`lib/updates.test.ts`):
 
-The rules run ONCE, on the ONE resolved record, whichever channel it came from
-— that is what round 5 changed. The card (`lib/updates.refusalToShow`) and the
-briefing line (`run_briefing._update_refusal_line`) are those same four rules
-written twice on purpose — two surfaces reading one record must not be able to
-disagree. The briefing still reads the ledger for `applied` and `rolled_back`
-receipts, which are not refusals and cannot contradict a live Apply button; a
-refusal reaches it only through the resolved record.
-Rule 2 was written on the card only until 2026-09-09, and the disagreement it
-let through was the ordinary retry: the card keeps Apply for a digest-mismatch,
-unreadable or busy refusal (a retry is a reasonable thing to do about all
-three), so tapping it moved `phase` to `applying` with the same sha still in
-`last_refusal` and the bundle still in the inbox — the card said "Taking an
-update", the briefing said "Update refused", and an interrupted apply, which
-leaves `phase: applying` on disk on purpose, made that permanent. Rule 3 was
-missing from both until the same day, which is worse than a disagreement: the
-two surfaces agreed, about something false.
+* `update_surface_parity.json` — the argued cases, with the exact wording each
+  surface must produce and the resolution each must reach.
+* `update_surface_oracle.json` — the WHOLE product of the six axes these
+  readers branch on: phase (5) × what is waiting (3) × what the state channel
+  says about B (5) × the ledger's SEQUENCE about B (7) × the newest ledger
+  record not about B (5) × ledger fault (2) = **5250 rows**, each carrying the
+  exact sentence for both surfaces, whether the refusal speaks, whether Apply
+  is live, and which channel answered. Four inputs are held outside the product
+  as INVARIANCE arms over sampled rows — a marker about another bundle,
+  `last_busy` in any value, `event_fallback` either way, and the ledger's
+  record order — because each is claimed independent, and a claim of
+  independence is worth what it is tested at.
 
-None of that is a claim any more, and it is no longer proved by the states
-somebody thought of. Two checked-in fixtures under
-`framework/frontdoor/tests/` are driven through BOTH readers, by
-`test_card_update_notice.py` and by `lib/updates.test.ts`:
-`update_surface_parity.json`, the argued cases with the exact wording each must
-produce, and `update_surface_oracle.json` — the WHOLE product of the six axes
-these readers branch on (phase × waiting × refusal × ledger fault × held record
-× LEDGER RECEIPT, 1440 rows), each row carrying the headline kind each surface
-must land on, whether the refusal sub-surface speaks, and what the resolution
-must produce. A kind changed in either file reds both suites. Four rounds of
-hand-written arms each aimed at the state that already worked; a product does
-not have to be thought of. The ledger became the sixth axis when round 4 found
-the defect living exactly where the table did not look: all 240 rows had run on
-an empty ledger, so a claim that the product was whole was true of five axes
-and blind to the one a whole refusal channel lived on.
-
-The two surfaces differ on two states by SHAPE, both written per surface in
-that table rather than skipped: a ledger fault takes the briefing's one line
-and sits beside the card's headline, and a `cabinet_update_rolled_back` receipt
-about the bundle in the inbox takes the briefing's line (*An update to abc1234
-was rolled back … and is still in the inbox*) while the card says *Update
-ready* and keeps Apply — a rollback is not a refusal and retrying one is
-reasonable, exactly as the card keeps Apply for a digest mismatch. What never
-differs is whether the refusal speaks, which is what withdraws Apply.
-
-Two deliberate exceptions, both about not letting one durability feature eat
-another:
-
-- a **busy** refusal never takes `phase` from an interrupted apply. `phase:
-  applying` plus a snapshot name is the only marker saying a tree is
-  half-written and which snapshot puts it back; the busy refusal is recorded in
-  `last_refusal` beside it and leaves it alone. The read of `state.json` and
-  the write back are held under `.updates/.state.lock`, because the updater
-  that a busy refusal lost to is writing that same file: unlocked, the refusal
-  could put `phase: applying` and a snapshot name back over an apply that had
-  already SUCCEEDED, and the next run would restore from it.
-- **busy** does not stick to a bundle either. It is a fact about timing, not
-  about those bytes, so the card offers the bundle normally — whatever the
-  phase says.
-
-Before 2026-09-08 none of this existed: the first real apply on the installed
-Cabinet refused exactly as designed and left `phase: idle, last: null` behind,
-so the card would have offered the same bundle for ever and the only record on
-the box was one line in `update.log`.
+A sentence or a flag changed in either file reds all three suites. The ledger
+became an axis when round 4 found the defect living exactly where the table did
+not look — all 240 rows ran on an empty ledger — and became an axis of
+SEQUENCES when round 5 found the same thing one level down: 1440 rows, every
+one of them with at most ONE receipt about the refused bundle, so "the newest
+refusal about B" and "the newest refusal anywhere" were indistinguishable and
+the shape `refuse_busy` writes on every lock contention was not representable
+at any point in the product. A completeness claim that holds an input's DEPTH
+constant is a green hole, not a covered one.
 
 ### When this install's ledger does not know the event yet
 

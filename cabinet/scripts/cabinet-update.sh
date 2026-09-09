@@ -247,6 +247,21 @@ record_refusal() { # <bundle> <reason> <paths-json>
   report_held cabinet_update_refused "$out"
 }
 
+# THE VERDICT IS SPENT THE MOMENT THE TREE MOVES (A5.17.2). An apply and a
+# rollback delete the markers of every sha they NAME, in the same operation
+# that writes their receipt — bounded to those shas, so a rollback that names
+# two never touches a third. Without it a refused bundle that was later applied
+# by a Captain who unlocked, applied and relocked would carry its verdict for
+# ever, and the card would keep withdrawing Apply from bytes that are already
+# installed.
+drop_refusal_markers() { # <sha>...
+  local args=() sha
+  for sha in "$@"; do [ -n "$sha" ] && args+=(--sha "$sha"); done
+  [ "${#args[@]}" -gt 0 ] || return 0
+  "$PY" "$BUNDLE_PY" drop-refusals --root "$ROOT" "${args[@]}" >>"$LOG" 2>&1     || log "WARN: the refusal markers for $* could not be dropped (see $LOG)"
+  return 0
+}
+
 # Replay whatever an older emitter refused, now that a newer one is in place.
 # Called by `apply` AFTER the new tree has landed and BEFORE the gate — the
 # record belongs in the ledger whether or not the update survives its gate.
@@ -573,28 +588,41 @@ if (upd / "state.json").is_file():
     except Exception:
         state = {}
 
-# THE ONE REFUSAL EVERY SURFACE READS, resolved from BOTH channels here.
+# THE ONE REFUSAL EVERY SURFACE READS, resolved PER BUNDLE from every channel.
 #
-# A refusal is written down twice by one call — `state.json` and the ledger
-# receipt — and either half can be the only one that survives: the state write
-# can fail, the file can be truncated or removed, and an install whose emitter
-# predates the update path refuses the event kind (A5.16). This report is the
-# home card's ONLY input, and until 2026-09-09 it read the first channel alone,
-# so a locked-path refusal that reached only the ledger left the card offering
-# Apply on a bundle this box had already turned down — the button that fails
-# identically every tap, which is A5.15's own rationale. `last_refusal_source`
-# says which channel answered, so a state file that has gone missing is a fact
-# on the report rather than a silence. Fail-open: if the resolver cannot be
-# imported at all, the state file's own record still stands.
+# A verdict is written down three times by one call — its own marker, the
+# ledger receipt and `state.json` — and any one of them can be the only survivor:
+# the state write can fail, the document is replaced whole by every other writer
+# (including an older updater copy that never knew the field), and an install
+# whose emitter predates the update path refuses the event kind (A5.16). This
+# report is the home card's ONLY input.
+#
+# PER BUNDLE, and that is the round-5 must-fix (A5.17). The resolver this
+# replaces took the newest refusal receipt in the window GLOBALLY: a `busy`
+# note written by a rollback that lost the lock — a record about no bundle at
+# all — blanked the constitutional verdict on the bundle sitting in the inbox,
+# and this card then offered Apply on it. `current(W)` asks each channel about
+# the WAITING bundle and nothing else; when nothing waits, the newest verdict
+# that is still the last thing that happened. Fail-open: if the resolver cannot
+# be imported at all, the state file's own record still stands.
+waiting_sha = available[0]["sha"] if available else ""
 refusal = state.get("last_refusal")
 refusal_source = "state" if refusal else ""
+waiting_rollback = None
+last_busy = state.get("last_busy") if isinstance(state.get("last_busy"), dict) else None
+state_error = str(state.get("state_error") or "")
 try:
     lib_dir = sys.argv[3] if len(sys.argv) > 3 else ""
     if lib_dir and lib_dir not in sys.path:
         sys.path.insert(0, lib_dir)
     import update_bundle
 
-    refusal, refusal_source = update_bundle.resolve_last_refusal(root, state)
+    resolved = update_bundle.resolve_update_surface(root, state, waiting_sha)
+    refusal = resolved["last_refusal"]
+    refusal_source = resolved["last_refusal_source"]
+    waiting_rollback = resolved["waiting_rollback"]
+    last_busy = resolved["last_busy"]
+    state_error = resolved["state_error"]
 except Exception:
     pass
 
@@ -619,6 +647,15 @@ report = {
     # it FAILED, and no update files that.
     "last_refusal": refusal,
     "last_refusal_source": refusal_source,
+    # A5.17.7: the bundle in the inbox is one this box already took and put
+    # back. Not a refusal — Apply stays, because a retry is legitimate — but
+    # not "ready" either, and both surfaces say the same sentence about it.
+    "waiting_rollback": waiting_rollback,
+    # A5.17.1: a timing note is about no bundle. It is never a headline
+    # anywhere; it is carried here and said in words below.
+    "last_busy": last_busy,
+    # A5.17.2: the half of a refusal that could not be written down says so.
+    "state_error": state_error,
     "event_fallback": bool(state.get("event_fallback")),
     "ledger_error": state.get("ledger_error") or "",
 }
@@ -643,6 +680,19 @@ else:
             if report["last_refusal_source"] == "receipt" else ""))
         for path in refusal.get("paths") or []:
             print("            %s" % path)
+    rolled = report["waiting_rollback"]
+    if rolled:
+        print("rolled back: %s  %s  (still waiting)" % (
+            (rolled.get("bundle") or "")[:8],
+            rolled.get("reason") or "it did not come up healthy"))
+    busy = report["last_busy"]
+    if busy:
+        print("busy      : another updater held the lock at %s%s"
+              % (busy.get("ts") or "an unrecorded time",
+                 "  (%s)" % busy.get("bundle")[:8] if busy.get("bundle") else ""))
+    if report["state_error"]:
+        print("held      : the durable half of a refusal could not be written: %s"
+              % report["state_error"])
     if report["ledger_error"]:
         print("held      : ledger fault: %s" % report["ledger_error"])
         print("            a record is waiting in .updates/events.jsonl; no update files this")
@@ -919,6 +969,7 @@ cmd_rollback() {
   write_state "{\"phase\":\"rolled_back\",\"from_sha\":$(json_escape "$before"),\"to_sha\":$(json_escape "$after"),\"snapshot\":$(json_escape "$snap_name"),\"reason\":\"requested\",\"finished_at\":$(json_escape "$(now_utc)"),\"door\":$(json_escape "$DOOR")}"
   emit_event cabinet_update_rolled_back "$(door_actor "$DOOR")" \
     "{\"from_sha\":$(json_escape "$before"),\"to_sha\":$(json_escape "$after"),\"reason\":\"requested\",\"door\":$(json_escape "$DOOR")}"
+  drop_refusal_markers "$before" "$after"
   log "rolled back to $snap_name"
   return 0
 }
@@ -1045,6 +1096,7 @@ roll_back_after() { # <snapshot-dir> <to_sha> <from_sha> <reason> <skip_restart>
   write_state "{\"phase\":\"rolled_back\",\"from_sha\":$(json_escape "$to_sha"),\"to_sha\":$(json_escape "$from_sha"),\"snapshot\":$(json_escape "$(basename "$snap")"),\"reason\":$(json_escape "$reason"),\"finished_at\":$(json_escape "$(now_utc)")}"
   emit_event cabinet_update_rolled_back "$(door_actor "$DOOR")" \
     "{\"from_sha\":$(json_escape "$to_sha"),\"to_sha\":$(json_escape "$from_sha"),\"reason\":$(json_escape "$reason"),\"door\":$(json_escape "$DOOR")}"
+  drop_refusal_markers "$to_sha" "$from_sha"
   exit 1
 }
 
@@ -1247,6 +1299,7 @@ print(datetime.fromtimestamp(os.stat(sys.argv[1]).st_mtime, timezone.utc).strfti
   write_state "{\"phase\":\"applied\",\"from_sha\":$(json_escape "$here"),\"to_sha\":$(json_escape "$sha"),\"snapshot\":$(json_escape "$(basename "$snap")"),\"started_at\":$(json_escape "$started"),\"finished_at\":$(json_escape "$(now_utc)"),\"changed\":$changed_n,\"deleted\":$deleted_n,\"skipped_preserved\":$skipped,\"built_at\":$(json_escape "$built_at"),\"door\":$(json_escape "$DOOR")}"
   emit_event cabinet_update_applied "$(door_actor "$DOOR")" \
     "{\"from_sha\":$(json_escape "$here"),\"to_sha\":$(json_escape "$sha"),\"changed\":$changed_n,\"deleted\":$deleted_n,\"snapshot\":$(json_escape "$(basename "$snap")"),\"door\":$(json_escape "$DOOR"),\"built_at\":$(json_escape "$built_at"),\"inbox_owner\":$(json_escape "$owner"),\"inbox_mtime\":$(json_escape "$mtime"),\"skipped_preserved\":$skipped}"
+  drop_refusal_markers "$here" "$sha"
   log "applied ${here:0:8} -> ${sha:0:8}: $changed_n changed, $deleted_n deleted"
   if [ "$skipped" != "[]" ]; then
     log "kept your own data instead of the shipped copy: $skipped"

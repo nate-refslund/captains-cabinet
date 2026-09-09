@@ -30,7 +30,7 @@
 
 import { useState, useTransition } from 'react'
 import { applyUpdate, rollbackUpdate } from '@/actions/updates'
-import { refusalToShow, type UpdateStatus } from '@/lib/updates'
+import { applyTarget, refusalToShow, type UpdateStatus } from '@/lib/updates'
 
 export default function UpdateCard({
   status,
@@ -49,11 +49,12 @@ export default function UpdateCard({
   // A constitutional refusal is the one an operator cannot retry into
   // succeeding: those bytes change by a deliberate unlock-and-relock, and an
   // Apply button there is a button that fails identically every time it is
-  // tapped. A refusal with no paths — busy, a bad digest, an unreadable
-  // bundle — says what happened and leaves the button, because a retry is a
-  // reasonable thing to do about all three.
-  const blocked = (refusal?.paths?.length ?? 0) > 0
-  const waiting = blocked ? null : status.latest
+  // tapped. A refusal with no paths — a bad digest, an unreadable bundle — and
+  // a bundle this box rolled back say what happened and LEAVE the button,
+  // because a retry re-tests. The gate is `applyTarget` rather than an
+  // expression here so the oracle can drive it: `apply_live` is a column on
+  // all 5250 rows, and an inline condition cannot be held to a table.
+  const waiting = applyTarget(status)
   const applied = status.phase === 'applied' && status.last?.to_sha
   const canRollBack = status.snapshots.length > 0
 

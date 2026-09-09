@@ -601,11 +601,13 @@ INGESTED_IDS_REL = ".updates/events.ingested"
 STATE_REL = ".updates/state.json"
 STATE_LOCK_REL = ".updates/.state.lock"
 
-#: Fields that survive a whole-document state write. `last_refusal` is here
-#: because every other write to the state file REPLACES it: without the carry
-#: a refusal would be forgotten the moment anything else happened, and the card
-#: would offer the refused bundle again the next time some other apply landed.
-CARRIED_STATE_FIELDS = ("last_refusal",)
+#: Fields that survive a whole-document state write. Every other write to this
+#: file REPLACES it, so without the carry these are forgotten the moment
+#: anything else happens. `last_refusal` is the LEGACY MIRROR of the newest
+#: verdict (A5.17.2 — the durable store is `.updates/refusals/<sha>.json`, so
+#: this carry is for readers cut before that store existed); `last_busy` is the
+#: timing note, which is never a headline anywhere and is reported in words.
+CARRIED_STATE_FIELDS = ("last_refusal", "last_busy")
 
 
 def _utc_now() -> str:
@@ -809,8 +811,32 @@ def _is_version_skew(exc: BaseException) -> bool:
 #: The refusal record's own fields, and the whole of what any reader uses.
 REFUSAL_FIELDS = ("bundle", "reason", "paths", "ts", "door")
 
+#: THE PER-BUNDLE VERDICT STORE (A5.17.2). One file per refused sha:
+#: `<root>/.updates/refusals/<sha>.json`. It is a directory of markers rather
+#: than a map inside `state.json` because EVERY write to that document is a
+#: whole-document replace, by several writers, one of which can be an OLDER
+#: updater copy that never knew the field: a single slot is lost the moment
+#: anything else happens, and a map is lost the moment an older copy writes.
+#: A refusal that is forgotten is A5.15's own defect — the Apply button that
+#: fails identically every tap with nothing anywhere saying why.
+REFUSALS_REL = ".updates/refusals"
+
+#: THE RECORD'S OWN TIME (A5.17.3), carried in the payload of every update
+#: event this module writes and in every marker. NEVER the ledger's insertion
+#: time: a record held in the sidecar for an older emitter is replayed by the
+#: next apply and inserted LATER than the apply that replayed it, so ordering
+#: by insertion makes a refusal from last week newer than the update that
+#: overtook it. One field, the same on all three event types.
+RECORD_TIME_FIELD = "recorded_at"
+
+#: How many markers the store keeps. Markers are ~200 bytes and only a refusal
+#: writes one, so the bound is generous on purpose — and it NEVER evicts a sha
+#: that is still in the inbox (A5.17.2), because that is precisely the marker
+#: some surface is about to ask for.
+MARKER_KEEP = 64
+
 #: The three receipts the update path writes. The ledger is the SECOND channel
-#: a refusal lands in; `state.json` is the first.
+#: a refusal lands in; the per-bundle marker is the first.
 UPDATE_RECEIPT_TYPES = (
     "cabinet_update_applied",
     "cabinet_update_refused",
@@ -818,13 +844,140 @@ UPDATE_RECEIPT_TYPES = (
 )
 
 
+def is_verdict(bundle: Any, reason: Any) -> bool:
+    """A VERDICT is about the bundle's bytes; a TIMING NOTE is about no bundle.
+
+    A5.17.1, and the whole of the classification both channels use. `busy`
+    means another updater held the lock, which says nothing about what is in
+    the inbox; a record with no sha names nothing at all. Neither resolves,
+    neither occupies the verdict store, and neither supersedes or is
+    superseded — round 5 measured what the other reading costs: a `busy` note
+    written by a rollback that lost the lock blanked a constitutional verdict
+    on the bundle actually waiting, and both surfaces then said "Update ready"
+    over it."""
+
+    return bool(str(bundle or "")) and str(reason or "") != "busy"
+
+
+def refusals_dir(install_root: Path) -> Path:
+    return install_root / REFUSALS_REL
+
+
+def refusal_marker_path(install_root: Path, bundle: str) -> Path:
+    return refusals_dir(install_root) / (str(bundle) + ".json")
+
+
+def read_refusal_marker(install_root: Path, bundle: str) -> dict[str, Any] | None:
+    """One bundle's marker, or None. Never raises: an unreadable marker is
+    silence on that bundle, exactly as an unreadable state file is."""
+
+    if not bundle:
+        return None
+    try:
+        document = json.loads(
+            refusal_marker_path(install_root, bundle).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return document if isinstance(document, dict) else None
+
+
+def read_refusal_markers(install_root: Path) -> list[dict[str, Any]]:
+    """Every marker on disk, oldest first by its own timestamp."""
+
+    directory = refusals_dir(install_root)
+    records: list[dict[str, Any]] = []
+    try:
+        names = sorted(path.name for path in directory.iterdir()
+                       if path.name.endswith(".json"))
+    except OSError:
+        return []
+    for name in names:
+        record = read_refusal_marker(install_root, name[:-len(".json")])
+        if isinstance(record, dict) and record.get("bundle"):
+            records.append(record)
+    records.sort(key=lambda record: str(record.get("ts") or ""))
+    return records
+
+
+def inbox_shas(install_root: Path) -> set[str]:
+    """The bundle ids sitting in the inbox — the shas a marker must outlive."""
+
+    inbox = install_root / ".updates" / "inbox"
+    try:
+        return {path.name[: -len(".manifest.json")]
+                for path in inbox.glob("*.manifest.json")}
+    except OSError:
+        return set()
+
+
+def write_refusal_marker(install_root: Path, refusal: dict[str, Any]) -> Path:
+    """The verdict, written where a whole-document state replace cannot reach.
+
+    RAISES on failure, unlike everything else here: the caller turns that into
+    `state_error` and says so out loud (A5.17.2 — a failed marker write is
+    named, never swallowed)."""
+
+    path = refusal_marker_path(install_root, str(refusal.get("bundle") or ""))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.parent / (path.name + ".update-tmp")
+    tmp.write_text(json.dumps(refusal, indent=2, sort_keys=True) + "\n",
+                   encoding="utf-8")
+    os.replace(tmp, path)
+    _prune_refusal_markers(install_root)
+    return path
+
+
+def _prune_refusal_markers(install_root: Path) -> None:
+    """Bound the store, oldest first — and never touch a sha in the inbox."""
+
+    records = read_refusal_markers(install_root)
+    if len(records) <= MARKER_KEEP:
+        return
+    keep = inbox_shas(install_root)
+    for record in records[: len(records) - MARKER_KEEP]:
+        bundle = str(record.get("bundle") or "")
+        if bundle in keep:
+            continue
+        try:
+            refusal_marker_path(install_root, bundle).unlink()
+        except OSError:
+            pass
+
+
+def drop_refusal_markers(install_root: Path, shas: Iterable[str]) -> list[str]:
+    """Delete the markers of the shas an apply or a rollback NAMES (A5.17.2).
+
+    Called in the same operation that writes their receipt: the verdict on
+    those bytes is spent the moment the tree moved. Deleting is what makes
+    `current(B)` empty again without any reader needing to know that an apply
+    happened, and it is bounded to the shas named — a rollback that names two
+    never touches a third."""
+
+    dropped: list[str] = []
+    for sha in shas:
+        sha = str(sha or "")
+        if not sha:
+            continue
+        try:
+            refusal_marker_path(install_root, sha).unlink()
+        except OSError:
+            continue
+        dropped.append(sha)
+    return dropped
+
+
 def _receipt_rows(install_root: Path, days: int = 30) -> list[dict[str, Any]]:
     """Every update receipt in the recent window, oldest first."""
 
     import datetime as _dt
 
+    # The INSTALL's own framework, when it has one — an installed egg is not on
+    # anyone's path. Guarded on the directory actually being there: inserting a
+    # root with no `framework/` in it can only shadow the module that IS
+    # importable, and on a sweep that asks about thousands of throwaway roots it
+    # grows `sys.path` by one dead entry each time.
     root = str(install_root.resolve())
-    if root not in sys.path:
+    if (install_root / "framework").is_dir() and root not in sys.path:
         sys.path.insert(0, root)
     from framework.events.emitter import replay  # noqa: PLC0415  (deliberately late)
 
@@ -833,79 +986,310 @@ def _receipt_rows(install_root: Path, days: int = 30) -> list[dict[str, Any]]:
     return replay(since=since, event_types=list(UPDATE_RECEIPT_TYPES))
 
 
-def current_receipt_refusal(install_root: Path, days: int = 30) -> dict[str, Any] | None:
-    """The LEDGER's current refusal, in `last_refusal` shape, or None.
-
-    CURRENCY IS THE RECEIPT SPELLING OF `phase: refused`. A refusal is the news
-    until something else happens TO THAT BUNDLE, so a later receipt about the
-    same bundle overtakes it exactly as a later phase does. A receipt naming no
-    bundle cannot be scoped to one and is not resolvable — `refuse_busy` with
-    no sha writes one, and both readers reject such a record anyway.
-
-    Fail-open like everything else on this path: a ledger this cannot read is
-    silence, never a guess."""
+def safe_receipt_rows(install_root: Path, days: int = 30) -> list[dict[str, Any]]:
+    """The receipts, or [] — a ledger this cannot read is silence, never a
+    guess, on a path whose whole job is to keep a wrong sentence off a card."""
 
     try:
-        rows = _receipt_rows(install_root, days)
-    except Exception:  # noqa: BLE001 — a ledger that cannot be read is silence
+        return _receipt_rows(install_root, days)
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def record_time(row: dict[str, Any]) -> str:
+    """A record's OWN time (A5.17.3), with the ledger's insertion time as the
+    last resort for rows written before this field existed."""
+
+    payload = row.get("payload") or {}
+    return str(payload.get(RECORD_TIME_FIELD) or row.get("created_at") or "")
+
+
+def _receipt_is_about(row: dict[str, Any], bundle: str) -> bool:
+    """A5.17.4. `to_sha` is B — or, for a rollback, `from_sha` is B: the
+    updater writes a rollback with `from_sha` = the bundle it UNDID and
+    `to_sha` = the sha it restored, so matching `to_sha` alone makes "rolled
+    back and still waiting" unreachable on the bundle it is about."""
+
+    payload = row.get("payload") or {}
+    if str(payload.get("to_sha") or "") == bundle:
+        return True
+    return (row.get("event_type") == "cabinet_update_rolled_back"
+            and str(payload.get("from_sha") or "") == bundle)
+
+
+def _receipt_refusal_record(row: dict[str, Any]) -> dict[str, Any]:
+    payload = row.get("payload") or {}
+    return {"bundle": str(payload.get("to_sha") or ""),
+            "reason": str(payload.get("reason") or ""),
+            "paths": [str(entry) for entry in (payload.get("locked_paths") or [])],
+            "ts": record_time(row),
+            "door": str(payload.get("door") or "")}
+
+
+def _legacy_state_verdict(state: dict[str, Any]) -> dict[str, Any] | None:
+    """The pre-marker state document's verdict, admitted only where there is
+    no marker store at all (A5.17.5) — an install that refused something
+    before this leg existed, and nothing else."""
+
+    record = state.get("last_refusal")
+    if isinstance(record, dict) and is_verdict(record.get("bundle"),
+                                               record.get("reason")):
+        return dict(record)
+    if state.get("phase") == "refused" and is_verdict(state.get("bundle"),
+                                                      state.get("reason")):
+        return {field: state.get(field) for field in REFUSAL_FIELDS}
+    return None
+
+
+def _state_event(state: dict[str, Any]) -> dict[str, Any] | None:
+    """The state document's OWN last event, when it is an apply or a rollback.
+
+    The second channel an apply/rollback fact arrives on (A5.17.5): an install
+    whose emitter refuses the event kind has no receipt at all, and its state
+    document is then the only thing that knows the tree moved."""
+
+    phase = str(state.get("phase") or "")
+    if phase not in ("applied", "rolled_back"):
         return None
-    newest = -1
-    for index, row in enumerate(rows):
+    return {"kind": phase,
+            "to_sha": str(state.get("to_sha") or ""),
+            "from_sha": str(state.get("from_sha") or ""),
+            "ts": str(state.get("finished_at") or state.get("ts") or "")}
+
+
+def _state_event_is_about(event: dict[str, Any], bundle: str) -> bool:
+    if event["to_sha"] == bundle:
+        return True
+    return event["kind"] == "rolled_back" and event["from_sha"] == bundle
+
+
+def _newest(candidates: list[tuple[str, int, str, dict[str, Any]]]):
+    """The newest candidate; ties go to the state channel, then to content.
+
+    Deterministic on CONTENT rather than on list order, because ledger
+    POSITION is not an input (A5.17.3) and two records that tie on time must
+    resolve the same way whichever order they were replayed in."""
+
+    return max(candidates,
+               key=lambda item: (item[0], item[1],
+                                 json.dumps(item[3], sort_keys=True)))
+
+
+def current_refusal(install_root: Path,
+                    bundle: str,
+                    state: dict[str, Any] | None = None,
+                    rows: list[dict[str, Any]] | None = None,
+                    ) -> tuple[dict[str, Any] | None, str]:
+    """current(B) — THE ONE VERDICT THAT STANDS ON ONE BUNDLE (A5.17.5).
+
+    PER BUNDLE, at any ledger depth, on both channels. Round 5 rejected the
+    version this replaces because its currency was GLOBAL: it took the newest
+    refusal receipt in the whole window and, when that record named another
+    bundle or no bundle at all, threw the rest of the channel away — so a
+    `busy` note written by a rollback that lost the lock (`refuse_busy ""`,
+    the race A5.7 exists for) blanked the constitutional verdict on the bundle
+    in the inbox, and both surfaces then offered Apply on it.
+
+    Candidates are VERDICTS about B: the marker, or — only where no marker
+    store exists — the legacy state record; plus every refused receipt about B
+    whose reason is a verdict. A candidate is superseded by an apply or
+    rollback fact about B that is STRICTLY newer, on either channel. Equal
+    times keep the refusal: a relock that lands in the same second as the
+    verdict has not proved the bytes acceptable."""
+
+    if not bundle:
+        return None, ""
+    if state is None:
+        state = read_state(install_root)
+    if rows is None:
+        rows = safe_receipt_rows(install_root)
+
+    candidates: list[tuple[str, int, str, dict[str, Any]]] = []
+    marker = read_refusal_marker(install_root, bundle)
+    if marker and is_verdict(marker.get("bundle"), marker.get("reason")):
+        candidates.append((str(marker.get("ts") or ""), 1, "state", dict(marker)))
+    elif not refusals_dir(install_root).is_dir():
+        legacy = _legacy_state_verdict(state)
+        if legacy and str(legacy.get("bundle") or "") == bundle:
+            candidates.append((str(legacy.get("ts") or ""), 1, "state", legacy))
+
+    stoppers: list[str] = []
+    for row in rows:
+        if not _receipt_is_about(row, bundle):
+            continue
+        payload = row.get("payload") or {}
         if row.get("event_type") == "cabinet_update_refused":
-            newest = index
-    if newest < 0:
-        return None
-    payload = rows[newest].get("payload") or {}
-    bundle = str(payload.get("to_sha") or "")
+            if is_verdict(payload.get("to_sha"), payload.get("reason")):
+                candidates.append((record_time(row), 0, "receipt",
+                                   _receipt_refusal_record(row)))
+        else:
+            stoppers.append(record_time(row))
+
+    event = _state_event(state)
+    if event and _state_event_is_about(event, bundle):
+        stoppers.append(event["ts"])
+
+    if not candidates:
+        return None, ""
+    when, _rank, source, record = _newest(candidates)
+    if any(stop > when for stop in stoppers if stop):
+        return None, ""
+    return record, source
+
+
+def rollback_about(install_root: Path,
+                   bundle: str,
+                   state: dict[str, Any] | None = None,
+                   rows: list[dict[str, Any]] | None = None,
+                   ) -> dict[str, Any] | None:
+    """The newest record about B, when that record is a rollback FROM B.
+
+    A5.17.7's third sentence, and the one fact besides the verdict that both
+    surfaces speak about a waiting bundle: this box took these bytes, its own
+    health gate went red, and it put them back — with the bundle still in the
+    inbox to be tried again. Apply stays, because a retry is legitimate."""
+
     if not bundle:
         return None
-    for row in rows[newest + 1:]:
-        if str((row.get("payload") or {}).get("to_sha") or "") == bundle:
-            return None
+    if state is None:
+        state = read_state(install_root)
+    if rows is None:
+        rows = safe_receipt_rows(install_root)
+
+    facts: list[tuple[str, int, dict[str, Any]]] = []
+    marker = read_refusal_marker(install_root, bundle)
+    if marker and is_verdict(marker.get("bundle"), marker.get("reason")):
+        facts.append((str(marker.get("ts") or ""), 1, {"kind": "verdict"}))
+    elif not refusals_dir(install_root).is_dir():
+        legacy = _legacy_state_verdict(state)
+        if legacy and str(legacy.get("bundle") or "") == bundle:
+            facts.append((str(legacy.get("ts") or ""), 1, {"kind": "verdict"}))
+    for row in rows:
+        if not _receipt_is_about(row, bundle):
+            continue
+        payload = row.get("payload") or {}
+        kind = str(row.get("event_type") or "")
+        if kind == "cabinet_update_refused":
+            if not is_verdict(payload.get("to_sha"), payload.get("reason")):
+                continue
+            facts.append((record_time(row), 1, {"kind": "verdict"}))
+        elif kind == "cabinet_update_rolled_back":
+            facts.append((record_time(row), 0, {
+                "kind": "rolled_back",
+                "bundle": bundle,
+                "from_sha": str(payload.get("from_sha") or ""),
+                "reason": str(payload.get("reason") or ""),
+                "ts": record_time(row)}))
+        else:
+            facts.append((record_time(row), 0, {"kind": "applied"}))
+    event = _state_event(state)
+    if event and _state_event_is_about(event, bundle):
+        facts.append((event["ts"], 0, {
+            "kind": event["kind"],
+            "bundle": bundle,
+            "from_sha": event["from_sha"],
+            "reason": str(state.get("reason") or ""),
+            "ts": event["ts"]}))
+    if not facts:
+        return None
+    newest = max(facts, key=lambda item: (item[0], item[1]))[2]
+    if newest["kind"] != "rolled_back" or newest.get("from_sha") != bundle:
+        return None
+    return {"bundle": bundle, "reason": newest.get("reason") or "",
+            "ts": newest.get("ts") or ""}
+
+
+def newest_standing_verdict(install_root: Path,
+                            state: dict[str, Any] | None = None,
+                            rows: list[dict[str, Any]] | None = None,
+                            ) -> tuple[dict[str, Any] | None, str]:
+    """NOTHING IS WAITING (A5.17.6): the newest unsuperseded verdict anywhere,
+    and only while it is still the last thing that happened.
+
+    Without the second half, one refusal silences the applied and rolled-back
+    sentences for the life of the install — round 3's defect, arriving on the
+    marker store instead of on `last_refusal`."""
+
+    if state is None:
+        state = read_state(install_root)
+    if rows is None:
+        rows = safe_receipt_rows(install_root)
+
+    candidates: list[tuple[str, int, str, dict[str, Any]]] = []
+    markers = read_refusal_markers(install_root)
+    for marker in markers:
+        if is_verdict(marker.get("bundle"), marker.get("reason")):
+            candidates.append((str(marker.get("ts") or ""), 1, "state", dict(marker)))
+    if not refusals_dir(install_root).is_dir():
+        legacy = _legacy_state_verdict(state)
+        if legacy:
+            candidates.append((str(legacy.get("ts") or ""), 1, "state", legacy))
+
+    stoppers: list[str] = []
+    for row in rows:
+        payload = row.get("payload") or {}
+        if row.get("event_type") == "cabinet_update_refused":
+            if is_verdict(payload.get("to_sha"), payload.get("reason")):
+                candidates.append((record_time(row), 0, "receipt",
+                                   _receipt_refusal_record(row)))
+        else:
+            stoppers.append(record_time(row))
+    event = _state_event(state)
+    if event:
+        stoppers.append(event["ts"])
+
+    if not candidates:
+        return None, ""
+    when, _rank, source, record = _newest(candidates)
+    if any(stop > when for stop in stoppers if stop):
+        return None, ""
+    return record, source
+
+
+def resolve_update_surface(install_root: Path,
+                           state: dict[str, Any] | None = None,
+                           waiting_sha: str = "",
+                           ) -> dict[str, Any]:
+    """THE ONE RESOLUTION EVERY SURFACE READS (A5.17.6).
+
+    `status --json` calls this and hands the card the result; the briefing
+    runs the same rules in `run_briefing._update_resolved_refusal` — a
+    deliberate twin rather than an import, because a briefing may not shell out
+    and `framework/` does not import from `cabinet/`. The two are pinned
+    against each other, row for row, by
+    `framework/frontdoor/tests/update_surface_oracle.json`, which both drive.
+
+    NEVER WRITES. It is a report, and a report that changed the thing it
+    reports on would make every surface a writer."""
+
+    if state is None:
+        state = read_state(install_root)
+    rows = safe_receipt_rows(install_root)
+    if waiting_sha:
+        record, source = current_refusal(install_root, waiting_sha, state, rows)
+        rollback = (None if record
+                    else rollback_about(install_root, waiting_sha, state, rows))
+    else:
+        record, source = newest_standing_verdict(install_root, state, rows)
+        rollback = None
+    last_busy = state.get("last_busy")
     return {
-        "bundle": bundle,
-        "reason": str(payload.get("reason") or ""),
-        "paths": [str(entry) for entry in (payload.get("locked_paths") or [])],
-        "ts": str(rows[newest].get("created_at") or ""),
-        "door": str(payload.get("door") or ""),
+        "last_refusal": record,
+        "last_refusal_source": source,
+        "waiting_rollback": rollback,
+        "last_busy": last_busy if isinstance(last_busy, dict) else None,
+        "state_error": str(state.get("state_error") or ""),
     }
 
 
 def resolve_last_refusal(install_root: Path,
-                         state: dict[str, Any] | None = None
+                         state: dict[str, Any] | None = None,
+                         waiting_sha: str = "",
                          ) -> tuple[dict[str, Any] | None, str]:
-    """THE ONE REFUSAL EVERY SURFACE READS, and the channel it came from.
+    """`(current refusal, channel)` — the pair the CLI report carries."""
 
-    A refusal is written down twice by one call — `state.json` and the ledger
-    receipt — and either half can be the only one that survives: the state
-    write can fail (`state_error`, below), the file can be truncated or
-    removed, and an install whose emitter predates the update path refuses the
-    event kind outright (A5.16). Until 2026-09-09 `status --json` read only the
-    first, so the home card — whose only input is this report — could not see a
-    refusal that reached only the second, and offered Apply on a bundle this
-    box had already turned down for constitutional paths.
-
-    The state file wins when it has a record: it is this box's account of
-    itself, and the ledger may carry a row the sidecar replayed late. The
-    briefing resolves the same two channels the same way in
-    `run_briefing._update_resolved_refusal` — a deliberate twin rather than an
-    import, because a briefing may not shell out and `framework/` does not
-    import from `cabinet/`; the two are pinned against each other by
-    `framework/frontdoor/tests/update_surface_oracle.json`, which both drive."""
-
-    if state is None:
-        state = read_state(install_root)
-    record = state.get("last_refusal")
-    if isinstance(record, dict) and record.get("bundle"):
-        return record, "state"
-    if state.get("phase") == "refused" and state.get("bundle"):
-        # `record_refusal` writes `last_refusal` AND the top-level copy in one
-        # indivisible step, so the two are the same record. A document carrying
-        # only the second — truncated, hand-edited — used to be visible to the
-        # briefing and invisible to the card, which reads `last_refusal` alone.
-        return {field: state.get(field) for field in REFUSAL_FIELDS}, "state"
-    record = current_receipt_refusal(install_root)
-    return (record, "receipt") if record else (None, "")
+    resolved = resolve_update_surface(install_root, state, waiting_sha)
+    return resolved["last_refusal"], resolved["last_refusal_source"]
 
 
 def record_event(
@@ -921,16 +1305,25 @@ def record_event(
     a ledger that will not open — and the identical record is held in the
     sidecar for the next apply to replay. The return says which happened, so
     the caller can say so out loud rather than reporting a success it did not
-    have."""
+    have.
+
+    EVERY event carries its OWN time in the payload (`recorded_at`, A5.17.3).
+    The ledger stamps its rows with the moment they were INSERTED, and a record
+    held for an older emitter is inserted by the apply that replays it — days
+    late, and therefore newer than the apply itself under insertion order. The
+    field is stamped here, once, so all three event types carry it and no
+    reader has to know which path a record took to get there."""
 
     import uuid
 
+    stamped = dict(payload or {})
+    stamped.setdefault(RECORD_TIME_FIELD, _utc_now())
     event = {
         "id": uuid.uuid4().hex,
         "event_type": event_type,
         "actor": actor,
-        "payload": payload or {},
-        "ts": _utc_now(),
+        "payload": stamped,
+        "ts": stamped[RECORD_TIME_FIELD],
     }
     outcome: dict[str, Any] = {"recorded": "ledger", "id": event["id"],
                                "event_type": event_type}
@@ -966,15 +1359,31 @@ def record_refusal(
     door: str,
     actor: str,
 ) -> dict[str, Any]:
-    """A refusal, written where every surface can read it (A5.15).
+    """A refusal, written where every surface can read it (A5.15, A5.17.2).
 
-    `last_refusal` is always set and survives later writes. `phase` moves to
-    `refused` too — EXCEPT over an interrupted apply, and that exception is the
-    whole care of this function: `phase: applying` plus a snapshot name is the
-    only marker saying a tree is half-written and which snapshot puts it back.
-    A busy refusal arriving while the first updater is still working would
-    otherwise stamp `refused` over it and turn a recoverable interruption into
-    a tree that is neither version with nothing left to say so."""
+    TWO CLASSES, and the whole care of this function is that they are not the
+    same record. A VERDICT is about the bundle's bytes: it goes to its own
+    marker FIRST (the store a whole-document state replace by any writer,
+    including an older updater copy, cannot reach), then to the ledger receipt,
+    then to `state.json` — where `phase: refused` and `last_refusal` are kept
+    as a legacy MIRROR of the newest verdict, for readers cut before the marker
+    store existed.
+
+    A TIMING NOTE (`busy`, or any record naming no bundle) is about no bundle
+    at all. It writes its receipt and `last_busy`, and NOTHING else: it never
+    moves `phase` to `refused`, never touches `last_refusal`, and never
+    occupies a verdict store. Round 5 measured the cost of the other reading —
+    a rollback that lost the lock wrote `busy` with an empty sha, and the
+    constitutional verdict on the bundle in the inbox was blanked by it on both
+    surfaces.
+
+    `phase` still never moves over an interrupted apply: `phase: applying` plus
+    a snapshot name is the only marker saying a tree is half-written and which
+    snapshot puts it back.
+
+    A FAILED WRITE IS NAMED, never swallowed and never raised: raising loses
+    the receipt the ledger already took, and silence is the defect A5.15
+    exists to end."""
 
     refusal = {
         "bundle": bundle,
@@ -983,11 +1392,23 @@ def record_refusal(
         "ts": _utc_now(),
         "door": door,
     }
+    verdict = is_verdict(bundle, reason)
+    errors: list[str] = []
+    if verdict:
+        # THE MARKER FIRST. The receipt can be refused by an older emitter and
+        # the state document can be replaced by anything; this file is the one
+        # copy whose survival does not depend on another writer's cooperation.
+        try:
+            write_refusal_marker(install_root, refusal)
+        except Exception as exc:  # noqa: BLE001
+            errors.append("%s: %s" % (type(exc).__name__, exc))
+
     outcome = record_event(install_root, "cabinet_update_refused", actor, {
         "to_sha": bundle,
         "reason": reason,
         "locked_paths": list(paths),
         "door": door,
+        RECORD_TIME_FIELD: refusal["ts"],
     })
     # One indivisible step, guard included: the winner may land between a read
     # and a write here, and a `phase` decided on a document that is already
@@ -996,19 +1417,22 @@ def record_refusal(
     try:
         with _state_lock(install_root):
             document = read_state(install_root)
-            document["last_refusal"] = refusal
-            if document.get("phase") != "applying":
-                document["phase"] = "refused"
-                document.update(refusal)
+            if verdict:
+                document["last_refusal"] = refusal
+                if document.get("phase") != "applying":
+                    document["phase"] = "refused"
+                    document.update(refusal)
+            else:
+                document["last_busy"] = {"bundle": bundle, "ts": refusal["ts"],
+                                         "door": door}
+            document["state_error"] = errors[0] if errors else ""
             _write_state_document(install_root, document)
-    except Exception as exc:  # noqa: BLE001 — a refusal that cannot be written
-        # down is exactly the silence A5.15 exists to end, and raising here
-        # loses the receipt the ledger already took. So the call survives and
-        # the missing half SAYS it is missing: `state_error` is `ledger_error`
-        # the other way round, and `status --json` then resolves this refusal
-        # from the receipt and tags it `receipt` rather than answering `none`.
-        outcome["state_error"] = "%s: %s" % (type(exc).__name__, exc)
+    except Exception as exc:  # noqa: BLE001
+        errors.append("%s: %s" % (type(exc).__name__, exc))
+    if errors:
+        outcome["state_error"] = errors[0]
     outcome["refusal"] = refusal
+    outcome["verdict"] = verdict
     outcome["phase"] = document.get("phase")
     return outcome
 
@@ -1263,6 +1687,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--door", default="terminal")
     p.add_argument("--actor", default="system")
 
+    p = sub.add_parser("drop-refusals",
+                       help="delete the markers of the shas an apply/rollback names")
+    p.add_argument("--root", required=True)
+    p.add_argument("--sha", action="append", default=[])
+
+    p = sub.add_parser("resolve-refusal", help="the resolved update surface (read-only)")
+    p.add_argument("--root", required=True)
+    p.add_argument("--waiting", default="")
+
     p = sub.add_parser("ingest-events", help="replay held records into the ledger, once")
     p.add_argument("--root", required=True)
 
@@ -1391,6 +1824,16 @@ def main(argv: list[str] | None = None) -> int:
                 Path(args.root), args.bundle, args.reason,
                 [str(entry) for entry in paths] if isinstance(paths, list) else [],
                 args.door, args.actor))
+
+        if args.command == "drop-refusals":
+            # THE VERDICT IS SPENT WHEN THE TREE MOVES (A5.17.2). Called by the
+            # apply and by both rollback paths, in the same operation that
+            # writes their receipt, with every sha they name.
+            return _emit({"dropped": drop_refusal_markers(Path(args.root), args.sha)})
+
+        if args.command == "resolve-refusal":
+            return _emit(resolve_update_surface(Path(args.root),
+                                                waiting_sha=args.waiting))
 
         if args.command == "ingest-events":
             return _emit(ingest_deferred_events(Path(args.root)))

@@ -1517,14 +1517,26 @@ print((d.get("latest") or {}).get("sha") or "")
   # A drill watching only the ledger cannot see that half regress — and the
   # paths are the load-bearing part, because "refused" alone is not a sentence
   # anyone can act on.
-  REFUSAL_STATE="$("$PY" - "$INSTALL/.updates/state.json" "$LOCK_SHA" <<'PYREFUSAL'
+  # A5.17 — and the DURABLE store, which is the half `state.json` cannot be.
+  # Every write to that document is a whole-document replace, and during an
+  # update one of the writers can be an older updater copy that never knew the
+  # field; the marker under `.updates/refusals/<sha>.json` is what survives it.
+  # A drill that watched only the mirror would pass on an install whose next
+  # state write silently forgot the verdict.
+  REFUSAL_STATE="$("$PY" - "$INSTALL/.updates/state.json" "$LOCK_SHA" "$INSTALL/.updates/refusals" <<'PYREFUSAL'
 import json, sys
+from pathlib import Path
 try:
     doc = json.load(open(sys.argv[1], encoding="utf-8"))
 except Exception as exc:
     print("state.json is unreadable: %s" % exc)
     raise SystemExit(0)
 record = doc.get("last_refusal") or {}
+marker_path = Path(sys.argv[3]) / (sys.argv[2] + ".json")
+try:
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+except Exception as exc:
+    marker = {"unreadable": str(exc)}
 if doc.get("phase") != "refused":
     print("phase is %r, expected refused" % (doc.get("phase"),))
 elif record.get("bundle") != sys.argv[2]:
@@ -1532,6 +1544,11 @@ elif record.get("bundle") != sys.argv[2]:
           % (record.get("bundle"), sys.argv[2]))
 elif not record.get("paths"):
     print("last_refusal names no paths, so no surface can say which files")
+elif marker.get("bundle") != sys.argv[2]:
+    print("no durable marker at %s (got %r): the verdict lives only in a "
+          "document the next write replaces" % (marker_path, marker))
+elif not marker.get("paths") or not marker.get("ts"):
+    print("the marker names no paths or no time of its own: %r" % (marker,))
 else:
     print("ok")
 PYREFUSAL

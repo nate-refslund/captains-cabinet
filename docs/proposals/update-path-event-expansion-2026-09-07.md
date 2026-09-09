@@ -85,10 +85,16 @@ Corrected two ways in the same commit:
    `cabinet_update_refused`, and the refusal reached neither the ledger nor any
    file a surface reads. A refusal now writes `state.json` as `{phase:
    "refused", bundle, reason, paths, ts, door}` with the record kept under
-   `last_refusal`, and `run_briefing._update_refusal_line` reads THAT first;
-   `_update_receipt_for` stays as the second channel and is still what these
-   rows' `consumer` names. Two independent channels, because on 2026-09-08 one
-   of them was silent and nobody could tell.
+   `last_refusal` — and, since A5.17, its own marker under
+   `<root>/.updates/refusals/<sha>.json`, which is the durable store because a
+   whole-document state replace by any writer (an OLDER updater copy included)
+   cannot reach it. `_update_receipt_for` is RETIRED: a refusal receipt reaches
+   no surface directly any more. Every surface consumes ONE resolved answer
+   about the bundle that is waiting (`update_bundle.resolve_update_surface`,
+   `run_briefing._update_resolved_refusal`), and the ledger receipt is one of
+   the channels that resolution reads — which is what these rows' `consumer`
+   now names. Three independent channels, because on 2026-09-08 the only one
+   that existed was silent and nobody could tell.
 2. **The claim is now checked.**
    `test_an_event_type_expansion_names_a_consumer_that_actually_names_it` reads
    the LIVE contract and requires every `central_event_types` expansion row's

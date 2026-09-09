@@ -110,6 +110,21 @@ export interface UpdateStatus {
    *  file that has gone missing is then a fact on the report rather than a
    *  silence, and `cabinet-update.sh status` says so in words. */
   last_refusal_source?: string
+  /** THE BUNDLE THIS BOX ALREADY TOOK AND PUT BACK (A5.17.7). Resolved by
+   *  `status --json`: the newest record about the waiting bundle is a rollback
+   *  FROM it, so it is neither refused nor untried. Apply stays — retrying a
+   *  health-gate failure is legitimate — but "Update ready" over it is a
+   *  sentence that hides the one fact the Captain would want. Round 5 declared
+   *  this a per-surface difference (the briefing said it, this card did not);
+   *  the A5.17 gate retired that, and both surfaces now say the same words. */
+  waiting_rollback?: { bundle: string; reason: string; ts: string } | null
+  /** A timing note: another updater held the lock (A5.17.1). About no bundle,
+   *  so never a headline anywhere — `cabinet-update.sh status` says it in
+   *  words and this field carries it. */
+  last_busy?: { bundle: string; ts: string; door?: string } | null
+  /** Non-empty when the durable half of a refusal could not be written
+   *  (A5.17.2): named, never swallowed. */
+  state_error?: string
   /** A record is held outside the ledger because this install's emitter
    *  does not know the event kind yet (A5.16). */
   event_fallback?: boolean
@@ -120,87 +135,54 @@ export interface UpdateStatus {
 }
 
 /**
- * A refusal is timing, or it is a verdict about the bundle.
- *
- * `busy` means another updater held the lock — it says nothing about these
- * bytes, so it must not stick to them and turn a perfectly applicable bundle
- * into one the card refuses to offer. Every other refusal IS about the bundle
- * and follows it until something changes.
- */
-function refusalIsAboutTheBundle(refusal: UpdateRefusal): boolean {
-  return refusal.reason !== 'busy'
-}
-
-/**
  * The refusal this screen should be speaking about, or null.
  *
- * Reads the ONE resolved `last_refusal` and nothing else — `status --json`
- * resolves the state file and the ledger receipt into it (round 4: the
- * briefing had a second refusal channel this card did not have, so the two
- * disagreed on every state where the state file had lost the record and the
- * ledger had not).
+ * READS THE ONE RESOLVED `last_refusal` AND NOTHING ELSE. `status --json`
+ * resolves every channel a verdict can survive on — the per-bundle marker, the
+ * ledger receipt, the legacy state record — and it resolves them ABOUT THE
+ * BUNDLE THAT IS WAITING (A5.17.5/6). So the scoping the four rules used to do
+ * here is done once, upstream, where the briefing does it too, and neither
+ * surface can be looking at a fact about some other bundle.
  *
- * Shared by the headline and the card so the two cannot disagree — a card
- * naming files under a headline that says "Update ready" is worse than either
- * on its own. An apply in flight outranks it: that is the live state, and a
- * busy refusal recorded a second ago is a note about a request, not about what
- * the box is doing now.
+ * Round 5 measured what the other arrangement costs. The resolver took the
+ * newest refusal receipt GLOBALLY: a `busy` note written by a rollback that
+ * lost the lock — a record about no bundle at all — blanked the constitutional
+ * verdict on the bundle in the inbox, and this card offered Apply on it under
+ * a briefing line saying the same thing. Round 4 was card-wrong/briefing-right;
+ * that was both wrong, in agreement, which is the worse failure.
  *
- * SCOPED TO ONE BUNDLE AND TO ONE MOMENT, and `phase` enters the scope only
- * as "is this still the last thing that happened". Round 1 returned early on
- * `phase === 'refused'`, which reads as harmless and is not: nothing moves
- * that phase except a later apply, so after ONE constitutional refusal the
- * card showed that refusal's headline and files over every bundle that arrived
- * afterwards and withdrew Apply with them — and Apply is the only no-terminal
- * way to take the update that would have cleared the phase. The door this
- * whole leg exists to open, bricked by the record of one refusal. Round 2
- * found the `applying` rule written here and not in the briefing, so through
- * every retry of a digest-mismatch or busy refusal (the two this card
- * deliberately keeps Apply for) the card said "Taking an update" while the
- * briefing said "Update refused". Round 3 found the opposite of round 1 on the
- * nothing-waiting branch — a refusal that a later apply or rollback had
- * OVERTAKEN kept speaking on both surfaces, which is agreement about something
- * false. The same four rules are `run_briefing._update_refusal_line`,
- * deliberately: two surfaces reading one state file must not be able to
- * disagree. That is not a claim any more, and it is no longer proved by the
- * states somebody thought of either: `update_surface_parity.json` carries the
- * argued cases with their exact wording, and `update_surface_oracle.json`
- * carries the WHOLE product of the six axes these readers branch on (1440
- * rows, the ledger among them since round 4), both under
- * `framework/frontdoor/tests/` and both driven through this module here and
- * through the briefing in `test_card_update_notice.py`. Change one side's
- * ranking and the other side's suite is what goes red.
- *
- * Round 4: the four rules were enforced on ONE of the briefing's two refusal
- * channels, and this card could not see the other one at all. The resolution
- * moved upstream into `cabinet-update.sh status --json`, which reads both and
- * hands each surface the same `last_refusal`; this function is unchanged by
- * that, which is the point of putting it there.
+ * What is left here is the one rule a resolution cannot carry: an apply IN
+ * FLIGHT is the live state, and a refusal recorded before the retry that is
+ * running now is a note about a request. Its twin is
+ * `run_briefing._refusal_speaks`, and the two are pinned row for row by
+ * `framework/frontdoor/tests/update_surface_oracle.json`, which both suites
+ * drive — a kind flipped in it reds both.
  */
 export function refusalToShow(status: UpdateStatus | null): UpdateRefusal | null {
   if (!status || status.phase === 'applying') return null
   const refusal = status.last_refusal
   if (!refusal || !refusal.bundle) return null
-  // Nothing is waiting, so there is no other BUNDLE for this to be wrong
-  // about — but there may be a later EVENT. It speaks only while it is still
-  // the last thing that happened. Nothing ever clears `last_refusal`: the
-  // updater carries it onto every later state document on purpose
-  // (CARRIED_STATE_FIELDS), because a refusal is still TRUE after the next
-  // thing happens. What it stops being is the NEWS. Round 3: the busy race
-  // this whole leg guards ends at {phase: applied, last_refusal: busy} with
-  // the install running exactly those bytes and nothing waiting, and both
-  // surfaces answered it with "Update refused — busy (bbbbbbbb)", for ever;
-  // after the constitutional ceremony (refusal on the old bundle, a new one
-  // applied) this card withdrew Apply and printed "Nothing was applied" over
-  // an install that HAD been updated.
-  if (!status.latest) return status.phase === 'refused' ? refusal : null
-  // Something IS waiting. It speaks only about the bundle it is a verdict on:
-  // offering a refused bundle as "ready" is a button that cannot work, and
-  // refusing one nobody has judged is a button withdrawn for no reason.
-  if (status.latest.sha === refusal.bundle && refusalIsAboutTheBundle(refusal)) {
-    return refusal
-  }
-  return null
+  return refusal
+}
+
+/**
+ * The bundle the Apply button would take, or null.
+ *
+ * ONE DEFINITION OF THE GATE, here rather than inline in the card, because it
+ * is a contract property with a row of its own in the oracle (`apply_live`) and
+ * an inline expression cannot be driven against a table. A constitutional
+ * refusal is the one an operator cannot retry into succeeding — those bytes
+ * change by a deliberate unlock and relock — and an Apply button there is a
+ * button that fails identically every time it is tapped. Every other refusal
+ * (a digest mismatch, an unreadable bundle) and a bundle this box rolled back
+ * KEEP the button: a retry re-tests, and re-testing is a reasonable thing to
+ * do about all three (A5.17.7).
+ */
+export function applyTarget(status: UpdateStatus | null): AvailableBundle | null {
+  if (!status) return null
+  const refusal = refusalToShow(status)
+  if ((refusal?.paths?.length ?? 0) > 0) return null
+  return status.latest ?? null
 }
 
 /** The one sentence a refusal becomes. Counts, never a changelog line. */
@@ -292,6 +274,14 @@ export function updateHeadline(status: UpdateStatus | null): string | null {
   const refusal = refusalToShow(status)
   if (refusal) return refusalHeadline(refusal)
   if (status.latest) {
+    // A5.17.7 — a bundle this box took and PUT BACK is not a bundle nobody has
+    // tried, and the sentence is the briefing's word for word. Apply stays:
+    // retrying a health gate that went red is a legitimate thing to do.
+    if (status.waiting_rollback) {
+      const r = status.waiting_rollback
+      return `Update rolled back — ${r.reason || 'it did not come up healthy'}` +
+        `; still waiting (${(r.bundle || '').slice(0, 8)})`
+    }
     const n = status.latest.file_count
     return `Update ready — ${n} file${n === 1 ? '' : 's'} changed (${status.latest.short})`
   }

@@ -93,17 +93,20 @@ describe('UpdateCard on a refusal', () => {
     expect(html).not.toContain('>Apply<')
   })
 
-  // RE-AIMED, round 2. This arm used to demand the words "Update refused" over
-  // a bundle whose only refusal was `busy` — timing, which says nothing about
-  // these bytes. Reading a refusal over a bundle it is not a verdict on is the
-  // same defect as withdrawing Apply for one, one surface further along: the
-  // retry that is the right thing to do about `busy` is exactly what the card
-  // was talking the operator out of.
+  // RE-AIMED, round 6. Both arms below used to build a status by hand that the
+  // resolver cannot produce — a `busy` record in `last_refusal`, and a verdict
+  // about one bundle while another is waiting. Since A5.17 the report carries
+  // `current(W)`: a timing note is not a candidate on any channel, and a
+  // verdict about another sha is not the answer to a question about this one.
+  // So these render what the report ACTUALLY carries in each state. The
+  // scoping is pinned where it now lives — 5250 rows in lib/updates.test.ts
+  // and, on the resolver itself, in cabinet/scripts/tests/test_cabinet_update.py.
   it('a busy refusal neither withdraws Apply nor speaks over the bundle', () => {
     const busy: UpdateStatus = {
       ...WAITING,
       phase: 'refused',
-      last_refusal: { ...REFUSED.last_refusal!, reason: 'busy', paths: [] },
+      last_refusal: null,
+      last_busy: { bundle: 'b'.repeat(40), ts: '2026-09-09T10:00:30Z', door: 'web' },
     }
     const html = renderToStaticMarkup(
       <UpdateCard status={busy} headline={updateHeadline(busy)!} />)
@@ -121,6 +124,8 @@ describe('UpdateCard on a refusal', () => {
   it('offers the NEXT bundle even while the phase still says refused', () => {
     const next: UpdateStatus = {
       ...REFUSED,
+      last_refusal: null,
+      last_refusal_source: '',
       latest: { ...WAITING.latest!, sha: 'f'.repeat(40), short: 'ffffffff', file_count: 7 },
     }
     const html = renderToStaticMarkup(
@@ -129,6 +134,28 @@ describe('UpdateCard on a refusal', () => {
     expect(html).not.toContain('Update refused')
     expect(html).not.toContain('cabinet/scripts/start-officer-mac.sh')
     expect(html).toContain('>Apply<')
+  })
+
+  // A5.17.7 ON THE CARD, which is the half round 5 declared a per-surface
+  // difference and the A5.17 gate retired. A bundle this box took and put back
+  // is not a bundle nobody has tried: "Update ready" over it hides the one
+  // fact the Captain would want before tapping Apply a second time. Apply
+  // STAYS — a health gate that went red is worth re-testing — so the sentence
+  // is the whole of the change, and it is the briefing's sentence word for
+  // word.
+  it('says a bundle was rolled back and still keeps Apply', () => {
+    const rolled: UpdateStatus = {
+      ...WAITING,
+      last_refusal: null,
+      waiting_rollback: { bundle: 'b'.repeat(40), reason: 'the health gate was red',
+                          ts: '2026-09-09T10:00:20Z' },
+    }
+    const html = renderToStaticMarkup(
+      <UpdateCard status={rolled} headline={updateHeadline(rolled)!} />)
+    expect(html).toContain(
+      'Update rolled back — the health gate was red; still waiting (bbbbbbbb)')
+    expect(html).toContain('>Apply<')
+    expect(html).not.toContain('Update refused')
   })
 
   it('says so when the record is being held outside the ledger (A5.16)', () => {

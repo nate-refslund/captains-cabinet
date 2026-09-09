@@ -495,11 +495,24 @@ def test_a_refusal_still_speaks_once_the_apply_is_no_longer_in_flight(tmp_path,
 # "Update refused — busy (bbbbbbbb)" over a Cabinet running those very bytes.
 # ---------------------------------------------------------------------------
 
-def _overtaken_refusal(root, phase, reason, paths, *, to_sha="c" * 40):
+#: The refusal these fixtures carry, and the apply that came after it. The
+#: TIMES are the load-bearing part (A5.17.3): supersession is a comparison of
+#: the records' own timestamps, so a fixture with no `finished_at` would be
+#: asserting something the writer never produces — every `write_state` on the
+#: applied and rolled-back paths stamps one.
+_REFUSED_AT = "2026-09-08T18:58:00Z"
+_FINISHED_AT = "2026-09-08T19:00:00Z"
+_A_VERDICT = "the bundle does not match its manifest"
+
+
+def _overtaken_refusal(root, phase, reason, paths, *, to_sha="c" * 40,
+                       finished_at=_FINISHED_AT):
     """A completed apply / rollback carrying the refusal it overtook."""
     doc = {"phase": phase, "to_sha": to_sha,
            "last_refusal": {"bundle": NEW, "reason": reason, "paths": list(paths),
-                            "ts": "2026-09-08T18:58:00Z", "door": "web"}}
+                            "ts": _REFUSED_AT, "door": "web"}}
+    if finished_at:
+        doc["finished_at"] = finished_at
     if phase == "applied":
         doc["changed"] = 4
     else:
@@ -509,10 +522,16 @@ def _overtaken_refusal(root, phase, reason, paths, *, to_sha="c" * 40):
 
 def test_an_apply_since_the_refusal_overtakes_it_and_the_applied_line_wins(
         tmp_path, monkeypatch):
-    """The busy race, at rest: the apply landed, so the apply is the news."""
+    """The apply landed, so the apply is the news.
+
+    A VERDICT is what this arm carries, since A5.17: a `busy` note is not a
+    candidate at all (it is about no bundle), so a busy-reasoned fixture here
+    would pass without the currency rule ever running — the sensor would be
+    testing something other than the control. The busy half is pinned by
+    `test_a_timing_note_is_never_a_candidate_even_when_it_is_the_last_record`."""
     _ledger(monkeypatch, tmp_path)
     root = _install(tmp_path)
-    _overtaken_refusal(root, "applied", "busy", [])
+    _overtaken_refusal(root, "applied", _A_VERDICT, [])
     line = run_briefing._update_notice(str(root))
     assert line == "Updated to cccccccc: 4 changes", line
     assert run_briefing._update_refusal_line(root, "") == ""
@@ -522,10 +541,27 @@ def test_a_rollback_since_the_refusal_overtakes_it_too(tmp_path, monkeypatch):
     """The same, one branch along, and the sentence master used to give."""
     _ledger(monkeypatch, tmp_path)
     root = _install(tmp_path)
-    _overtaken_refusal(root, "rolled_back", "busy", [])
+    _overtaken_refusal(root, "rolled_back", _A_VERDICT, [])
     line = run_briefing._update_notice(str(root))
     assert line == "An update was rolled back: the health gate was red", line
     assert run_briefing._update_refusal_line(root, "") == ""
+
+
+def test_an_apply_with_no_time_of_its_own_cannot_overtake_anything(
+        tmp_path, monkeypatch):
+    """THE DEGENERATE END of the currency rule, pinned rather than assumed.
+
+    Superseding requires an apply or rollback fact STRICTLY NEWER than the
+    verdict (A5.17.5), and "strictly newer" is a comparison: a document that
+    says `phase: applied` and carries no timestamp at all has not won it. Every
+    `write_state` on both paths stamps `finished_at`, so this shape comes only
+    from a truncated or hand-edited file — and the answer it gets is the safe
+    one (the refusal keeps speaking) rather than the silent one."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _overtaken_refusal(root, "applied", _A_VERDICT, [], finished_at="")
+    assert run_briefing._update_notice(str(root)).startswith("Update refused"), \
+        "an untimed apply silenced a verdict it cannot be shown to postdate"
 
 
 def test_even_a_constitutional_refusal_is_overtaken_by_a_later_apply(
@@ -553,13 +589,35 @@ def test_the_refusal_still_speaks_when_it_IS_the_last_thing_that_happened(
     it beside its own negative so a fix that silenced both would be visible."""
     _ledger(monkeypatch, tmp_path)
     root = _install(tmp_path)
-    _state(root, {"phase": "refused", "bundle": NEW, "reason": "busy", "paths": [],
-                  "ts": "2026-09-08T18:58:00Z", "door": "web",
-                  "last_refusal": {"bundle": NEW, "reason": "busy", "paths": [],
-                                   "ts": "2026-09-08T18:58:00Z", "door": "web"}})
+    _state(root, {"phase": "refused", "bundle": NEW, "reason": _A_VERDICT,
+                  "paths": [], "ts": _REFUSED_AT, "door": "web",
+                  "last_refusal": {"bundle": NEW, "reason": _A_VERDICT, "paths": [],
+                                   "ts": _REFUSED_AT, "door": "web"}})
     line = run_briefing._update_notice(str(root))
-    assert line == "Update refused — busy (bbbbbbbb)", line
+    assert line == "Update refused — %s (bbbbbbbb)" % _A_VERDICT, line
     assert run_briefing._update_refusal_line(root, "") != ""
+
+
+def test_a_timing_note_is_never_a_candidate_even_when_it_is_the_last_record(
+        tmp_path, monkeypatch):
+    """A5.17.1, and the reversal of A5.15's letter that round 6 carried out.
+
+    `busy` means another updater held the lock. It says nothing about any
+    bundle's bytes, so it never resolves, never occupies a verdict store and
+    never moves `phase` to `refused` — and a state document that says otherwise
+    (every install refused while busy before this round wrote exactly this
+    shape) must not be read as a verdict. Round 5 measured the cost of the
+    other reading: a busy note about a moment blanked a constitutional verdict
+    on the bundle in the inbox, and both surfaces then offered Apply."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _state(root, {"phase": "refused", "bundle": NEW, "reason": "busy", "paths": [],
+                  "ts": _REFUSED_AT, "door": "web",
+                  "last_refusal": {"bundle": NEW, "reason": "busy", "paths": [],
+                                   "ts": _REFUSED_AT, "door": "web"}})
+    assert run_briefing._update_notice(str(root)) == ""
+    assert run_briefing._update_refusal_line(root, "") == ""
+    assert run_briefing._update_refusal_line(root, NEW) == ""
 
 
 def test_a_refusal_of_a_bundle_still_waiting_survives_a_later_apply_of_another(
@@ -623,7 +681,12 @@ def _classify_kind(line: str) -> str:
     # second classifying as `unclassified` — inert only because every sweep row
     # ran on an empty ledger, and a sensor that cannot name what it sees is not
     # a sensor. The `receipt` axis makes it reachable, so it is named.
-    if line.startswith("An update was rolled back") or (
+    # THREE rollback sentences reach this classifier: the state file's ("An
+    # update was rolled back: …"), the retired receipt wording, and A5.17.7's
+    # ("Update rolled back — …; still waiting (…)"), which is now IDENTICAL on
+    # the card. A sensor that cannot name what it sees is not a sensor.
+    if line.startswith("An update was rolled back") or line.startswith(
+            "Update rolled back") or (
             line.startswith("An update to ") and "was rolled back" in line):
         return "rolled_back"
     return "unclassified"
@@ -687,75 +750,97 @@ def test_the_briefing_says_what_the_card_says_on_every_shared_state(tmp_path,
 # ---------------------------------------------------------------------------
 # THE EXHAUSTIVE SWEEP — every state, not the ones somebody thought of.
 #
-# Four review rounds each found one more adjacent state in these same two
-# readers, and every arm written for each of them was aimed at the state that
-# already worked: round 1's two arms pinned `phase: applied`, round 2's pinned
-# a state with no waiting bundle, round 3's both pinned `phase: refused`,
-# round 4's all ran on an EMPTY LEDGER. That is not four unlucky arms, it is
-# the shape of hand-written arms — the defect is always in the state nobody
-# thought to write one for, and in round 4 it was in the input nobody thought
-# to vary.
+# Five review rounds each found one more adjacent state in these same readers,
+# and every arm written for each of them was aimed at the state that already
+# worked: round 1's two arms pinned `phase: applied`, round 2's pinned a state
+# with no waiting bundle, round 3's both pinned `phase: refused`, round 4's all
+# ran on an EMPTY LEDGER, and round 5's ran on a ledger exactly ONE record
+# deep — the one depth at which "the newest refusal about this bundle" and "the
+# newest refusal anywhere" cannot be told apart. That is not five unlucky arms,
+# it is the shape of hand-written arms: the defect is always in the state
+# nobody thought to write one for, and twice running it was in the input nobody
+# thought to vary.
 #
-# `update_surface_oracle.json` is the whole product of the six axes the two
-# readers actually branch on (1440 rows), with the expected headline kind for
-# EACH surface, whether the refusal sub-surface speaks, and what the two
-# channels must resolve to. It is derived from
-# the contract (A5.13/A5.15/A5.16), not from either implementation: a row where
-# the code disagrees is a defect in the code. The card's half of the same table
-# is `cabinet/dashboard/src/lib/updates.test.ts` ("the whole state space"),
-# reading the SAME file, so a kind flipped in it reds both suites.
+# `update_surface_oracle.json` is the whole product of the six axes these
+# readers branch on (5250 rows), carrying the exact SENTENCE for each surface,
+# whether the refusal sub-surface speaks, whether Apply is live, and what both
+# resolvers must produce. It is derived from the contract (A5.17), not from
+# either implementation: a row where the code disagrees is a defect in the
+# code. The card's half of the same table is
+# `cabinet/dashboard/src/lib/updates.test.ts`, and the resolver that FEEDS the
+# card is driven against it in
+# `cabinet/scripts/tests/test_cabinet_update.py::test_the_resolver_answers_every_state_the_way_the_oracle_says`
+# — three readers, one file, so a sentence flipped in it reds all three.
 # ---------------------------------------------------------------------------
 
 ORACLE_FIXTURES = Path(__file__).parent / "update_surface_oracle.json"
 
 
-ORACLE_ROWS = 1440
+ORACLE_ROWS = 5250
+
+#: The axis order the row id is built from, and the only place it is written.
+_ORACLE_AXES = ("phase", "waiting", "state", "ledger", "other", "ledger_error")
 
 
 def _oracle_id(axes) -> str:
     return "%s/%s/%s/%s/%s/%s" % (
-        axes["phase"], axes["waiting"], axes["refusal"],
-        "fault" if axes["ledger_error"] else "noledger",
-        "held" if axes["event_fallback"] else "nohold", axes["receipt"])
+        axes["phase"], axes["waiting"], axes["state"], axes["ledger"],
+        axes["other"], "fault" if axes["ledger_error"] else "noledger")
+
+
+def _oracle_doc():
+    return json.loads(ORACLE_FIXTURES.read_text(encoding="utf-8"))
 
 
 def test_the_oracle_covers_the_whole_product_of_the_axes_it_declares():
-    """A table that quietly shrank would take both suites with it, silently.
+    """A table that quietly shrank would take three suites with it, silently.
 
     Derived from the declared axes rather than compared to a number, so it
     detects a REMOVED row as well as a changed one — a completeness claim that
     cannot see removal from the set it checks is the sensor this program has
-    found broken most often. Round 4 found the other half of the same defect:
-    the table WAS the whole product of the axes it declared, and one input the
-    readers branch on — the ledger — was not among them, so the claim was true
-    and the coverage was not. The ledger is the sixth axis."""
+    found broken most often. Round 4 found one half of the other defect (the
+    table was the whole product of the axes it declared, and the ledger was not
+    among them); round 5 found the other half (the ledger WAS an axis, and its
+    DEPTH was held at one, so the shape `refuse_busy` writes on every lock
+    contention was not representable at any point in the product). Both axes
+    are now sequences, and every declared value has seeds behind it."""
     import itertools
 
-    doc = json.loads(ORACLE_FIXTURES.read_text(encoding="utf-8"))
+    doc = _oracle_doc()
     axes = doc["axes"]
-    expected = set()
-    for phase, waiting, refusal, ledger, fallback, receipt in itertools.product(
-            axes["phase"], axes["waiting"], axes["refusal"],
-            axes["ledger_error"], axes["event_fallback"], axes["receipt"]):
-        expected.add(_oracle_id({"phase": phase, "waiting": waiting,
-                                 "refusal": refusal, "ledger_error": ledger,
-                                 "event_fallback": fallback, "receipt": receipt}))
+    expected = {
+        _oracle_id(dict(zip(_ORACLE_AXES, combination)))
+        for combination in itertools.product(*(axes[name] for name in _ORACLE_AXES))
+    }
     ids = [row["id"] for row in doc["rows"]]
     assert len(expected) == ORACLE_ROWS, len(expected)
     assert sorted(ids) == sorted(expected), (
-        set(expected) - set(ids), set(ids) - set(expected))
+        sorted(set(expected) - set(ids))[:5], sorted(set(ids) - set(expected))[:5])
     assert len(ids) == len(set(ids)), "duplicate row id"
     # Every row's id must describe the row's own axes, or the table is indexed
     # by a label that has come loose from what it labels.
     for row in doc["rows"]:
         assert row["id"] == _oracle_id(row["axes"]), row["id"]
-    # And every declared receipt axis value must have seeds to be driven from:
-    # an axis with nothing behind it is an axis held constant under a name.
-    assert sorted(doc["receipt_seeds"]) == sorted(axes["receipt"])
-    for name, seeds in doc["receipt_seeds"].items():
+    # An axis value with nothing behind it is an axis held constant under a
+    # name — exactly what the ledger was until round 4 and its DEPTH was until
+    # round 5. Every value of both ledger axes must have seeds, every marker
+    # and legacy value a record, every phase a document.
+    assert sorted(doc["ledger_seeds"]) == sorted(axes["ledger"])
+    assert sorted(doc["other_seeds"]) == sorted(axes["other"])
+    assert sorted(doc["phase_state"]) == sorted(axes["phase"])
+    for name in axes["state"]:
+        assert name == "none" or name in doc["markers"] or name in doc["legacy"], name
+    for name, seeds in list(doc["ledger_seeds"].items()) + list(doc["other_seeds"].items()):
         assert (name == "none") == (not seeds), name
         for seed in seeds:
             assert seed["event_type"] in _UPDATE_RECEIPT_TYPES_SEEN, seed
+            # A5.17.3: ordering is by the record's OWN time, so every seed must
+            # carry one. A seed without it would be ordered by the ledger's
+            # insertion stamp, which is the input the contract forbids.
+            assert seed["payload"][doc["record_time_field"]], seed
+    # The ledger axis must actually reach depth two, or round 5's defect is
+    # unrepresentable again under a new name.
+    assert max(len(seeds) for seeds in doc["ledger_seeds"].values()) >= 2
 
 
 #: The event types the seeds are allowed to use — the update path's three.
@@ -763,75 +848,203 @@ _UPDATE_RECEIPT_TYPES_SEEN = ("cabinet_update_applied", "cabinet_update_refused"
                               "cabinet_update_rolled_back")
 
 
-def _drive_oracle_row(tmp_path, monkeypatch, doc, row, index):
-    """One row on disk: its state file AND its ledger, both real, both fresh."""
-    monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(tmp_path / ("ledger%04d" % index)))
-    (tmp_path / ("ledger%04d" % index)).mkdir(parents=True, exist_ok=True)
-    for seed in doc["receipt_seeds"][row["axes"]["receipt"]]:
+def _drive_oracle_row(tmp_path, monkeypatch, doc, row, index, *,
+                      state_extra=None, marker_extra=None, reverse_ledger=False):
+    """One row on disk: its state document, its marker and its ledger, all
+    real, all fresh. The optional arguments are for the INVARIANCE arms and
+    are unused by the sweep itself."""
+    axes = row["axes"]
+    log_dir = tmp_path / ("ledger%05d" % index)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(log_dir))
+    seeds = doc["ledger_seeds"][axes["ledger"]] + doc["other_seeds"][axes["other"]]
+    for seed in (list(reversed(seeds)) if reverse_ledger else seeds):
         _emit(seed["event_type"], seed["payload"])
-    root = _install(tmp_path / ("row%04d" % index), source_commit=row["installed"])
-    if row["waiting"]:
-        _waiting(root, sha=row["waiting"]["sha"],
-                 files=row["waiting"]["file_count"],
-                 built_at=row["waiting"]["built_at"])
-    if row["state"] is not None:
-        _state(root, row["state"])
+    root = _install(tmp_path / ("row%05d" % index),
+                    source_commit=doc["shas"]["installed"])
+    bundle = doc["waiting_bundles"].get(axes["waiting"])
+    if bundle:
+        _waiting(root, sha=bundle["sha"], files=bundle["file_count"],
+                 built_at=bundle["built_at"])
+    state = dict(doc["phase_state"][axes["phase"]])
+    if axes["state"] in doc["legacy"]:
+        state["last_refusal"] = dict(doc["legacy"][axes["state"]])
+    if axes["ledger_error"]:
+        state["ledger_error"] = doc["ledger_error_text"]
+    state.update(state_extra or {})
+    if state:
+        _state(root, state)
+    markers = dict(doc["markers"]).get(axes["state"])
+    for record in ([markers] if markers else []) + list(marker_extra or []):
+        path = root / ".updates" / "refusals" / (record["bundle"] + ".json")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(record), encoding="utf-8")
     return root
-
-
-def _without_ts(record):
-    """`ts` is stamped by whichever channel wrote the record and no reader
-    branches on it, so the table declares it null on a receipt-sourced one."""
-    return {k: v for k, v in (record or {}).items() if k != "ts"} or None
 
 
 def test_the_briefing_answers_every_state_the_way_the_oracle_says(tmp_path,
                                                                   monkeypatch):
-    """This half of the sweep. The card's half asserts the same 1440 rows."""
-    doc = json.loads(ORACLE_FIXTURES.read_text(encoding="utf-8"))
+    """This side of the sweep: the SENTENCE, the sub-surface, and the
+    resolution — all three against the table, not against the card.
+
+    The card's half asserts the same 5250 rows from the same file, and the
+    resolver that feeds the card is driven against it in the cabinet suite. The
+    briefing's resolver is pinned here rather than compared to that one: two
+    twins driven from each other agree by construction."""
+    doc = _oracle_doc()
     rows = doc["rows"]
     assert len(rows) == ORACLE_ROWS, len(rows)
     wrong = []
     for index, row in enumerate(rows):
         root = _drive_oracle_row(tmp_path, monkeypatch, doc, row, index)
+        waiting = doc["waiting_bundles"].get(row["axes"]["waiting"]) or {}
+        waiting_sha = waiting.get("sha", "")
+        state = run_briefing._update_state(root)
+        try:
+            ledger = run_briefing._update_receipts()
+        except Exception:  # noqa: BLE001
+            ledger = []
         line = run_briefing._update_notice(str(root))
-        kind = _classify_kind(line)
-        waiting_sha = (row["waiting"] or {}).get("sha", "")
         spoke = bool(run_briefing._update_refusal_line(root, waiting_sha))
-        expect = row["expect"]
-        if kind != expect["briefing"] or spoke != expect["refusal_speaks"]:
-            wrong.append("%s: kind %s (want %s), refusal spoke %s (want %s) -- %r"
-                         % (row["id"], kind, expect["briefing"], spoke,
-                            expect["refusal_speaks"], line))
+        record, source = run_briefing._update_resolved_refusal(root, waiting_sha)
+        rollback = (run_briefing._rollback_about(root, state, ledger, waiting_sha)
+                    if waiting_sha and not record else {})
+        want = row["expect"]
+        got_resolved = {"last_refusal": record or None, "source": source,
+                        "waiting_rollback": rollback or None}
+        if (line != want["briefing"] or spoke != want["refusal_speaks"]
+                or got_resolved != row["resolved"]):
+            wrong.append("%s:\n    line     %r\n    want     %r\n"
+                         "    spoke %s want %s\n    resolved %s\n    want     %s"
+                         % (row["id"], line, want["briefing"], spoke,
+                            want["refusal_speaks"], json.dumps(got_resolved, sort_keys=True),
+                            json.dumps(row["resolved"], sort_keys=True)))
     assert not wrong, "%d of %d states are not what the contract says:\n%s" % (
-        len(wrong), len(rows), "\n".join(wrong[:20]))
+        len(wrong), len(rows), "\n".join(wrong[:10]))
 
 
-def test_the_briefing_resolves_the_refusal_the_table_says_it_must(tmp_path,
-                                                                  monkeypatch):
-    """THE TWO RESOLVERS MEET THE SAME DECLARATION.
+# ---------------------------------------------------------------------------
+# THE INVARIANCE ARMS — the four inputs held OUTSIDE the product.
+#
+# A5.17.8 keeps the product at 5250 rows by claiming four inputs are
+# independent of the resolution rather than untested. A claim of independence
+# is worth exactly what it is tested at, and "we left it out because it does
+# not matter" is how the ledger stayed out of the table for four rounds. So
+# each one is varied on rows that ARE in the table and the answer must not
+# move — a stronger statement than another axis would make, and one that fails
+# loudly the day the code starts reading the input.
+# ---------------------------------------------------------------------------
 
-    `resolved` is what `cabinet-update.sh status --json` must produce — it is
-    the card's whole input, and the card's half of this sweep is driven from
-    it. This arm holds the BRIEFING's own resolver to the same statement, so
-    the deliberate twin (`update_bundle.resolve_last_refusal` for the card,
-    `_update_resolved_refusal` here) cannot drift apart without a row going
-    red on one side or the other. Without it the two halves would be driven
-    from two different resolutions and would agree by construction."""
-    doc = json.loads(ORACLE_FIXTURES.read_text(encoding="utf-8"))
-    rows = doc["rows"]
+def _sample(rows, step):
+    """A spread-out sample, deterministic: every `step`-th row, never a slice
+    (a slice of a sorted product is one corner of it)."""
+    return rows[::step]
+
+
+def test_a_marker_about_another_bundle_never_moves_the_answer(tmp_path, monkeypatch):
+    """A5.17.5: a record about X never answers, suppresses or blanks a question
+    about Y. Driven on the rows where B is the bundle waiting, which is where
+    the claim has teeth — a marker about E is then a record nobody asked for.
+
+    AND THE ONE PLACE IT IS NOT INVARIANT, pinned rather than excluded. The
+    legacy state record is admitted only WHERE THERE IS NO MARKER STORE AT ALL
+    (A5.17.5's parenthesis), so the first marker this updater ever writes —
+    about any bundle — switches that compatibility read off. Measured here on
+    four sampled rows, and it is the contract's letter rather than a defect:
+    once markers exist, `last_refusal` is the mirror of one of them and adds
+    nothing. So the legacy rows are held to the answer their `state: none` twin
+    gives, which says exactly what the marker costs them, and the rest are held
+    invariant. What this arm deliberately does NOT cover is the nothing-waiting
+    branch, where a marker about E is a legitimate candidate (A5.17.6 scans
+    every marker); those rows are in the product with their own answers."""
+    doc = _oracle_doc()
+    rows = [row for row in doc["rows"] if row["axes"]["waiting"] == "same"]
+    by_id = {row["id"]: row for row in doc["rows"]}
+    sample = _sample(rows, 17)
+    assert len(sample) >= 50, len(sample)
+    other = {"bundle": doc["shas"]["other"],
+             "reason": "bundle changes locked constitutional paths",
+             "paths": ["cabinet/scripts/start-officer-mac.sh"],
+             "ts": doc["times"]["not_about_b"], "door": "web"}
+    legacy_seen = 0
     wrong = []
-    for index, row in enumerate(rows):
-        root = _drive_oracle_row(tmp_path, monkeypatch, doc, row, index)
-        record, source = run_briefing._update_resolved_refusal(root)
-        want = row["resolved"]
-        if (_without_ts(record) != _without_ts(want["last_refusal"])
-                or source != want["source"]):
-            wrong.append("%s: resolved %r from %r (want %r from %r)"
-                         % (row["id"], _without_ts(record), source,
-                            _without_ts(want["last_refusal"]), want["source"]))
-    assert not wrong, "%d of %d resolutions are not what the contract says:\n%s" % (
-        len(wrong), len(rows), "\n".join(wrong[:20]))
+    for index, row in enumerate(sample):
+        root = _drive_oracle_row(tmp_path, monkeypatch, doc, row, index,
+                                 marker_extra=[other])
+        line = run_briefing._update_notice(str(root))
+        if row["axes"]["state"] in doc["legacy"]:
+            legacy_seen += 1
+            twin = by_id[_oracle_id(dict(row["axes"], state="none"))]
+            want = twin["expect"]["briefing"]
+        else:
+            want = row["expect"]["briefing"]
+        if line != want:
+            wrong.append("%s: %r (want %r)" % (row["id"], line, want))
+    assert not wrong, "%d of %d moved:\n%s" % (len(wrong), len(sample),
+                                               "\n".join(wrong[:10]))
+    # The legacy half of this arm is only a sensor if the sample reaches it.
+    assert legacy_seen >= 10, legacy_seen
+
+
+def test_last_busy_in_any_value_never_moves_the_answer(tmp_path, monkeypatch):
+    """A5.17.1: a timing note is about no bundle and is never a headline
+    anywhere. It is a field on the state document, so a reader that started
+    consulting it would be silently reachable — this is what says it does
+    not."""
+    doc = _oracle_doc()
+    sample = _sample(doc["rows"], 61)
+    assert len(sample) >= 50, len(sample)
+    values = [{"bundle": "", "ts": doc["times"]["not_about_b"], "door": "web"},
+              {"bundle": doc["shas"]["refused"], "ts": doc["times"]["not_about_b"],
+               "door": "web"},
+              {"bundle": doc["shas"]["other"], "ts": doc["times"]["ledger_first"],
+               "door": "terminal"}]
+    wrong = []
+    for index, row in enumerate(sample):
+        root = _drive_oracle_row(tmp_path, monkeypatch, doc, row, index,
+                                 state_extra={"last_busy": values[index % len(values)]})
+        line = run_briefing._update_notice(str(root))
+        if line != row["expect"]["briefing"]:
+            wrong.append("%s: %r (want %r)" % (row["id"], line, row["expect"]["briefing"]))
+    assert not wrong, "%d of %d moved:\n%s" % (len(wrong), len(sample), "\n".join(wrong[:10]))
+
+
+def test_event_fallback_on_or_off_never_moves_the_answer(tmp_path, monkeypatch):
+    """A5.16 makes a held record a SUB-LINE beside whatever the surface says,
+    never the sentence itself — the ledger FAULT is the one that leads. This is
+    why `event_fallback` left the product in round 6 rather than doubling it."""
+    doc = _oracle_doc()
+    sample = _sample(doc["rows"], 59)
+    assert len(sample) >= 50, len(sample)
+    wrong = []
+    for index, row in enumerate(sample):
+        root = _drive_oracle_row(tmp_path, monkeypatch, doc, row, index,
+                                 state_extra={"event_fallback": bool(index % 2)})
+        line = run_briefing._update_notice(str(root))
+        if line != row["expect"]["briefing"]:
+            wrong.append("%s: %r (want %r)" % (row["id"], line, row["expect"]["briefing"]))
+    assert not wrong, "%d of %d moved:\n%s" % (len(wrong), len(sample), "\n".join(wrong[:10]))
+
+
+def test_the_position_of_a_record_in_the_ledger_is_not_an_input(tmp_path, monkeypatch):
+    """A5.17.3: only TIMES are compared. Emit each row's records in the reverse
+    order and the answer must be identical — a sidecar replay inserts a record
+    days after the events it happened before, so a resolver that read position
+    would call a stale refusal the newest thing on the box."""
+    doc = _oracle_doc()
+    rows = [row for row in doc["rows"]
+            if len(doc["ledger_seeds"][row["axes"]["ledger"]]
+                   + doc["other_seeds"][row["axes"]["other"]]) >= 2]
+    sample = _sample(rows, 41)
+    assert len(sample) >= 50, len(sample)
+    wrong = []
+    for index, row in enumerate(sample):
+        root = _drive_oracle_row(tmp_path, monkeypatch, doc, row, index,
+                                 reverse_ledger=True)
+        line = run_briefing._update_notice(str(root))
+        if line != row["expect"]["briefing"]:
+            wrong.append("%s: %r (want %r)" % (row["id"], line, row["expect"]["briefing"]))
+    assert not wrong, "%d of %d moved:\n%s" % (len(wrong), len(sample), "\n".join(wrong[:10]))
 
 
 # ---------------------------------------------------------------------------

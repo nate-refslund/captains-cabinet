@@ -2062,8 +2062,17 @@ def test_a_busy_refusal_is_recorded_and_never_erases_an_interrupted_apply(tmp_pa
     doc = state(root)
     assert doc["phase"] == "applying", doc
     assert doc["snapshot"] == snapshot_name
-    assert doc["last_refusal"]["reason"] == "busy"
-    assert doc["last_refusal"]["door"] == "web"
+    # A5.17.1, and the reversal of A5.15's letter this round carried out: a
+    # timing note lands in `last_busy` and NOWHERE else. It is not a verdict on
+    # any bundle's bytes, so it never occupies the verdict store, never touches
+    # the legacy mirror and never moves the phase. Round 5 measured the cost of
+    # the other reading: this record, written by a rollback that lost the lock,
+    # blanked a constitutional verdict on the bundle in the inbox.
+    assert doc["last_busy"]["bundle"] == NEW_SHA, doc
+    assert doc["last_busy"]["door"] == "web", doc
+    assert "last_refusal" not in doc, doc
+    assert not (root / ".updates" / "refusals").exists(), \
+        "a timing note wrote a verdict marker"
 
     # And the resume still works, which is the property the refusal record was
     # not allowed to cost.
@@ -2086,13 +2095,27 @@ def test_the_refusal_record_outlives_the_next_state_write(tmp_path):
                        "--skip-restart").returncode == 3
     assert refusal(root)["bundle"] == refused_sha
 
+    assert update_bundle.read_refusal_marker(root, refused_sha), "no marker was written"
+
     make_bundle(tmp_path, root, NEW_SHA, extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
     assert run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
                        "--skip-restart").returncode == 0
     doc = state(root)
     assert doc["phase"] == "applied"
+    # The legacy mirror is still carried (CARRIED_STATE_FIELDS), and the
+    # DURABLE record — the marker for the sha that was refused — is untouched
+    # by an apply that never named it (A5.17.2).
     assert doc["last_refusal"]["bundle"] == refused_sha, doc
-    assert status_json(root)["last_refusal"]["bundle"] == refused_sha
+    marker = update_bundle.read_refusal_marker(root, refused_sha)
+    assert marker and marker["bundle"] == refused_sha, marker
+    # So the verdict still stands ON THAT BUNDLE: offer those bytes again and
+    # the card withdraws Apply exactly as it did the first time.
+    record, source = update_bundle.resolve_last_refusal(root, waiting_sha=refused_sha)
+    assert record and record["bundle"] == refused_sha, (record, source)
+    # And `status --json` says nothing, because nothing is waiting and an apply
+    # has happened since — a refusal is still TRUE after the next thing
+    # happens; what it stops being is the NEWS (A5.17.6, round 3's rule).
+    assert status_json(root)["last_refusal"] is None
 
 
 def test_without_the_refusal_record_the_status_is_silent(tmp_path):
@@ -2406,7 +2429,10 @@ def test_a_losing_updaters_state_write_cannot_revert_the_winners(tmp_path, entry
         "a completed apply is carrying a snapshot name again, which the next "
         "run restores from: %s" % final)
     if entry == "record_refusal":
-        assert (final.get("last_refusal") or {}).get("reason") == "busy", final
+        # A5.17.1: the loser's record is a TIMING NOTE, so what must survive the
+        # winner's whole-document write is `last_busy`, not a verdict slot.
+        assert (final.get("last_busy") or {}).get("bundle") == NEW_SHA, final
+        assert "last_refusal" not in final, final
 
 
 # ===========================================================================
@@ -2626,6 +2652,19 @@ def _refuse_locked(tmp_path: Path, root: Path, sha: str = NEW_SHA) -> None:
     assert result.returncode == 3, (result.returncode, result.stderr)
 
 
+def _lose_the_state_channel(root: Path) -> None:
+    """Everything this box wrote down about a refusal EXCEPT the ledger receipt.
+
+    Since A5.17 the state channel is two things — the per-bundle marker and the
+    legacy `last_refusal` mirror — so deleting `state.json` alone no longer
+    produces a ledger-only refusal: the marker survives, which is the whole
+    point of it. This is the shape an install gets when the marker write is the
+    half that failed, and the shape every install cut before this round is in
+    for the refusals it recorded through the ledger alone."""
+    shutil.rmtree(root / ".updates" / "refusals", ignore_errors=True)
+    (root / ".updates" / "state.json").unlink(missing_ok=True)
+
+
 def test_a_refusal_that_reached_only_the_ledger_is_still_the_last_refusal(tmp_path):
     """The card's input, on the state the card could not see.
 
@@ -2635,7 +2674,7 @@ def test_a_refusal_that_reached_only_the_ledger_is_still_the_last_refusal(tmp_pa
     recorded through the ledger alone."""
     root = make_install(tmp_path)
     _refuse_locked(tmp_path, root)
-    (root / ".updates" / "state.json").unlink()
+    _lose_the_state_channel(root)
 
     report = status_json(root)
     assert report["last_refusal"], report
@@ -2652,6 +2691,7 @@ def test_an_unreadable_state_file_does_not_lose_the_refusal_either(tmp_path):
     """Truncated rather than absent — the other half of the same silence."""
     root = make_install(tmp_path)
     _refuse_locked(tmp_path, root)
+    _lose_the_state_channel(root)
     (root / ".updates" / "state.json").write_text("{ torn", encoding="utf-8")
 
     report = status_json(root)
@@ -2681,12 +2721,17 @@ def test_a_receipt_refusal_an_apply_overtook_is_not_resolved(tmp_path):
     was about succeeded is the round-3 defect on the other channel."""
     root = make_install(tmp_path)
     _refuse_locked(tmp_path, root)
-    (root / ".updates" / "state.json").unlink()
+    _lose_the_state_channel(root)
     subprocess.run(
         [_PY, str(_BUNDLE_PY), "record-event", "--root", str(root),
          "--type", "cabinet_update_applied", "--actor", "system",
+         # STRICTLY newer, stated rather than raced (A5.17.5): the updater
+         # stamps whole seconds, so a refusal and an apply inside the same one
+         # are a TIE, and a tie keeps the refusal. An arm that depended on the
+         # clock ticking between two subprocesses would pass or fail by speed.
          "--payload", json.dumps({"from_sha": OLD_SHA, "to_sha": NEW_SHA,
-                                  "changed": 1, "deleted": 0, "door": "web"})],
+                                  "changed": 1, "deleted": 0, "door": "web",
+                                  "recorded_at": "2036-01-01T00:00:00Z"})],
         check=True, capture_output=True, text=True,
         env=dict(os.environ, CABINET_EVENT_LOG_DIR=str(root / ".events"),
                  PYTHONDONTWRITEBYTECODE="1"),
@@ -2723,3 +2768,429 @@ def test_a_state_write_that_fails_is_named_rather_than_swallowed(tmp_path):
     assert doc["state_error"], doc
     # The record itself was not lost: the ledger has it.
     assert "cabinet_update_refused" in event_types(root)
+
+
+# ===========================================================================
+# 15. A5.17 — THE CURRENT REFUSAL OF A BUNDLE, PER BUNDLE, ON EVERY CHANNEL
+#
+# The round-5 must-fix. `status --json` resolved the newest refusal receipt in
+# the window GLOBALLY: if that record named another bundle, or no bundle at
+# all, the rest of the channel was thrown away. `refuse_busy` writes exactly
+# such a record on every lock contention — `record_refusal "" busy` when a
+# rollback loses the lock, `record_refusal <other> busy` when an apply does —
+# so a constitutional verdict on the bundle sitting in the inbox was blanked by
+# a note about a moment, and BOTH surfaces then said "an update is ready to
+# take — tap Apply" over bytes this box had already turned down. Round 4 was
+# card-wrong and briefing-right; that was both wrong, in agreement.
+#
+# A5.17 is the ruling. A refusal is a fact about ONE sha, in one of two classes
+# (a VERDICT about the bytes, a TIMING NOTE about a moment); a verdict lives in
+# its own marker file so a whole-document state replace by any writer cannot
+# lose it; currency is per bundle, ordered by each record's OWN timestamp; and
+# both surfaces consume ONE resolved answer about the bundle that is waiting.
+# ===========================================================================
+
+ORACLE_FIXTURES = (_REPO_ROOT / "framework" / "frontdoor" / "tests"
+                   / "update_surface_oracle.json")
+ORACLE_ROWS = 5250
+
+
+def _oracle_doc() -> dict:
+    """The one table. A FileNotFoundError here is the right failure: a fixture
+    that went missing must FAIL this suite, never skip it."""
+    return json.loads(ORACLE_FIXTURES.read_text(encoding="utf-8"))
+
+
+def _oracle_root(tmp_path: Path, doc: dict, row: dict, index: int) -> Path:
+    """One row on disk — its state document, its marker and its ledger."""
+    axes = row["axes"]
+    root = tmp_path / ("row%05d" % index)
+    (root / ".updates" / "inbox").mkdir(parents=True)
+    (root / "egg-manifest.json").write_text(
+        json.dumps({"source_commit": doc["shas"]["installed"]}), encoding="utf-8")
+    state = dict(doc["phase_state"][axes["phase"]])
+    if axes["state"] in doc["legacy"]:
+        state["last_refusal"] = dict(doc["legacy"][axes["state"]])
+    if axes["ledger_error"]:
+        state["ledger_error"] = doc["ledger_error_text"]
+    if state:
+        (root / ".updates" / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    marker = doc["markers"].get(axes["state"])
+    if marker:
+        path = root / ".updates" / "refusals" / (marker["bundle"] + ".json")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(marker), encoding="utf-8")
+    return root
+
+
+def test_the_resolver_answers_every_state_the_way_the_oracle_says(tmp_path,
+                                                                  monkeypatch):
+    """THE RESOLVER THAT FEEDS THE CARD, held to the table — all 5250 rows.
+
+    The round-5 review named this gap precisely: the BRIEFING's resolver was
+    pinned to the oracle and `update_bundle.resolve_update_surface`, which is
+    what `cabinet-update.sh status --json` reports and therefore the card's
+    whole input, was pinned only by hand-written arms. Both twins are now
+    driven against the same declaration, independently — never against each
+    other, which would let them agree by construction.
+
+    Real files and a real ledger per row: the state document, the marker file
+    and the receipts are written to disk and the resolver reads them the way it
+    reads an install."""
+    doc = _oracle_doc()
+    rows = doc["rows"]
+    assert len(rows) == ORACLE_ROWS, len(rows)
+    from framework.events.emitter import emit
+
+    wrong = []
+    for index, row in enumerate(rows):
+        log_dir = tmp_path / ("ledger%05d" % index)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(log_dir))
+        axes = row["axes"]
+        for seed in (doc["ledger_seeds"][axes["ledger"]]
+                     + doc["other_seeds"][axes["other"]]):
+            emit(seed["event_type"], "system", seed["payload"])
+        root = _oracle_root(tmp_path, doc, row, index)
+        waiting = (doc["waiting_bundles"].get(axes["waiting"]) or {}).get("sha", "")
+        got = update_bundle.resolve_update_surface(root, waiting_sha=waiting)
+        trio = {"last_refusal": got["last_refusal"], "source": got["last_refusal_source"],
+                "waiting_rollback": got["waiting_rollback"]}
+        if trio != row["resolved"]:
+            wrong.append("%s:\n    got  %s\n    want %s" % (
+                row["id"], json.dumps(trio, sort_keys=True),
+                json.dumps(row["resolved"], sort_keys=True)))
+    assert not wrong, "%d of %d resolutions are not what the contract says:\n%s" % (
+        len(wrong), len(rows), "\n".join(wrong[:10]))
+
+
+def test_the_resolver_never_writes(tmp_path, monkeypatch):
+    """A5.17.6: `status --json` is a report. A report that changed the thing it
+    reports on would make every surface a writer — and the surface most likely
+    to be asked twice in a second is a home page."""
+    doc = _oracle_doc()
+    monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(tmp_path / "events"))
+    (tmp_path / "events").mkdir()
+    row = next(r for r in doc["rows"]
+               if r["id"] == "refused/same/marker-locked/V-busy/busy-empty/fault")
+    root = _oracle_root(tmp_path, doc, row, 0)
+    before = {path: path.read_bytes()
+              for path in sorted((root / ".updates").rglob("*")) if path.is_file()}
+    assert before, "the fixture wrote nothing to compare"
+    for _ in range(3):
+        update_bundle.resolve_update_surface(root, waiting_sha="b" * 40)
+    after = {path: path.read_bytes()
+             for path in sorted((root / ".updates").rglob("*")) if path.is_file()}
+    assert after == before, "the resolver wrote to the install it was asked about"
+
+
+# ---------------------------------------------------------------------------
+# THE TWO RACES THE ROUND-5 REVIEW MEASURED, end to end through the REAL
+# updater, the REAL recorder and the REAL `status --json`, and then through the
+# REAL briefing on the same install root.
+#
+# e1: a locked-path refusal of the waiting bundle, then a ROLLBACK that loses
+#     the lock — `refuse_busy ""`, a record naming no bundle at all.
+# e2: the same refusal, then an APPLY of another bundle that loses the lock —
+#     `refuse_busy <other>`, a record about a bundle nobody is looking at.
+#
+# At c0a92731 both left `status --json` reporting no refusal (e1) or a busy
+# note about the other bundle (e2), and both surfaces said "ready to take".
+# ---------------------------------------------------------------------------
+
+OTHER_SHA = "e" * 40
+
+
+def _hold_the_lock(root: Path):
+    handle = open(root / ".updates" / ".lock", "a+")
+    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    return handle
+
+
+def _briefing_line(root: Path) -> str:
+    from framework.frontdoor import run_briefing
+    return run_briefing._update_notice(str(root))
+
+
+def _refuse_then_busy(tmp_path: Path, root: Path, *, command: str, bundle: str):
+    """The real refusal, then a real lock contention on the door named."""
+    _refuse_locked(tmp_path, root)
+    holder = _hold_the_lock(root)
+    try:
+        argv = (["rollback"] if command == "rollback"
+                else ["apply", "--bundle", bundle])
+        busy = run_updater(root, *argv, "--skip-restart", "--from", "web", timeout=60)
+        assert busy.returncode == 4, (busy.returncode, busy.stderr)
+    finally:
+        fcntl.flock(holder.fileno(), fcntl.LOCK_UN)
+        holder.close()
+
+
+def _assert_the_verdict_still_speaks(root: Path):
+    report = status_json(root)
+    assert report["last_refusal"], report
+    assert report["last_refusal"]["bundle"] == NEW_SHA, report["last_refusal"]
+    assert report["last_refusal"]["paths"], report["last_refusal"]
+    assert report["last_refusal_source"] in ("state", "receipt"), report
+    assert report["latest"]["sha"] == NEW_SHA
+    # The busy note is carried, and it is not the answer.
+    assert report["last_busy"], report
+    # The card's whole input says the same thing the briefing says.
+    line = _briefing_line(root)
+    assert line.startswith("Update refused"), line
+    assert "needs the Captain" in line, line
+    return report
+
+
+def test_e1_a_rollback_that_lost_the_lock_does_not_blank_the_verdict(tmp_path):
+    """e1 — the record that names NO bundle.
+
+    `cabinet-update.sh rollback` losing the lock calls `refuse_busy ""`, which
+    is a timing note about nothing at all. Under the resolver this replaces it
+    was the newest refusal receipt in the window, so it became the channel's
+    answer, and — naming no bundle — it resolved to nothing: `last_refusal:
+    null`, "Update ready — tap Apply", over a bundle refused for constitutional
+    paths, on both doors."""
+    root = make_install(tmp_path)
+    _refuse_then_busy(tmp_path, root, command="rollback", bundle="")
+    report = _assert_the_verdict_still_speaks(root)
+    # The note landed where a note goes, and nowhere else: it did not take the
+    # phase, and it did not touch the legacy mirror of the verdict.
+    doc = state(root)
+    assert doc["last_busy"]["bundle"] == "", doc["last_busy"]
+    assert doc["phase"] == "refused", doc
+    assert doc["last_refusal"]["bundle"] == NEW_SHA, doc["last_refusal"]
+    assert report["last_refusal_source"] == "state", report
+
+
+def test_e2_an_apply_of_another_bundle_that_lost_the_lock_does_not_blank_it(tmp_path):
+    """e2 — the record about ANOTHER bundle.
+
+    `apply --bundle <other>` losing the lock writes `busy` about that other
+    sha (the preparse runs before `--bundle` is even validated). The resolver
+    this replaces reported it as `last_refusal` with `source: state` — a note
+    about a bundle nobody is looking at, while the constitutional verdict on
+    the one in the inbox was discarded."""
+    root = make_install(tmp_path)
+    _refuse_then_busy(tmp_path, root, command="apply", bundle=OTHER_SHA)
+    report = _assert_the_verdict_still_speaks(root)
+    assert state(root)["last_busy"]["bundle"] == OTHER_SHA, state(root)["last_busy"]
+    assert report["last_refusal"]["bundle"] != OTHER_SHA
+
+
+def test_the_double_tap_on_one_bundle_keeps_its_verdict(tmp_path):
+    """A verdict on B, then a busy note about B — the double tap.
+
+    The Captain taps Apply, it is refused for constitutional paths, he taps
+    again while the first updater is still winding down. The second tap is a
+    lock contention about the SAME sha, and a timing note about B must not
+    clear the verdict on B: nothing has re-tested those bytes."""
+    root = make_install(tmp_path)
+    _refuse_then_busy(tmp_path, root, command="apply", bundle=NEW_SHA)
+    report = _assert_the_verdict_still_speaks(root)
+    assert state(root)["last_busy"]["bundle"] == NEW_SHA
+    assert report["last_refusal"]["paths"]
+
+
+def test_a_marker_survives_a_whole_document_state_replace(tmp_path):
+    """WHY THE STORE IS A FILE PER BUNDLE AND NOT A FIELD (A5.17.2 / gate D1).
+
+    Every write to `state.json` replaces the whole document, and one of the
+    writers can be an OLDER updater copy that has never heard of the field —
+    the install carries the updater it was cut with, and an update is exactly
+    the moment two versions exist on one box. Emulated here by writing the
+    state document the way a pre-A5.17 updater does: a plain replace with no
+    carry at all. The legacy mirror goes, as it must; the verdict does not."""
+    root = make_install(tmp_path)
+    _refuse_locked(tmp_path, root)
+    assert (root / ".updates" / "refusals" / (NEW_SHA + ".json")).is_file()
+
+    (root / ".updates" / "state.json").write_text(
+        json.dumps({"phase": "idle", "note": "written by an older updater"}),
+        encoding="utf-8")
+    assert "last_refusal" not in state(root), state(root)
+
+    report = status_json(root)
+    assert report["last_refusal"]["bundle"] == NEW_SHA, report
+    assert report["last_refusal_source"] == "state", report
+    assert _briefing_line(root).startswith("Update refused")
+
+
+def test_the_legacy_state_record_is_read_where_there_is_no_marker_store(tmp_path):
+    """The other direction, and the reason the mirror is kept.
+
+    An install that refused something before this round has a `last_refusal`
+    and no `.updates/refusals/` at all. It is admitted — bundle non-empty,
+    reason a verdict — so nothing that was already known is lost by the change
+    of store. And it is admitted ONLY there: once a marker store exists,
+    `last_refusal` is the mirror of one of its files (A5.17.5)."""
+    root = make_install(tmp_path)
+    upd = root / ".updates"
+    upd.mkdir(parents=True, exist_ok=True)
+    upd.joinpath("state.json").write_text(json.dumps({
+        "phase": "refused", "bundle": NEW_SHA, "reason": "bundle changes locked "
+        "constitutional paths", "paths": ["cabinet/scripts/start-officer-mac.sh"],
+        "ts": "2026-09-08T18:58:00Z", "door": "web",
+        "last_refusal": {"bundle": NEW_SHA, "reason": "bundle changes locked "
+                         "constitutional paths",
+                         "paths": ["cabinet/scripts/start-officer-mac.sh"],
+                         "ts": "2026-09-08T18:58:00Z", "door": "web"}}),
+        encoding="utf-8")
+    assert not (upd / "refusals").exists()
+
+    report = status_json(root)
+    assert report["last_refusal"]["bundle"] == NEW_SHA, report
+    assert report["last_refusal_source"] == "state", report
+
+    # AND THE ADMISSION SWITCH, stated rather than left to be discovered: one
+    # marker about ANY bundle turns the legacy read off (A5.17.5's parenthesis
+    # — "legacy, WHEN NO refusals/ DIRECTORY EXISTS"), because from that point
+    # the mirror is a copy of a marker and adds nothing. Nothing is waiting
+    # here, so what answers instead is rule 6's newest standing verdict, which
+    # is the marker. The cost is real and is the contract's: on an install
+    # upgrading mid-refusal, the first verdict this updater writes retires the
+    # legacy record of any OTHER bundle.
+    marker = upd / "refusals" / (OTHER_SHA + ".json")
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({
+        "bundle": OTHER_SHA, "reason": "bundle changes locked constitutional paths",
+        "paths": ["cabinet/scripts/start-officer-mac.sh"],
+        "ts": "2026-09-09T10:00:00Z", "door": "web"}), encoding="utf-8")
+    after = status_json(root)
+    assert after["last_refusal"]["bundle"] == OTHER_SHA, after["last_refusal"]
+
+
+def test_two_verdicts_on_one_bundle_leave_the_newest_speaking(tmp_path):
+    """A5.17.5, and the gate's D3: newest wins, with no ranking among reasons.
+
+    A digest verdict recorded after a locked one supersedes it because the
+    bytes it judged are not the bytes on disk any more — the bundle was
+    replaced in the inbox. Ranking locked-paths above every other reason would
+    make "current" non-temporal, which is the one property the whole resolution
+    turns on."""
+    root = make_install(tmp_path)
+    _refuse_locked(tmp_path, root)
+    first = update_bundle.read_refusal_marker(root, NEW_SHA)
+    assert first["paths"], first
+
+    # The same bundle id, new bytes, a digest that no longer matches.
+    make_bundle(tmp_path, root, NEW_SHA,
+                extra={"cabinet/scripts/hello.sh": "echo hello v3\n"}, corrupt=True)
+    assert run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                       "--skip-restart").returncode == 3
+
+    report = status_json(root)
+    assert "digest" in report["last_refusal"]["reason"], report["last_refusal"]
+    assert report["last_refusal"]["paths"] == [], report["last_refusal"]
+    # A retryable verdict keeps the button — the next tap re-tests everything.
+    assert _briefing_line(root) == (
+        "Update refused — %s (%s)" % (report["last_refusal"]["reason"], NEW_SHA[:8]))
+
+
+def test_an_apply_in_the_same_second_does_not_supersede_the_verdict(tmp_path):
+    """A5.17.5's tie rule (gate D4): superseding takes a STRICTLY newer fact.
+
+    The updater stamps whole seconds. A relock, an apply and a verdict can land
+    inside one of them, and "the apply is newer, so the bundle is fine now" is
+    a conclusion drawn from a clock that cannot tell them apart. The refusal
+    stands: it is the answer that costs a retry rather than an unnoticed
+    application of bytes nothing re-tested."""
+    root = make_install(tmp_path)
+    upd = root / ".updates"
+    (upd / "refusals").mkdir(parents=True, exist_ok=True)
+    same_second = "2026-09-09T10:00:00Z"
+    (upd / "refusals" / (NEW_SHA + ".json")).write_text(json.dumps({
+        "bundle": NEW_SHA, "reason": "bundle changes locked constitutional paths",
+        "paths": ["cabinet/scripts/start-officer-mac.sh"], "ts": same_second,
+        "door": "web"}), encoding="utf-8")
+    upd.joinpath("state.json").write_text(json.dumps({
+        "phase": "applied", "from_sha": OLD_SHA, "to_sha": NEW_SHA, "changed": 1,
+        "finished_at": same_second}), encoding="utf-8")
+
+    record, source = update_bundle.resolve_last_refusal(
+        root, waiting_sha=NEW_SHA)
+    assert record and record["bundle"] == NEW_SHA, (record, source)
+    # One second later it IS superseded, so this is a ranking and not a mute.
+    upd.joinpath("state.json").write_text(json.dumps({
+        "phase": "applied", "from_sha": OLD_SHA, "to_sha": NEW_SHA, "changed": 1,
+        "finished_at": "2026-09-09T10:00:01Z"}), encoding="utf-8")
+    assert update_bundle.resolve_last_refusal(root, waiting_sha=NEW_SHA) == (None, "")
+
+
+def test_an_apply_and_a_rollback_drop_the_markers_of_the_shas_they_name(tmp_path):
+    """A5.17.2: the verdict is spent the moment the tree moves.
+
+    The Captain unlocks, applies and relocks; the bundle he refused is now the
+    bundle he is running. A marker that outlived it would withdraw Apply from
+    bytes that are already installed — round 1's defect, reappearing in the
+    durable store instead of in the phase."""
+    root = make_install(tmp_path)
+    refused_sha = "c" * 40
+    assert run_updater(root, "apply", "--bundle", refused_sha, "--skip-rebuild",
+                       "--skip-restart").returncode == 3
+    assert update_bundle.read_refusal_marker(root, refused_sha)
+
+    # A marker about a bundle the apply does NOT name stays put.
+    keep = update_bundle.refusal_marker_path(root, OTHER_SHA)
+    keep.parent.mkdir(parents=True, exist_ok=True)
+    keep.write_text(json.dumps({
+        "bundle": OTHER_SHA, "reason": "bundle changes locked constitutional paths",
+        "paths": ["cabinet/scripts/start-officer-mac.sh"],
+        "ts": "2026-09-09T10:00:00Z", "door": "web"}), encoding="utf-8")
+
+    make_bundle(tmp_path, root, refused_sha,
+                extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
+    assert run_updater(root, "apply", "--bundle", refused_sha, "--skip-rebuild",
+                       "--skip-restart").returncode == 0
+    assert update_bundle.read_refusal_marker(root, refused_sha) is None
+    assert update_bundle.read_refusal_marker(root, OTHER_SHA), \
+        "an apply dropped a marker about a bundle it never named"
+
+
+def test_the_marker_store_is_bounded_but_never_evicts_a_waiting_bundle(tmp_path):
+    """A5.17.2's other half. The store is bounded, and the bound may never
+    reach a sha that is still in the inbox: that is precisely the marker some
+    surface is about to ask for."""
+    root = make_install(tmp_path)
+    make_bundle(tmp_path, root, NEW_SHA,
+                extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
+    update_bundle.write_refusal_marker(root, {
+        "bundle": NEW_SHA, "reason": "bundle changes locked constitutional paths",
+        "paths": ["cabinet/scripts/start-officer-mac.sh"],
+        "ts": "2000-01-01T00:00:00Z", "door": "web"})
+    for index in range(update_bundle.MARKER_KEEP + 8):
+        update_bundle.write_refusal_marker(root, {
+            "bundle": "%040x" % index, "reason": "failed per-file digest verification",
+            "paths": [], "ts": "2026-09-09T10:%02d:00Z" % index, "door": "web"})
+    kept = {record["bundle"] for record in update_bundle.read_refusal_markers(root)}
+    assert len(kept) <= update_bundle.MARKER_KEEP + 1, len(kept)
+    assert NEW_SHA in kept, "the oldest marker was evicted while its bundle waited"
+
+
+def test_a_failed_marker_write_is_named_rather_than_swallowed(tmp_path):
+    """A5.17.2: the durable half that could not be written SAYS so.
+
+    `ledger_error` has named a ledger that would not take the record since
+    A5.16 and `state_error` a state file since round 5; the marker is the store
+    the resolution actually reads first, so a marker that cannot be written is
+    the one silence left. Not fatal — the receipt still lands — and not
+    raised, which would lose it."""
+    root = make_install(tmp_path)
+    (root / ".updates" / "refusals").mkdir(parents=True, exist_ok=True)
+    # A directory where the marker file goes: every write to it raises.
+    (root / ".updates" / "refusals" / (NEW_SHA + ".json")).mkdir()
+
+    out = subprocess.run(
+        [_PY, str(_BUNDLE_PY), "record-refusal", "--root", str(root),
+         "--bundle", NEW_SHA, "--reason", "bundle changes locked constitutional paths",
+         "--paths", json.dumps(["cabinet/scripts/start-officer-mac.sh"]),
+         "--door", "web", "--actor", "system"],
+        capture_output=True, text=True,
+        env=dict(os.environ, CABINET_EVENT_LOG_DIR=str(root / ".events"),
+                 PYTHONDONTWRITEBYTECODE="1"))
+    assert out.returncode == 0, (out.returncode, out.stderr)
+    doc = json.loads(out.stdout)
+    assert doc["state_error"], doc
+    assert "cabinet_update_refused" in event_types(root)
+    # And the refusal is still resolvable — from the channel that survived.
+    assert status_json(root)["state_error"], status_json(root)

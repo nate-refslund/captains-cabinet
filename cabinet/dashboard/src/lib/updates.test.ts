@@ -17,7 +17,7 @@ vi.mock('child_process', () => ({
   spawn: vi.fn(() => ({ unref: vi.fn() })),
 }))
 
-import { getUpdateStatus, refusalToShow, updateHeadline, type UpdateStatus } from './updates'
+import { applyTarget, getUpdateStatus, refusalToShow, updateHeadline, type UpdateStatus } from './updates'
 
 /** promisify(execFile) calls the callback form: (cmd, args, opts, cb). */
 function answer(stdout: string) {
@@ -175,28 +175,44 @@ describe('a refused bundle', () => {
     expect(line).toContain('Update refused')
   })
 
-  // BOTH PHASES, and `refused` is the half that matters. `state.json.phase`
-  // is written only by the updater and nothing moves it out of `refused`
-  // except a later apply — so `refused` is the phase this screen sits in for
-  // every bundle that arrives after a constitutional refusal. Written with
-  // `applied` alone (round 1) these two arms were VACUOUS: they passed over a
-  // card that showed the OLD refusal over EVERY future bundle and withdrew
-  // Apply with it, bricking the only no-terminal door until someone ran the
-  // CLI. A refusal is scoped to the sha it is about, whatever the phase says.
+  // WHERE THE SCOPING WENT, and why these arms changed shape in round 6.
+  //
+  // Until A5.17 this card decided for itself whether a refusal was about the
+  // bundle it was offering — the sha test and the `busy` filter lived here and
+  // in the briefing, twice. Round 5 measured what two copies of a rule cost
+  // when the record reaching them is already wrong: the resolver handed BOTH
+  // surfaces the newest refusal receipt in the window regardless of which
+  // bundle it named, so a `busy` note about no bundle at all blanked a
+  // constitutional verdict on the bytes in the inbox and both surfaces agreed
+  // on "Update ready".
+  //
+  // So the scoping is done ONCE, upstream, about the WAITING bundle, and both
+  // surfaces consume only its answer (A5.17.6). What these arms pin now is the
+  // half that is this card's: given the answer, it says the right thing and
+  // does not invent a second opinion. The scoping itself is pinned on 5250
+  // states in `the whole state space` below and, on the resolver that produces
+  // the answer, in `cabinet/scripts/tests/test_cabinet_update.py`.
   for (const phase of ['applied', 'refused']) {
-    it(`a refusal of some OTHER bundle never silences the one that is waiting (phase: ${phase})`, () => {
+    it(`a refusal of some OTHER bundle never reaches this card (phase: ${phase})`, () => {
+      // The resolver answers about the WAITING bundle: with the record on file
+      // naming another sha, `current(W)` is empty and the report carries null.
+      // Oracle rows `${phase}/same/legacy-verdict/…` with `waiting: other` are
+      // the same statement over the whole product.
       const line = updateHeadline({
-        ...BASE, phase, latest: WAITING,
-        last_refusal: { ...LOCKED_REFUSAL, bundle: 'e'.repeat(40) },
+        ...BASE, phase, latest: WAITING, last_refusal: null,
+        last_refusal_source: '',
         last: { phase, to_sha: 'c'.repeat(40), changed: 3 },
       })
       expect(line).toBe('Update ready — 12 files changed (bbbbbbbb)')
     })
 
-    it(`busy is about timing, not about the bundle, so it does not stick to it (phase: ${phase})`, () => {
+    it(`a timing note is never resolved, so the card never sees one (phase: ${phase})`, () => {
+      // A5.17.1: `busy` is about no bundle. It is not a candidate anywhere, it
+      // never occupies the verdict store, and `last_busy` — which is where it
+      // does land — is never a headline. Oracle rows `*/same/legacy-busy/*`.
       const line = updateHeadline({
-        ...BASE, phase, latest: WAITING,
-        last_refusal: { ...LOCKED_REFUSAL, reason: 'busy', paths: [] },
+        ...BASE, phase, latest: WAITING, last_refusal: null,
+        last_busy: { bundle: 'b'.repeat(40), ts: '2026-09-09T10:00:30Z' },
         last: { phase, to_sha: 'c'.repeat(40), changed: 3 },
       })
       expect(line).toBe('Update ready — 12 files changed (bbbbbbbb)')
@@ -265,70 +281,86 @@ describe('refusalToShow', () => {
                            last_refusal: LOCKED_REFUSAL })).toEqual(LOCKED_REFUSAL)
   })
 
-  // The blocking defect of round 1, stated as the property rather than as the
-  // sentence: a stale refusal must not follow bytes it has never seen.
-  it('is null for a bundle it is not about, even while the phase still says refused', () => {
-    expect(refusalToShow({
+  // WHAT THIS FUNCTION NO LONGER DOES, and where each rule went (A5.17.6).
+  //
+  // Rounds 1-3 wrote three rules here — the sha scope, the `busy` filter and
+  // the currency check — and wrote them again in the briefing. Round 5 found
+  // the record arriving at both copies already wrong, which no amount of
+  // agreement between two readers can catch. All three are now properties of
+  // the RESOLUTION: `status --json` reports `current(W)` for the waiting
+  // bundle, or the newest verdict nothing has overtaken when nothing waits,
+  // and this function consumes that and the phase.
+  //
+  // The arms below are the same STATES as the ones they replace, fed what the
+  // resolver actually produces in each. They are deliberately not the old
+  // assertions with a new expected value: the old ones would still pass if the
+  // scoping came back here as a second opinion, and a rule enforced twice is
+  // how two surfaces got to disagree in the first place.
+  it('takes the resolved record as final — it does not re-scope it', () => {
+    // The report cannot carry a record about a bundle that is not the one
+    // waiting (A5.17.6), so this state is unreachable from any writer. It is
+    // pinned because the failure it guards against is this card growing its
+    // own opinion again: if it ever disagreed with the resolver, the briefing
+    // — which has no such opinion — would say something else.
+    const status = {
       ...BASE, phase: 'refused', latest: WAITING,
       last_refusal: { ...LOCKED_REFUSAL, bundle: 'f'.repeat(40) },
-    })).toBeNull()
+      last_refusal_source: 'state',
+    } as UpdateStatus
+    expect(refusalToShow(status)).toEqual({ ...LOCKED_REFUSAL, bundle: 'f'.repeat(40) })
+    expect(updateHeadline(status)).toContain('Update refused')
   })
 
-  // CURRENCY — the round-3 defect, on the branch round 1 left alone. Nothing
-  // ever clears `last_refusal`; the updater carries it onto every later state
-  // document on purpose (CARRIED_STATE_FIELDS), because a refusal is still
-  // true after the next thing happens. What it stops being is the NEWS. Both
-  // "nothing is waiting" arms above pin `phase: 'refused'`, so neither could
-  // see a refusal that an apply or a rollback had already overtaken — and
-  // once an install has refused anything, that is every applied and
-  // rolled-back state it will ever be in.
-  for (const [phase, what] of [
-    ['applied', 'an apply'],
-    ['rolled_back', 'a rollback'],
+  // CURRENCY — the round-3 defect, now enforced where the record is chosen.
+  // Nothing ever clears the legacy `last_refusal`; the updater carries it onto
+  // every later state document on purpose, because a refusal is still TRUE
+  // after the next thing happens. What it stops being is the NEWS, and the
+  // resolver is what stops reporting it: an apply or rollback fact strictly
+  // newer than the verdict supersedes it (A5.17.5), and with nothing waiting a
+  // verdict speaks only while it is newer than every apply and rollback on
+  // record (6). Oracle rows `applied/none/*` and `rolled_back/none/*`.
+  for (const [phase, sentence] of [
+    ['applied', 'Updated to cccccccc: 4 changes'],
+    ['rolled_back', 'An update was rolled back to cccccccc: the health gate was red'],
   ]) {
-    it(`is null once ${what} has overtaken it and nothing is waiting`, () => {
-      expect(refusalToShow({
-        ...BASE, phase, latest: null, last_refusal: LOCKED_REFUSAL,
-        last: { phase, to_sha: 'c'.repeat(40), changed: 4 },
-      })).toBeNull()
+    it(`the resolver has already dropped a verdict ${phase} overtook`, () => {
+      const status = {
+        ...BASE, phase, latest: null, last_refusal: null, last_refusal_source: '',
+        last: { phase, to_sha: 'c'.repeat(40), changed: 4,
+                reason: 'the health gate was red' },
+      } as UpdateStatus
+      expect(refusalToShow(status)).toBeNull()
+      expect(updateHeadline(status)).toBe(sentence)
     })
   }
 
   it('the busy race ends in the applied sentence, not in its own refusal', () => {
     // Winner takes bbbb..., loser records `busy` about bbbb..., winner lands.
-    // The install IS bbbb..., so `status --json` excludes it and nothing is
-    // waiting. Master said "Updated to bbbbbbbb: 4 changes" here.
+    // The install IS bbbb..., so nothing is waiting — and the busy note was
+    // never a verdict, so there is nothing for the resolver to report either.
     const status: UpdateStatus = {
-      ...BASE, phase: 'applied', latest: null,
-      last_refusal: { ...LOCKED_REFUSAL, reason: 'busy', paths: [] },
-      last: { phase: 'applied', to_sha: 'b'.repeat(40), changed: 4,
-              last_refusal: { ...LOCKED_REFUSAL, reason: 'busy', paths: [] } },
+      ...BASE, phase: 'applied', latest: null, last_refusal: null,
+      last_busy: { bundle: 'b'.repeat(40), ts: '2026-09-09T10:00:30Z' },
+      last: { phase: 'applied', to_sha: 'b'.repeat(40), changed: 4 },
     }
     expect(refusalToShow(status)).toBeNull()
     expect(updateHeadline(status)).toBe('Updated to bbbbbbbb: 4 changes')
   })
 
-  it('a constitutional refusal overtaken by a later apply stops withdrawing Apply', () => {
-    // The ceremony flow: locked refusal on bbbb..., the Captain unlocks and
-    // relocks, a NEW bundle applies. "Nothing was applied" over an install
-    // that HAS been updated, with Apply withdrawn, for ever.
+  it('a bundle this box rolled back is neither refused nor untried', () => {
+    // A5.17.7, and the per-surface difference round 5 declared and the A5.17
+    // gate RETIRED: the briefing said this and the card said "Update ready".
+    // Apply stays — retrying a health gate that went red is legitimate — but
+    // the sentence is the same on both doors now.
     const status: UpdateStatus = {
-      ...BASE, phase: 'applied', latest: null, last_refusal: LOCKED_REFUSAL,
-      last: { phase: 'applied', to_sha: 'c'.repeat(40), changed: 9 },
-    }
-    expect(refusalToShow(status)).toBeNull()
-    expect(updateHeadline(status)).toBe('Updated to cccccccc: 9 changes')
-  })
-
-  it('a rollback since the refusal gives the rollback sentence back', () => {
-    const status: UpdateStatus = {
-      ...BASE, phase: 'rolled_back', latest: null, last_refusal: LOCKED_REFUSAL,
-      last: { phase: 'rolled_back', to_sha: 'c'.repeat(40),
-              reason: 'the health gate was red' },
+      ...BASE, phase: 'idle', latest: WAITING, last_refusal: null,
+      waiting_rollback: { bundle: 'b'.repeat(40), reason: 'the health gate was red',
+                          ts: '2026-09-09T10:00:20Z' },
     }
     expect(refusalToShow(status)).toBeNull()
     expect(updateHeadline(status)).toBe(
-      'An update was rolled back to cccccccc: the health gate was red')
+      'Update rolled back — the health gate was red; still waiting (bbbbbbbb)')
+    expect(applyTarget(status)).not.toBeNull()
   })
 
   // The half the currency check must NOT narrow: a later apply of some OTHER
@@ -383,6 +415,11 @@ type ParityCase = {
   installed: string
   waiting: { sha: string; file_count: number; built_at: string } | null
   state: Record<string, unknown> | null
+  resolved: {
+    last_refusal: Record<string, unknown> | null
+    source: string
+    waiting_rollback: { bundle: string; reason: string; ts: string } | null
+  }
   agree: { kind: string; bundle: string; shared_wording: string[] }
 }
 
@@ -401,6 +438,7 @@ function classifyKind(line: string | null): string {
   // the first; the classifier stays the twin of the briefing's so the two
   // suites cannot describe the same table in different words.
   if (line.startsWith('An update was rolled back') ||
+      line.startsWith('Update rolled back') ||
       (line.startsWith('An update to ') && line.includes('was rolled back'))) {
     return 'rolled_back'
   }
@@ -420,7 +458,14 @@ function classify(line: string | null): string {
 
 /** The fixture as `cabinet-update.sh status --json` would report it — the
  *  same derivation, field for field, so this is the state file and not a
- *  hand-shaped object that agrees with the card by construction. */
+ *  hand-shaped object that agrees with the card by construction.
+ *
+ *  `last_refusal` comes from the case's declared `resolved` (A5.17): the card
+ *  consumes ONE resolved refusal — the verdict standing on the WAITING bundle —
+ *  and never scopes a state field itself. The same declaration is asserted
+ *  against the briefing's own resolver, over these very bytes, in
+ *  `test_card_update_notice.py`, so the two halves are not driven from two
+ *  different resolutions. */
 function statusOf(c: ParityCase): UpdateStatus {
   const state = (c.state || {}) as Record<string, never>
   const latest = c.waiting
@@ -439,7 +484,9 @@ function statusOf(c: ParityCase): UpdateStatus {
     available: latest ? [latest] : [],
     latest,
     snapshots: [],
-    last_refusal: (state.last_refusal as never) ?? null,
+    last_refusal: (c.resolved.last_refusal as never) ?? null,
+    last_refusal_source: c.resolved.source,
+    waiting_rollback: c.resolved.waiting_rollback ?? null,
     event_fallback: Boolean(state.event_fallback),
     ledger_error: (state.ledger_error as string) || '',
   } as UpdateStatus
@@ -526,42 +573,47 @@ describe('a refusal resolved from the ledger receipt', () => {
     )
   })
 
-  it('is still filtered by rule 4 when the reason is only timing', () => {
-    // The other half, and the round-1 defect arriving on the second channel:
-    // `busy` says another updater held the lock, never anything about these
-    // bytes. Resolving a refusal from the ledger must not smuggle that back in.
+  it('keeps Apply for a receipt-sourced verdict a retry can re-test', () => {
+    // The other half of "treated exactly like a state-sourced one": a digest
+    // verdict names no constitutional path, so it says what happened and
+    // LEAVES the button (A5.17.7). The `busy` case is not tested here any
+    // more because it cannot arrive: a timing note is not a candidate on any
+    // channel (A5.17.1), which is a property of the resolver and is pinned on
+    // it — `test_cabinet_update.py` and every `*/…/V-busy/*` oracle row.
     const status: UpdateStatus = {
       ...BASE, available: [waiting], latest: waiting,
-      last_refusal: { bundle: refused, reason: 'busy', paths: [], ts: '', door: 'web' },
+      last_refusal: { bundle: refused, reason: 'the bundle does not match its manifest',
+                      paths: [], ts: '2026-09-09T10:00:00Z', door: 'web' },
       last_refusal_source: 'receipt',
     }
-    expect(refusalToShow(status)).toBeNull()
-    expect(updateHeadline(status)).toBe('Update ready — 7 files changed (bbbbbbbb)')
+    expect(refusalToShow(status)).not.toBeNull()
+    expect(updateHeadline(status)).toBe(
+      'Update refused — the bundle does not match its manifest (bbbbbbbb)')
+    expect(applyTarget(status)).not.toBeNull()
   })
 })
 
 // ---------------------------------------------------------------------------
 // THE WHOLE STATE SPACE — every state, not the ones somebody thought of.
 //
-// Three review rounds each found one more adjacent state in this reader and
-// its twin, and every arm written for each of them was aimed at the state that
+// Five review rounds each found one more adjacent state in this reader and its
+// twin, and every arm written for each of them was aimed at the state that
 // already worked: round 1's two arms pinned `phase: 'applied'`, round 2's
 // pinned a state with no waiting bundle, round 3's both pinned
-// `phase: 'refused'`. That is not three unlucky arms, it is the shape of
-// hand-written arms — the defect is always in the state nobody thought to
-// write one for.
+// `phase: 'refused'`, round 4's all ran on an EMPTY ledger, round 5's on a
+// ledger exactly ONE record deep — the one depth at which "the newest refusal
+// about this bundle" and "the newest refusal anywhere" cannot be told apart.
 //
-// `update_surface_oracle.json` is the whole product of the six axes these two
-// readers branch on (1440 rows — the ledger became the sixth in round 4, which
-// found the previous table complete over five and blind to the one a whole
-// refusal channel lived on), with the expected headline kind for EACH
-// surface and whether the refusal sub-surface speaks. It is derived from the
-// contract (A5.13/A5.15/A5.16), not from either implementation: a row where
-// the code disagrees is a defect in the code. The briefing's half of the same
-// table is `test_card_update_notice.py::test_the_briefing_answers_every_state_
-// the_way_the_oracle_says`, reading the SAME file — so a kind flipped in it
-// reds both suites, and a fixture file that went missing FAILS rather than
-// skips.
+// `update_surface_oracle.json` is the whole product of the six axes these
+// readers branch on (5250 rows), carrying the exact SENTENCE for each surface,
+// whether the refusal sub-surface speaks, whether Apply is live, and what both
+// resolvers must produce. It is derived from the contract (A5.17), not from
+// either implementation: a row where the code disagrees is a defect in the
+// code. The briefing's half is `test_card_update_notice.py`, and the resolver
+// that FEEDS this card is driven against the same file in
+// `cabinet/scripts/tests/test_cabinet_update.py` — three readers, one table, so
+// a sentence flipped in it reds all three, and a fixture that went missing
+// FAILS rather than skips.
 // ---------------------------------------------------------------------------
 
 const ORACLE_FIXTURES = path.resolve(
@@ -572,98 +624,161 @@ const ORACLE_FIXTURES = path.resolve(
 type OracleRow = {
   id: string
   axes: Record<string, string | boolean>
-  installed: string
-  waiting: { sha: string; file_count: number; built_at: string } | null
-  state: Record<string, unknown> | null
-  resolved: { last_refusal: Record<string, unknown> | null; source: string }
-  expect: { briefing: string; card: string; refusal_speaks: boolean }
+  resolved: {
+    last_refusal: Record<string, unknown> | null
+    source: string
+    waiting_rollback: { bundle: string; reason: string; ts: string } | null
+  }
+  expect: {
+    briefing: string
+    card: string
+    refusal_speaks: boolean
+    apply_live: boolean
+    last_refusal_source: string
+  }
 }
 
 /** The row as `cabinet-update.sh status --json` reports it — the same
- *  derivation, field for field, so this is the state file and not an object
- *  shaped to agree with the card by construction.
+ *  derivation, field for field.
  *
- *  `last_refusal` comes from the row's `resolved`, because that is where it
- *  comes from in production: the updater resolves the state file and the
- *  ledger receipt into ONE record and this card reads only the result. Round 4
- *  measured what the other arrangement costs — the briefing read a second
- *  channel this card could not see, so the two surfaces disagreed on every
- *  state where the state file had lost the record and the ledger had not. The
- *  briefing's own resolver is held to the same `resolved` by
- *  `test_the_briefing_resolves_the_refusal_the_table_says_it_must`, so the two
- *  halves are not driven from two different resolutions. */
-function statusOfRow(row: OracleRow): UpdateStatus {
-  const state = (row.state || {}) as Record<string, never>
-  const latest = row.waiting
+ *  `last_refusal`, its source and `waiting_rollback` come from the row's
+ *  `resolved`, because that is where they come from in production: the updater
+ *  resolves the marker store, the ledger and the legacy state record into ONE
+ *  answer ABOUT THE WAITING BUNDLE and this card reads only the result. Round 4
+ *  measured what the other arrangement costs (the briefing read a channel this
+ *  card could not see); round 5 measured what a resolution that is not scoped
+ *  per bundle costs (a note about a moment blanked a verdict on the bytes in
+ *  the inbox, on BOTH surfaces at once). The resolver that produces `resolved`
+ *  is held to this same column, on the same 5250 rows, in the cabinet suite —
+ *  so this half is not driven from an answer the card's own code invented. */
+function statusOfRow(doc: OracleDoc, row: OracleRow): UpdateStatus {
+  const state = { ...(doc.phase_state[row.axes.phase as string] || {}) } as Record<string, unknown>
+  if (doc.legacy[row.axes.state as string]) {
+    state.last_refusal = doc.legacy[row.axes.state as string]
+  }
+  if (row.axes.ledger_error) state.ledger_error = doc.ledger_error_text
+  const bundle = doc.waiting_bundles[row.axes.waiting as string]
+  const latest = bundle
     ? {
-        sha: row.waiting.sha, short: row.waiting.sha.slice(0, 8),
-        built_at: row.waiting.built_at, from_sha: null,
-        file_count: row.waiting.file_count, changelog: [],
-        owner: 'someone', mtime: row.waiting.built_at,
+        sha: bundle.sha, short: bundle.sha.slice(0, 8), built_at: bundle.built_at,
+        from_sha: null, file_count: bundle.file_count, changelog: [],
+        owner: 'someone', mtime: bundle.built_at,
       }
     : null
   return {
-    installed_sha: row.installed,
-    installed_short: row.installed.slice(0, 8),
+    installed_sha: doc.shas.installed,
+    installed_short: doc.shas.installed.slice(0, 8),
     phase: (state.phase as string) || 'idle',
-    last: row.state && Object.keys(row.state).length ? (row.state as never) : null,
+    last: Object.keys(state).length ? (state as never) : null,
     available: latest ? [latest] : [],
     latest,
     snapshots: [],
     last_refusal: (row.resolved.last_refusal as never) ?? null,
     last_refusal_source: row.resolved.source,
+    waiting_rollback: row.resolved.waiting_rollback,
     event_fallback: Boolean(state.event_fallback),
     ledger_error: (state.ledger_error as string) || '',
   } as UpdateStatus
 }
 
+type OracleDoc = {
+  rows: OracleRow[]
+  axes: Record<string, (string | boolean)[]>
+  shas: Record<string, string>
+  times: Record<string, string>
+  ledger_error_text: string
+  waiting_bundles: Record<string, { sha: string; file_count: number; built_at: string }>
+  phase_state: Record<string, Record<string, unknown>>
+  legacy: Record<string, Record<string, unknown>>
+  markers: Record<string, Record<string, unknown>>
+  ledger_seeds: Record<string, unknown[]>
+  other_seeds: Record<string, unknown[]>
+}
+
+const ORACLE_AXES = ['phase', 'waiting', 'state', 'ledger', 'other', 'ledger_error'] as const
+
+function oracleId(axes: Record<string, string | boolean>): string {
+  return [
+    axes.phase, axes.waiting, axes.state, axes.ledger, axes.other,
+    axes.ledger_error ? 'fault' : 'noledger',
+  ].join('/')
+}
+
 describe('the whole state space', () => {
-  const doc = JSON.parse(fs.readFileSync(ORACLE_FIXTURES, 'utf-8'))
-  const rows = doc.rows as OracleRow[]
+  const doc = JSON.parse(fs.readFileSync(ORACLE_FIXTURES, 'utf-8')) as OracleDoc
+  const rows = doc.rows
 
   it('the oracle covers the whole product of the axes it declares', () => {
     // Derived from the declared axes rather than compared to a number, so it
-    // detects a REMOVED row as well as a changed one. The sixth axis is the
-    // LEDGER: round 4 found the table complete over the five it declared and
-    // blind to the one it did not, which is a green hole rather than a
-    // covered one.
-    const axes = doc.axes as Record<string, (string | boolean)[]>
+    // detects a REMOVED row as well as a changed one. Round 4 added the ledger
+    // as an axis; round 6 made it an axis of SEQUENCES and split off what the
+    // ledger says about ANOTHER bundle, because holding an input's depth
+    // constant is the same green hole as leaving the input out.
+    const values = ORACLE_AXES.map((name) => doc.axes[name])
     const expected = new Set<string>()
-    for (const phase of axes.phase)
-      for (const waiting of axes.waiting)
-        for (const refusal of axes.refusal)
-          for (const ledger of axes.ledger_error)
-            for (const fallback of axes.event_fallback)
-              for (const receipt of axes.receipt)
-                expected.add(
-                  `${phase}/${waiting}/${refusal}/` +
-                  `${ledger ? 'fault' : 'noledger'}/${fallback ? 'held' : 'nohold'}/` +
-                  `${receipt}`
-                )
-    expect(expected.size).toBe(1440)
+    const walk = (index: number, picked: (string | boolean)[]) => {
+      if (index === values.length) {
+        expected.add(oracleId(Object.fromEntries(
+          ORACLE_AXES.map((name, i) => [name, picked[i]])
+        )))
+        return
+      }
+      for (const value of values[index]) walk(index + 1, [...picked, value])
+    }
+    walk(0, [])
+    expect(expected.size).toBe(5250)
     expect(rows.map((r) => r.id).sort()).toEqual([...expected].sort())
-    // A declared axis with no seeds behind it is an axis held constant under a
-    // name — exactly what the ledger was until this round.
-    expect(Object.keys(doc.receipt_seeds).sort()).toEqual([...axes.receipt].sort())
+    for (const row of rows) expect(row.id).toBe(oracleId(row.axes))
+    // A declared axis value with nothing behind it is an axis held constant
+    // under a name — exactly what the ledger was, and then its depth.
+    expect(Object.keys(doc.ledger_seeds).sort()).toEqual([...doc.axes.ledger].sort())
+    expect(Object.keys(doc.other_seeds).sort()).toEqual([...doc.axes.other].sort())
+    expect(Math.max(...Object.values(doc.ledger_seeds).map((s) => s.length)))
+      .toBeGreaterThanOrEqual(2)
   })
 
   it('the card answers every state the way the oracle says', () => {
     const wrong: string[] = []
     for (const row of rows) {
-      const status = statusOfRow(row)
+      const status = statusOfRow(doc, row)
       const line = updateHeadline(status)
-      const kind = classifyKind(line)
       const spoke = refusalToShow(status) !== null
-      if (kind !== row.expect.card || spoke !== row.expect.refusal_speaks) {
+      const live = applyTarget(status) !== null
+      if (line !== (row.expect.card || null) ||
+          spoke !== row.expect.refusal_speaks ||
+          live !== row.expect.apply_live) {
         wrong.push(
-          `${row.id}: kind ${kind} (want ${row.expect.card}), ` +
-          `refusal spoke ${spoke} (want ${row.expect.refusal_speaks}) -- ${line}`
+          `${row.id}: line ${JSON.stringify(line)} (want ` +
+          `${JSON.stringify(row.expect.card || null)}), refusal spoke ${spoke} ` +
+          `(want ${row.expect.refusal_speaks}), apply ${live} ` +
+          `(want ${row.expect.apply_live})`
         )
       }
     }
     // The count leads the sample: a sensor that shows twenty rows without
-    // saying how many there are reads the same at 20 as at 1440.
-    expect([`${wrong.length} of ${rows.length} wrong`, ...wrong.slice(0, 20)])
+    // saying how many there are reads the same at 20 as at 5250.
+    expect([`${wrong.length} of ${rows.length} wrong`, ...wrong.slice(0, 10)])
       .toEqual([`0 of ${rows.length} wrong`])
+  })
+
+  it('a held record and a busy note never move the headline', () => {
+    // The card's half of two of the four INVARIANCE claims A5.17.8 makes to
+    // keep the product at 5250 rows rather than 21,000: `event_fallback` and
+    // `last_busy` are a sub-line and a diagnostic, never the sentence. Varied
+    // on rows that are already in the table, so a reader that started
+    // consulting either would go red here rather than silently.
+    const sample = rows.filter((_row, index) => index % 61 === 0)
+    expect(sample.length).toBeGreaterThanOrEqual(50)
+    const wrong: string[] = []
+    sample.forEach((row, index) => {
+      const status = statusOfRow(doc, row)
+      status.event_fallback = index % 2 === 0
+      status.last_busy = { bundle: index % 3 ? doc.shas.other : '', ts: doc.times.not_about_b }
+      status.state_error = index % 5 ? 'OSError: [Errno 13] Permission denied' : ''
+      const line = updateHeadline(status)
+      if (line !== (row.expect.card || null)) wrong.push(`${row.id}: ${line}`)
+    })
+    expect([`${wrong.length} of ${sample.length} moved`, ...wrong.slice(0, 10)])
+      .toEqual([`0 of ${sample.length} moved`])
   })
 })
