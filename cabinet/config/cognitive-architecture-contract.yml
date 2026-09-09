@@ -1378,7 +1378,31 @@ budgets:
     # and the six-state parity fixture that now holds the claim is a test file,
     # outside this budget by construction. RAISED VISIBLY, same reason as every
     # row above. observed == maximum, zero headroom.
-    maximum: 66669
+    #
+    # 66669 -> 66673 (+4 measured 2026-09-09 via cognitive-architecture-census.py,
+    # 81407 -> 81411 against the effective ceiling): U5b round 4, the CURRENCY of
+    # a refusal — the fourth rule this line and the card's `refusalToShow` share,
+    # and the third defect three rounds of review found in the same two readers.
+    # Nothing ever clears `last_refusal`: the updater carries it onto every later
+    # state document on purpose, because a refusal is still TRUE after the next
+    # thing happens. What it stops being is the NEWS, and neither reader asked.
+    # So the busy race the `phase != applying` guard exists for — the winner
+    # applies the bundle, the loser records `busy` about it, the install IS those
+    # bytes and nothing is left waiting — ended with both surfaces saying "Update
+    # refused - busy" over a Cabinet running exactly them, for ever; and after the
+    # constitutional ceremony (refusal on the old bundle, the Captain unlocks and
+    # relocks, a new bundle applies) both said "needs the Captain" and the card
+    # withdrew Apply over an install that HAD been updated. The mass is the four
+    # lines of the nothing-waiting branch: it was one clause of a compound `if`
+    # and is now its own arm with its own rule, because four rules in one boolean
+    # is how the third one got written on one surface only. Everything else this
+    # commit adds is a test file and outside this budget by construction — the
+    # oracle that closes the class (`framework/frontdoor/tests/
+    # update_surface_oracle.json`, the whole 240-row product of the five axes
+    # these two readers branch on, driven through BOTH of them) and the arms that
+    # read it. RAISED VISIBLY, same reason as every row above. observed ==
+    # maximum, zero headroom.
+    maximum: 66673
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

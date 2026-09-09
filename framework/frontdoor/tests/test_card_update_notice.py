@@ -469,6 +469,106 @@ def test_a_refusal_still_speaks_once_the_apply_is_no_longer_in_flight(tmp_path,
 
 
 # ---------------------------------------------------------------------------
+# CURRENCY — a refusal speaks while it is the LAST THING THAT HAPPENED.
+#
+# `last_refusal` is carried onto every later state document on purpose
+# (`update_bundle.CARRIED_STATE_FIELDS`), and nothing ever clears it: a refusal
+# is still true after the next thing happens, and the record of it is what
+# keeps a refused bundle from being offered as "ready" again. What it is NOT is
+# still the news. Until 2026-09-09 the nothing-waiting branch of this helper
+# asked only "is there a refusal on record", so one refusal made the applied
+# and rolled-back sentences unreachable for the life of the install — the
+# busy race that the `phase != applying` guard exists for ends in exactly that
+# state (winner applies bbbb..., loser records `busy` about bbbb..., the
+# install IS bbbb... so nothing is waiting) and the Captain's briefing said
+# "Update refused — busy (bbbbbbbb)" over a Cabinet running those very bytes.
+# ---------------------------------------------------------------------------
+
+def _overtaken_refusal(root, phase, reason, paths, *, to_sha="c" * 40):
+    """A completed apply / rollback carrying the refusal it overtook."""
+    doc = {"phase": phase, "to_sha": to_sha,
+           "last_refusal": {"bundle": NEW, "reason": reason, "paths": list(paths),
+                            "ts": "2026-09-08T18:58:00Z", "door": "web"}}
+    if phase == "applied":
+        doc["changed"] = 4
+    else:
+        doc["reason"] = "the health gate was red"
+    _state(root, doc)
+
+
+def test_an_apply_since_the_refusal_overtakes_it_and_the_applied_line_wins(
+        tmp_path, monkeypatch):
+    """The busy race, at rest: the apply landed, so the apply is the news."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _overtaken_refusal(root, "applied", "busy", [])
+    line = run_briefing._update_notice(str(root))
+    assert line == "Updated to cccccccc: 4 changes", line
+    assert run_briefing._update_refusal_line(root, "") == ""
+
+
+def test_a_rollback_since_the_refusal_overtakes_it_too(tmp_path, monkeypatch):
+    """The same, one branch along, and the sentence master used to give."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _overtaken_refusal(root, "rolled_back", "busy", [])
+    line = run_briefing._update_notice(str(root))
+    assert line == "An update was rolled back: the health gate was red", line
+    assert run_briefing._update_refusal_line(root, "") == ""
+
+
+def test_even_a_constitutional_refusal_is_overtaken_by_a_later_apply(
+        tmp_path, monkeypatch):
+    """The ceremony flow: locked refusal on bbbb..., the Captain unlocks and
+    relocks, a NEW bundle applies. The install has been updated, and "Nothing
+    was applied. These files change by a deliberate unlock..." over it is the
+    card withdrawing Apply for a decision already taken."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _overtaken_refusal(root, "applied", "bundle changes locked constitutional paths",
+                       ["cabinet/scripts/start-officer-mac.sh"])
+    line = run_briefing._update_notice(str(root))
+    assert line == "Updated to cccccccc: 4 changes", line
+    assert "Captain" not in line, line
+
+
+def test_the_refusal_still_speaks_when_it_IS_the_last_thing_that_happened(
+        tmp_path, monkeypatch):
+    """The inverse, so the currency check is a RANKING and not a mute button.
+
+    Nothing waiting, nothing since: `phase` is still `refused`, and the refusal
+    is the whole of the news. `test_a_refusal_of_a_bundle_that_is_gone_still_
+    says_what_happened` is the same property from the other end; this one pins
+    it beside its own negative so a fix that silenced both would be visible."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _state(root, {"phase": "refused", "bundle": NEW, "reason": "busy", "paths": [],
+                  "ts": "2026-09-08T18:58:00Z", "door": "web",
+                  "last_refusal": {"bundle": NEW, "reason": "busy", "paths": [],
+                                   "ts": "2026-09-08T18:58:00Z", "door": "web"}})
+    line = run_briefing._update_notice(str(root))
+    assert line == "Update refused — busy (bbbbbbbb)", line
+    assert run_briefing._update_refusal_line(root, "") != ""
+
+
+def test_a_refusal_of_a_bundle_still_waiting_survives_a_later_apply_of_another(
+        tmp_path, monkeypatch):
+    """The half the currency check must NOT narrow.
+
+    A later apply of some other bundle does not make the refused one safe to
+    offer: it is still in the inbox and still refused, and "Update ready" over
+    it is a button that cannot work. The sha scope decides here, not the phase."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _waiting(root)
+    _overtaken_refusal(root, "applied", "bundle changes locked constitutional paths",
+                       ["cabinet/scripts/start-officer-mac.sh"])
+    line = run_briefing._update_notice(str(root))
+    assert line.startswith("Update refused"), line
+    assert "constitutional" in line, line
+
+
+# ---------------------------------------------------------------------------
 # PARITY — the same state file, both readers, one fixture set on disk.
 #
 # `update_surface_parity.json` beside this file is the whole contract: the
@@ -491,20 +591,34 @@ PARITY_FIXTURES = Path(__file__).parent / "update_surface_parity.json"
 _SHA_TOKEN = re.compile(r"\b[0-9a-f]{8}\b")
 
 
-def _classify(line: str) -> str:
+def _classify_kind(line: str) -> str:
+    """The one classifier, in the oracle's vocabulary. TOTAL: a sentence it
+    does not recognise is `unclassified` and fails naming itself."""
     if not line:
-        return "silent"
+        return "quiet"
     if line.startswith("An update is being taken right now"):
-        return "apply-in-flight"
+        return "applying"
+    if line.startswith("Update records are not reaching the ledger"):
+        return "fault"
     if line.startswith("Update refused") or "REFUSED" in line:
-        return "refusal"
+        return "refused"
     if line.startswith("An update is ready to take"):
         return "ready"
     if line.startswith("Updated to "):
         return "applied"
     if line.startswith("An update was rolled back"):
-        return "rolled-back"
+        return "rolled_back"
     return "unclassified"
+
+
+#: The parity fixture predates the oracle and names its kinds its own way.
+_PARITY_KIND = {"refused": "refusal", "applying": "apply-in-flight",
+                "rolled_back": "rolled-back", "quiet": "silent"}
+
+
+def _classify(line: str) -> str:
+    kind = _classify_kind(line)
+    return _PARITY_KIND.get(kind, kind)
 
 
 def _install_case(tmp_path, case) -> Path:
@@ -521,11 +635,14 @@ def test_the_parity_fixture_carries_every_state_the_two_surfaces_argue_about():
     """A fixture set that quietly shrank would take both suites with it."""
     doc = json.loads(PARITY_FIXTURES.read_text(encoding="utf-8"))
     kinds = [case["agree"]["kind"] for case in doc["cases"]]
-    assert len(doc["cases"]) == 6, kinds
+    assert len(doc["cases"]) == 7, kinds
     assert kinds.count("apply-in-flight") == 1, kinds
     assert kinds.count("refusal") == 1, kinds
     assert kinds.count("ready") == 3, kinds
-    assert kinds.count("applied") == 1, kinds
+    # TWO applied cases: one with no refusal on record and one carrying the
+    # refusal it overtook. The first cannot see the round-3 defect, because
+    # `last_refusal` is the one field the carry rule guarantees will be there.
+    assert kinds.count("applied") == 2, kinds
 
 
 def test_the_briefing_says_what_the_card_says_on_every_shared_state(tmp_path,
@@ -548,3 +665,87 @@ def test_the_briefing_says_what_the_card_says_on_every_shared_state(tmp_path,
         waiting_sha = (case["waiting"] or {}).get("sha", "")
         spoke = bool(run_briefing._update_refusal_line(root, waiting_sha))
         assert spoke == (agree["kind"] == "refusal"), (case["name"], line)
+
+# ---------------------------------------------------------------------------
+# THE EXHAUSTIVE SWEEP — every state, not the ones somebody thought of.
+#
+# Three review rounds each found one more adjacent state in these same two
+# readers, and every arm written for each of them was aimed at the state that
+# already worked: round 1's two arms pinned `phase: applied`, round 2's pinned
+# a state with no waiting bundle, round 3's both pinned `phase: refused`. That
+# is not three unlucky arms, it is the shape of hand-written arms — the defect
+# is always in the state nobody thought to write one for.
+#
+# `update_surface_oracle.json` is the whole product of the five axes the two
+# readers actually branch on (240 rows), with the expected headline kind for
+# EACH surface and whether the refusal sub-surface speaks. It is derived from
+# the contract (A5.13/A5.15/A5.16), not from either implementation: a row where
+# the code disagrees is a defect in the code. The card's half of the same table
+# is `cabinet/dashboard/src/lib/updates.test.ts` ("the whole state space"),
+# reading the SAME file, so a kind flipped in it reds both suites.
+# ---------------------------------------------------------------------------
+
+ORACLE_FIXTURES = Path(__file__).parent / "update_surface_oracle.json"
+
+
+def test_the_oracle_covers_the_whole_product_of_the_axes_it_declares():
+    """A table that quietly shrank would take both suites with it, silently.
+
+    Derived from the declared axes rather than compared to a number, so it
+    detects a REMOVED row as well as a changed one — a completeness claim that
+    cannot see removal from the set it checks is the sensor this program has
+    found broken most often."""
+    import itertools
+
+    doc = json.loads(ORACLE_FIXTURES.read_text(encoding="utf-8"))
+    axes = doc["axes"]
+    expected = set()
+    for phase, waiting, refusal, ledger, fallback in itertools.product(
+            axes["phase"], axes["waiting"], axes["refusal"],
+            axes["ledger_error"], axes["event_fallback"]):
+        expected.add("%s/%s/%s/%s/%s" % (
+            phase, waiting, refusal,
+            "fault" if ledger else "noledger", "held" if fallback else "nohold"))
+    ids = [row["id"] for row in doc["rows"]]
+    assert len(expected) == 240, len(expected)
+    assert sorted(ids) == sorted(expected), (
+        set(expected) - set(ids), set(ids) - set(expected))
+    assert len(ids) == len(set(ids)), "duplicate row id"
+    # Every row's id must describe the row's own axes, or the table is indexed
+    # by a label that has come loose from what it labels.
+    for row in doc["rows"]:
+        a = row["axes"]
+        assert row["id"] == "%s/%s/%s/%s/%s" % (
+            a["phase"], a["waiting"], a["refusal"],
+            "fault" if a["ledger_error"] else "noledger",
+            "held" if a["event_fallback"] else "nohold"), row["id"]
+
+
+def test_the_briefing_answers_every_state_the_way_the_oracle_says(tmp_path,
+                                                                  monkeypatch):
+    """This half of the sweep. The card's half asserts the same 240 rows."""
+    _ledger(monkeypatch, tmp_path)
+    doc = json.loads(ORACLE_FIXTURES.read_text(encoding="utf-8"))
+    rows = doc["rows"]
+    assert len(rows) == 240, len(rows)
+    wrong = []
+    for index, row in enumerate(rows):
+        root = _install(tmp_path / ("row%03d" % index),
+                        source_commit=row["installed"])
+        if row["waiting"]:
+            _waiting(root, sha=row["waiting"]["sha"],
+                     files=row["waiting"]["file_count"],
+                     built_at=row["waiting"]["built_at"])
+        if row["state"] is not None:
+            _state(root, row["state"])
+        line = run_briefing._update_notice(str(root))
+        kind = _classify_kind(line)
+        waiting_sha = (row["waiting"] or {}).get("sha", "")
+        spoke = bool(run_briefing._update_refusal_line(root, waiting_sha))
+        expect = row["expect"]
+        if kind != expect["briefing"] or spoke != expect["refusal_speaks"]:
+            wrong.append("%s: kind %s (want %s), refusal spoke %s (want %s) -- %r"
+                         % (row["id"], kind, expect["briefing"], spoke,
+                            expect["refusal_speaks"], line))
+    assert not wrong, "%d of %d states are not what the contract says:\n%s" % (
+        len(wrong), len(rows), "\n".join(wrong[:20]))

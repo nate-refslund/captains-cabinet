@@ -125,34 +125,59 @@ carries beside the phase:
 The home card and the briefing line read that: *Update refused — 1
 constitutional file differs; needs the Captain*, with the files named on the
 card and the Apply button withdrawn, because those bytes change by a ceremony
-and no number of taps will do it. The same bundle is never offered as "Update
-ready" again — `last_refusal` survives later state writes, so an unrelated
-apply landing in between does not resurrect the offer.
+and no number of taps will do it. That same bundle is never offered as "Update
+ready" again while it is still in the inbox — `last_refusal` survives later
+state writes, so an unrelated apply landing in between does not resurrect the
+offer.
 
-**A refusal is scoped to the bundle it is a verdict on, and `phase` is not part
-of that scope.** Nothing moves `phase` out of `refused` except a later apply,
-so a refusal that spoke for as long as the phase said `refused` would speak
-over every bundle published afterwards — including the one cut right after the
-Captain's ceremony — and would withdraw Apply with it, which is the only
-no-terminal way to take the update that clears the phase. So the three rules are: an
-apply IN FLIGHT outranks the refusal and neither surface speaks it, because
-`applying` is what is true right now and the refusal is a note about the
-request that led to it; nothing waiting, the refusal is the last thing that
-happened and it speaks; something waiting, it speaks only about the same sha,
-and only when it is a verdict on those bytes.
+**A refusal is about ONE bundle and about ONE moment.** Nothing moves `phase`
+out of `refused` except a later apply, and nothing ever CLEARS `last_refusal` —
+the updater carries it onto every later state document on purpose, because a
+refusal is still true after the next thing happens. Both halves of that have
+bitten. A refusal that spoke for as long as the phase said `refused` spoke over
+every bundle published afterwards — including the one cut right after the
+Captain's ceremony — and withdrew Apply with it, which is the only no-terminal
+way to take the update that clears the phase. A refusal that spoke for as long
+as it was ON RECORD outlived the apply that overtook it: the busy race ends
+with the winner's bundle installed and nothing waiting, and both surfaces said
+*Update refused — busy* over a Cabinet running exactly those bytes, for ever.
+
+So there are four rules:
+
+1. no refusal on record, nothing to say;
+2. an apply IN FLIGHT outranks it and neither surface speaks it, because
+   `applying` is what is true right now and the refusal is a note about the
+   request that led to it;
+3. nothing waiting, it speaks only while it is still the LAST THING THAT
+   HAPPENED — `phase` still `refused`; an apply or a rollback since has
+   overtaken it, and the applied and rolled-back sentences are the news;
+4. something waiting, it speaks only about the same sha, and only when it is a
+   verdict on those bytes rather than about timing.
+
 The card (`lib/updates.refusalToShow`) and the briefing line
-(`run_briefing._update_refusal_line`) are those same three rules written twice
-on purpose — two surfaces reading one state file must not be able to disagree.
-Rule one was written on the card only until 2026-09-09, and the disagreement it
+(`run_briefing._update_refusal_line`) are those same four rules written twice on
+purpose — two surfaces reading one state file must not be able to disagree.
+Rule 2 was written on the card only until 2026-09-09, and the disagreement it
 let through was the ordinary retry: the card keeps Apply for a digest-mismatch,
 unreadable or busy refusal (a retry is a reasonable thing to do about all
 three), so tapping it moved `phase` to `applying` with the same sha still in
 `last_refusal` and the bundle still in the inbox — the card said "Taking an
 update", the briefing said "Update refused", and an interrupted apply, which
-leaves `phase: applying` on disk on purpose, made that permanent. The claim is
-no longer a claim: the six states the two must agree about live in
-`framework/frontdoor/tests/update_surface_parity.json` and are driven through
-BOTH readers, by `test_card_update_notice.py` and by `lib/updates.test.ts`.
+leaves `phase: applying` on disk on purpose, made that permanent. Rule 3 was
+missing from both until the same day, which is worse than a disagreement: the
+two surfaces agreed, about something false.
+
+None of that is a claim any more, and it is no longer proved by the states
+somebody thought of. Two checked-in fixtures under
+`framework/frontdoor/tests/` are driven through BOTH readers, by
+`test_card_update_notice.py` and by `lib/updates.test.ts`:
+`update_surface_parity.json`, the argued cases with the exact wording each must
+produce, and `update_surface_oracle.json` — the WHOLE product of the five axes
+these readers branch on (phase × waiting × refusal × ledger fault × held
+record, 240 rows), each row carrying the headline kind each surface must land
+on and whether the refusal sub-surface speaks. A kind changed in either file
+reds both suites. Three rounds of hand-written arms each aimed at the state
+that already worked; a product does not have to be thought of.
 
 Two deliberate exceptions, both about not letting one durability feature eat
 another:
@@ -277,6 +302,14 @@ done to it: the next apply files it. When `status` says `held: ledger fault:
 <why>` instead (`ledger_error` in `status --json`), the record is held for the
 other reason and waiting will not clear it — that is the ledger itself failing,
 and the `why` names the exception the emitter raised.
+
+A fault is named on every surface: `status`, `status --json`, the briefing line
+(which spends its one line on it above everything but a refusal, because it is
+the sentence nobody goes back to look for) and the home card, which shows it as
+a sub-line beside whatever its headline says. The card renders at all only when
+it has a headline, so a fault with an idle phase, nothing waiting and no
+refusal on record now BECOMES the headline — *Update records are not reaching
+the ledger* — rather than reaching no web surface at all.
 
 `events.ingested-<ts>-<pid>-<n>.jsonl` beside it is what has already been
 filed, kept so the bootstrap hop is readable afterwards; `events.draining-*` is

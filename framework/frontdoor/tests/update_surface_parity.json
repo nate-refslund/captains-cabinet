@@ -162,6 +162,43 @@
         "bundle": "bbbbbbbb",
         "shared_wording": ["Updated to bbbbbbbb", "4 change"]
       }
+    },
+    {
+      "name": "applied, nothing waiting, and the refusal it overtook still on record",
+      "_why": [
+        "The end of the busy race the `phase != applying` guard exists for, driven",
+        "through the real record_refusal and the real write_state: the winner takes",
+        "bbbb..., the loser records `busy` about bbbb..., the winner lands, and",
+        "`last_refusal` is carried onto the applied document by CARRIED_STATE_FIELDS",
+        "-- deliberately, because a refusal is still true after the next thing",
+        "happens. The install IS bbbb... now, so `status --json` excludes it and",
+        "nothing is waiting. Until 2026-09-09 both surfaces answered that state with",
+        "'Update refused -- busy (bbbbbbbb)', over a Cabinet running exactly those",
+        "bytes, and went on answering it for ever: nothing clears `last_refusal`.",
+        "The `applied` case above cannot see it -- it carries no refusal, which is",
+        "the one field the carry rule guarantees will be there on any install that",
+        "has ever refused anything. A refusal speaks while it is the LAST THING THAT",
+        "HAPPENED; an apply or a rollback since has overtaken it."
+      ],
+      "installed": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "waiting": null,
+      "state": {
+        "phase": "applied",
+        "to_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "changed": 4,
+        "last_refusal": {
+          "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "reason": "busy",
+          "paths": [],
+          "ts": "2026-09-08T18:58:00Z",
+          "door": "web"
+        }
+      },
+      "agree": {
+        "kind": "applied",
+        "bundle": "bbbbbbbb",
+        "shared_wording": ["Updated to bbbbbbbb", "4 change"]
+      }
     }
   ]
 }

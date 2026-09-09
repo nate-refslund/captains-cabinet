@@ -125,33 +125,47 @@ function refusalIsAboutTheBundle(refusal: UpdateRefusal): boolean {
  * busy refusal recorded a second ago is a note about a request, not about what
  * the box is doing now.
  *
- * SCOPED TO THE SHA, and `phase` is not part of the scope. Round 1 returned
- * early on `phase === 'refused'`, which reads as harmless and is not: nothing
- * moves that phase except a later apply, so after ONE constitutional refusal
- * the card showed that refusal's headline and files over every bundle that
- * arrived afterwards and withdrew Apply with them — and Apply is the only
- * no-terminal way to take the update that would have cleared the phase. The
- * door this whole leg exists to open, bricked by the record of one refusal.
- * The same three rules are `run_briefing._update_refusal_line`, deliberately:
- * two surfaces reading one state file must not be able to disagree. Round 2
- * WROTE that claim with only two of the three actually mirrored — the briefing
- * had no `applying` guard at all — so through every retry of a digest-mismatch
- * or busy refusal (the two this card deliberately keeps Apply for) the card
- * said "Taking an update" while the briefing said "Update refused", and an
- * interrupted apply made that disagreement durable. It is no longer only a
- * claim: the six states the two surfaces must agree on are one checked-in
- * fixture, `framework/frontdoor/tests/update_surface_parity.json`, driven
- * through BOTH readers — the parity block in `updates.test.ts` and its twin in
- * `framework/frontdoor/tests/test_card_update_notice.py`. Change one side's
- * ranking and the other side's suite is what goes red.
+ * SCOPED TO ONE BUNDLE AND TO ONE MOMENT, and `phase` enters the scope only
+ * as "is this still the last thing that happened". Round 1 returned early on
+ * `phase === 'refused'`, which reads as harmless and is not: nothing moves
+ * that phase except a later apply, so after ONE constitutional refusal the
+ * card showed that refusal's headline and files over every bundle that arrived
+ * afterwards and withdrew Apply with them — and Apply is the only no-terminal
+ * way to take the update that would have cleared the phase. The door this
+ * whole leg exists to open, bricked by the record of one refusal. Round 2
+ * found the `applying` rule written here and not in the briefing, so through
+ * every retry of a digest-mismatch or busy refusal (the two this card
+ * deliberately keeps Apply for) the card said "Taking an update" while the
+ * briefing said "Update refused". Round 3 found the opposite of round 1 on the
+ * nothing-waiting branch — a refusal that a later apply or rollback had
+ * OVERTAKEN kept speaking on both surfaces, which is agreement about something
+ * false. The same four rules are `run_briefing._update_refusal_line`,
+ * deliberately: two surfaces reading one state file must not be able to
+ * disagree. That is not a claim any more, and it is no longer proved by the
+ * states somebody thought of either: `update_surface_parity.json` carries the
+ * argued cases with their exact wording, and `update_surface_oracle.json`
+ * carries the WHOLE product of the five axes these readers branch on (240
+ * rows), both under `framework/frontdoor/tests/` and both driven through this
+ * module here and through the briefing in `test_card_update_notice.py`.
+ * Change one side's ranking and the other side's suite is what goes red.
  */
 export function refusalToShow(status: UpdateStatus | null): UpdateRefusal | null {
   if (!status || status.phase === 'applying') return null
   const refusal = status.last_refusal
   if (!refusal || !refusal.bundle) return null
-  // Nothing is waiting, so there is no other sentence for this to be wrong
-  // about: the last thing that happened is still the last thing that happened.
-  if (!status.latest) return refusal
+  // Nothing is waiting, so there is no other BUNDLE for this to be wrong
+  // about — but there may be a later EVENT. It speaks only while it is still
+  // the last thing that happened. Nothing ever clears `last_refusal`: the
+  // updater carries it onto every later state document on purpose
+  // (CARRIED_STATE_FIELDS), because a refusal is still TRUE after the next
+  // thing happens. What it stops being is the NEWS. Round 3: the busy race
+  // this whole leg guards ends at {phase: applied, last_refusal: busy} with
+  // the install running exactly those bytes and nothing waiting, and both
+  // surfaces answered it with "Update refused — busy (bbbbbbbb)", for ever;
+  // after the constitutional ceremony (refusal on the old bundle, a new one
+  // applied) this card withdrew Apply and printed "Nothing was applied" over
+  // an install that HAD been updated.
+  if (!status.latest) return status.phase === 'refused' ? refusal : null
   // Something IS waiting. It speaks only about the bundle it is a verdict on:
   // offering a refused bundle as "ready" is a button that cannot work, and
   // refusing one nobody has judged is a button withdrawn for no reason.
@@ -263,5 +277,14 @@ export function updateHeadline(status: UpdateStatus | null): string | null {
     const n = status.last.changed ?? 0
     return `Updated to ${status.last.to_sha.slice(0, 8)}: ${n} change${n === 1 ? '' : 's'}`
   }
+  // A5.16 — LAST, and only when nothing else has a headline. The card already
+  // shows a ledger fault as a sub-line BESIDE whatever it is saying, which is
+  // the right shape: it is not the news, it is a fault under the news. But the
+  // page renders this card at all only when this function returns non-null
+  // (page.tsx), so a fault with an idle phase, nothing waiting and no refusal
+  // on record reached no surface on the web door — the one surface a fault
+  // must never be lost on, because "the records of what this box did are not
+  // being written down" is the sentence nobody goes back to look for.
+  if (status.ledger_error) return 'Update records are not reaching the ledger'
   return null
 }
