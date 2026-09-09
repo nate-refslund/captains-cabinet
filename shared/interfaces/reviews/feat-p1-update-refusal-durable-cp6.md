@@ -192,3 +192,138 @@ produced. Both numbers came back identical.
   proposal's stale `_update_receipt_for` line, the contract yml's three
   expansion-row consumers, and the drill's P7 check, which now requires the
   durable marker as well as the mirror.
+
+---
+
+# Round-6 evidence, measured this session on this tree
+
+Method for every RED below: the PR's tests and fixtures kept, the FIVE
+production sources checked out at `c0a92731` (`cabinet-update.sh`,
+`lib/update_bundle.py`, `run_briefing.py`, `lib/updates.ts`,
+`update-card.tsx`), every `__pycache__` purged, `PYTHONDONTWRITEBYTECODE=1`.
+Restored to HEAD afterwards and the oracle verified byte-identical
+(`git diff --quiet` on the fixture).
+
+## The rows `c0a92731` gets wrong — re-measured, not inherited
+
+Driven over the whole 5250 by a throwaway harness (deleted; it reused
+`_drive_oracle_row` and the OLD `update_bundle.resolve_last_refusal`, then fed
+the OLD `updateHeadline`/`refusalToShow` and the OLD inline Apply gate the
+documents that resolver produced):
+
+| reader at `c0a92731` | wrong |
+|---|---|
+| briefing `_update_notice` | **1702 of 5250** |
+| card (old resolver → old headline/refusal/Apply) | **1786 of 5250** |
+
+Both numbers equal the ones the commit above claimed. In BOTH wrong sets:
+`idle/same/legacy-busy/V/busy-empty/noledger` (e1 as the old bytes produced
+it), `idle/same/legacy-busy/V/busy-other/noledger` (e2),
+`idle/same/legacy-busy/V/none/noledger` (the round-5-blessed row),
+`idle/same/none/V-busy/none/noledger` (the double tap) — and also the three
+rows the REAL races land on today, which is what the new weld arm names:
+`refused/same/marker-locked/V/busy-empty/noledger`,
+`refused/same/marker-locked/V/busy-other/noledger` and
+`refused/same/marker-locked/V-busy/none/noledger`.
+
+## Every A5.17.9 sensor: RED at `c0a92731`, GREEN at HEAD
+
+| arm | RED text at `c0a92731` | GREEN |
+|---|---|---|
+| `test_e1_a_rollback_that_lost_the_lock_does_not_blank_the_verdict` | `AssertionError` on `report["last_refusal"]` — the whole report, `last_refusal: null` | rc 0 |
+| `test_e2_an_apply_of_another_bundle_that_lost_the_lock_does_not_blank_it` | `AssertionError: {'bundle': 'eeee…', 'reason': 'busy', …}` | rc 0 |
+| `test_the_double_tap_on_one_bundle_keeps_its_verdict` | `AssertionError: {'bundle': 'bbbb…', 'paths': [], 'reason': 'busy', …}` | rc 0 |
+| `test_the_races_land_on_the_oracle_row_the_card_is_held_to` ×3 | `FileNotFoundError: …/.updates/refusals/bbbb….json` | rc 0 |
+| `test_a_marker_survives_a_whole_document_state_replace` | `AssertionError: assert False` (no marker file after the refusal) | rc 0 |
+| `test_the_legacy_state_record_is_read_where_there_is_no_marker_store` | `AssertionError: {'bundle': 'bbbb…', 'paths': ['cabinet/scripts/start-officer-mac.sh'], …}` | rc 0 |
+| `test_two_verdicts_on_one_bundle_leave_the_newest_speaking` | `AttributeError: module 'update_bundle' has no attribute 'read_refusal_marker'` | rc 0 |
+| `test_an_apply_in_the_same_second_does_not_supersede_the_verdict` | `TypeError: resolve_last_refusal() got an unexpected keyword argument 'waiting_sha'` | rc 0 |
+| `test_an_apply_and_a_rollback_drop_the_markers_of_the_shas_they_name` | `AttributeError: … no attribute 'read_refusal_marker'` | rc 0 |
+| `test_the_marker_store_is_bounded_but_never_evicts_a_waiting_bundle` | `AttributeError: … no attribute 'write_refusal_marker'` | rc 0 |
+| `test_a_failed_marker_write_is_named_rather_than_swallowed` | `KeyError: 'state_error'` | rc 0 |
+| `test_the_resolver_answers_every_state_the_way_the_oracle_says` | `AttributeError: … no attribute 'resolve_update_surface'` | rc 0 |
+| `test_the_resolver_never_writes` | same `AttributeError` | rc 0 |
+| `test_an_apply_with_no_time_of_its_own_cannot_overtake_anything` | `AssertionError: an untimed apply silenced a verdict it cannot be shown to postdate` | rc 0 |
+| `test_a_timing_note_is_never_a_candidate_even_when_it_is_the_last_record` | `AssertionError: assert 'Update refus...sy (bbbbbbbb)' == ''` | rc 0 |
+| `test_the_briefing_answers_every_state_the_way_the_oracle_says` | `TypeError: _update_resolved_refusal() takes 1 positional argument but 2 were given` | rc 0 |
+| INVARIANCE `test_a_marker_about_another_bundle_never_moves_the_answer` | `AssertionError: 49 of 103 moved` | rc 0 |
+| INVARIANCE `test_last_busy_in_any_value_never_moves_the_answer` | `AssertionError: 35 of 87 moved` | rc 0 |
+| INVARIANCE `test_event_fallback_on_or_off_never_moves_the_answer` | `AssertionError: 34 of 89 moved` | rc 0 |
+| INVARIANCE `test_the_position_of_a_record_in_the_ledger_is_not_an_input` | `AssertionError: 45 of 107 moved` | rc 0 |
+| vitest `the card answers every state the way the oracle says` | `TypeError: applyTarget is not a function` | rc 0 |
+| vitest `a held record and a busy note never move the headline` | `AssertionError: expected [ '14 of 87 moved', …(10) ] to deeply equal [ '0 of 87 moved' ]` | rc 0 |
+| vitest `a bundle this box rolled back is neither refused nor untried` | `expected 'Update ready — 12 files changed (bbbb…' to be 'Update rolled back — the health gate …'` | rc 0 |
+| vitest `says a bundle was rolled back and still keeps Apply` (rendered card) | `expected '<div class="rounded-lg border border-…' to contain 'Update rolled back — the health gate …'` | rc 0 |
+| vitest `takes the resolved record as final — it does not re-scope it` | `AssertionError: expected null to deeply equal { …(5) }` | rc 0 |
+| vitest `keeps Apply for a receipt-sourced verdict a retry can re-test` | `TypeError: applyTarget is not a function` | rc 0 |
+
+**Two arms are green at `c0a92731` and say so** rather than being counted:
+the rendered-card race arm (the card was handed the wrong DOCUMENT there, not
+handed the right one and rendered wrong) and
+`test_a_rolled_back_receipt_is_still_classified_as_a_rollback` (its subject is
+a helper in the test file). The parity sweep
+`test_the_briefing_says_what_the_card_says_on_every_shared_state` also passes
+at `c0a92731`: its seven argued cases do not discriminate this change — the
+5250-row product is what does.
+
+## Mutations, run this session
+
+| mutation | briefing (pytest) | resolver (pytest) | card (vitest) |
+|---|---|---|---|
+| flip `expect.refusal_speaks` on the double-tap row | rc 1 — `1 of 5250 states are not what the contract says` | (does not consume it) | rc 1 — `expected [ '1 of 5250 wrong', …(1) ] to deeply equal [ '0 of 5250 wrong' ]` |
+| flip `resolved.source` on the e1 row | rc 1 — `1 of 5250 states…` | rc 1 — `1 of 5250 resolutions are not what the contract says` | (does not consume it) |
+| fixture moved away | **6 failed, 44 passed**, `FileNotFoundError`, no skip | **5 failed**, same error | the file FAILS — `Error: ENOENT`, the other file's 12 still run |
+
+Oracle restored byte-identical after each.
+
+## Battery — every command and its exit code, this tree, this session
+
+| cmd | rc |
+|---|---|
+| `pytest framework/ -q -rs -p no:cacheprovider` | 0 — 8563 passed, 31 skipped, 2 subtests |
+| `pytest cabinet/scripts/tests` chunk 1/8 (incl. `test_cabinet_update.py`) | 0 — 1548 passed |
+| chunk 2/8 | 0 — 651 passed, 5 skipped |
+| chunk 3/8 | 0 — 786 passed, 6 skipped |
+| chunk 4/8 | 0 — 731 passed, 19 skipped |
+| chunk 5/8 | 1 — **1 failed** `test_evidence_seam_bypass_replay.py::test_shipped_catalog_harness_still_green[evidence-access.sh]` (pre-existing), 616 passed |
+| chunk 6/8 | 0 — 433 passed, 2 skipped |
+| chunk 7/8 | 0 — 284 passed, 1 skipped |
+| chunk 8/8 | 0 — 470 passed, 1 skipped |
+| `python3.12 cabinet/mcp-server/test_server.py` | 0 — 95 passed |
+| `check-layer-separation.sh` | 0 — baseline=24 allowlist=19 current=43 **new=0** |
+| `docs-track-code-sweep.sh` | 0 — `DOCS_SWEEP GREEN (files=66 findings=0)` |
+| `ledger-status-parity.sh` | 0 — `ids=354 md_rows=354 findings=0` |
+| `run-hook-regression.sh` | 1 — 11/19, the pre-existing eight |
+| `test-triggers.sh` | 0 — `PASS: 55 FAIL: 0` |
+| `test-mac-dry-run.sh` | 0 |
+| `null-hatch.sh` | 0 — `PROOF 1 — NULL HATCH: PASS` |
+| `state-persistence-preflight.py --repo .` | 0 — 97 candidates, **0 UNACCOUNTED**, 2 known deferred gaps |
+| `cognitive-architecture-census.py --check` | **printed** `cognitive architecture census: PASS`, `framework_production_noncomment_lines: 81577 <= 81577`, modules `253 <= 253` |
+| `npx vitest run` | 0 — 186 files, 3920 passed, 1 skipped |
+| `npx tsc --noEmit` | 0 |
+| `drills/one-responsibility.sh --skip-update` | 0 |
+| `drills/one-responsibility.sh` (full) | 0 — `PASS [P7] gate red rolled back, gate green applied, preserved path intact, locked bundle refused whole` |
+| `cabinet/tests/start-officer/test-args.sh` | 1 — PASS=12 FAIL=7 (pre-existing) |
+| `audit-framework-backlog-drift.sh` | 0 — THIN (`/opt/founders-cabinet/…` not on this host) |
+
+**Failing set identical to the pre-existing set at `95e47ba2`: YES** —
+`test_evidence_seam_bypass_replay[evidence-access.sh]`, run-hook-regression
+11/19, `test-args.sh` 12/7, `audit-framework-backlog-drift` THIN. The known
+`test_cog1_outbox_capture` p95 wall-clock flake did not trip this run.
+
+## Locked set
+
+21 changed paths (`git diff --name-only 95e47ba2...HEAD`) ∩ this tree's parsed
+germline set (**73 files, 7 dirs**, asserted non-empty) = **EMPTY**. The first
+parse of `DIRS` silently swallowed the trailing comments and would have matched
+nothing — caught before it became a claim; the fixed check is proved able to
+fire on `.claude/settings.json`, `cabinet/scripts/hooks/pre-tool-use.sh` and
+`memory/golden-evals/EVAL-024.md`, and correctly does not fire on
+`cabinet/scripts/cabinet-update.sh`.
+
+## Residuals
+
+* CI still executes zero steps on this repository (billing lock), so this PR is
+  not CI-verified and the battery above is the whole of the evidence.
+* The `bin/Cabinet Companion.app` and world-aesthetic goldens preflight gaps are
+  pre-existing and dated (deferred to 2026-10-31); neither is touched here.
