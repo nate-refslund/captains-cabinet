@@ -154,7 +154,7 @@ check cannot become a mute button and so the sha scope is not narrowed with it.
 | `test-triggers.sh` | 0 — ALL PASSED |
 | `test-mac-dry-run.sh` | 0 |
 | `null-hatch.sh` | 0 — PROOF 1 PASS (run after the commit; it reads HEAD) |
-| `state-persistence-preflight.py --repo .` | 0 — no durable path lost, 1 known deferred gap |
+| `state-persistence-preflight.py --repo .` | 0 — 97 candidates, 62 carried, 4 wildcard-linked, 29 declared disposable, **0 UNACCOUNTED**, 2 known deferred gaps |
 | `cognitive-architecture-census.py --check` | **printed** `cognitive architecture census: PASS`, `framework_production_noncomment_lines 81411 <= 81411` (read, not inferred — it exits 0 on BLOCK) |
 | `npx vitest run` (full dashboard) | 0 — 3915 passed, 1 skipped |
 | `npx tsc --noEmit` | 0 |
