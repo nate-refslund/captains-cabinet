@@ -158,6 +158,40 @@ describe('UpdateCard on a refusal', () => {
     expect(html).not.toContain('Update refused')
   })
 
+  // THE SHAPE THE TWO RACES LEAVE ON DISK, rendered. e1 (a rollback that lost
+  // the lock, writing a note about NO bundle) and e2 (an apply of another
+  // bundle that lost it, writing a note about THAT one) both end with a
+  // constitutional verdict standing on the waiting bundle and a timing note
+  // beside it. Round 5 shipped a resolver that handed this card `last_refusal:
+  // null` for e1 and the note about the other bundle for e2, and it rendered
+  // `>Apply<` over bytes the box had refused. The resolution is pinned in
+  // pytest end to end through the real updater, and the row it lands on is
+  // pinned to this card over all 5250 in lib/updates.test.ts; what is left is
+  // the rendering itself, which is the half a person actually taps.
+  //
+  // HONEST LABEL: this arm is GREEN at c0a92731 as well. At those bytes the
+  // card was handed the WRONG DOCUMENT for these two races, not handed the
+  // right one and rendered wrong — `status --json` reported no refusal at all
+  // (e1) or the note about the other bundle (e2). The red for that lives in
+  // the resolver's arms and in the 5250-row sweep; this one pins the
+  // rendering so it cannot drift out from under them.
+  it.each([
+    ['a note about no bundle at all (e1)', ''],
+    ['a note about another bundle (e2)', 'e'.repeat(40)],
+  ])('keeps the verdict on screen beside %s', (_what, busySha) => {
+    const raced: UpdateStatus = {
+      ...REFUSED,
+      last_busy: { bundle: busySha, ts: '2026-09-09T10:00:30Z', door: 'web' },
+    }
+    const html = renderToStaticMarkup(
+      <UpdateCard status={raced} headline={updateHeadline(raced)!} />)
+    expect(html).toContain(
+      'Update refused \u2014 1 constitutional file differs; needs the Captain (bbbbbbbb)')
+    expect(html).toContain('cabinet/scripts/start-officer-mac.sh')
+    expect(html).not.toContain('Update ready')
+    expect(html).not.toContain('>Apply<')
+  })
+
   it('says so when the record is being held outside the ledger (A5.16)', () => {
     const held: UpdateStatus = { ...REFUSED, event_fallback: true }
     const html = renderToStaticMarkup(

@@ -1162,7 +1162,15 @@ def test_a_rolled_back_receipt_is_still_classified_as_a_rollback(tmp_path,
     rolled back`, and the shared classifier tested only `An update was rolled
     back` — so the one sentence the receipt channel still produces classified
     as `unclassified`. Inert while the sweep ran on an empty ledger; a sensor
-    that cannot name what it sees is not a sensor."""
+    that cannot name what it sees is not a sensor.
+
+    HONEST LABEL (round-5 review, round-6 relabel). This arm is GREEN against
+    every production tree, including the ones the rest of this file is red
+    against, and it always will be: `_classify_kind` is a helper in THIS file,
+    so the thing it guards moves only when a test author moves it. It is a
+    sensor on the parity sweep's own eyesight, not on the updater, and it is
+    kept as one rather than being counted among the arms that red on
+    production bytes."""
     _ledger(monkeypatch, tmp_path)
     root = _install(tmp_path)
     _waiting(root, files=7)

@@ -138,6 +138,44 @@ re-aimed and says what moved:
 * `test_the_resolver_never_writes` — A5.17.6's last sentence, checked by
   comparing every byte under `.updates/` around three resolutions.
 
+## What the second half of round 6 added (and what it found)
+
+The commit above was cut mid-unit. Everything below was built after it, and
+every claim in this file was re-measured rather than inherited: the 1702 and
+the 1786 were reproduced from scratch on this tree, at `c0a92731` production
+bytes with `__pycache__` purged, by driving the OLD briefing and the OLD
+resolver over all 5250 rows and the OLD card over the documents that resolver
+produced. Both numbers came back identical.
+
+* **The weld.** `test_the_races_land_on_the_oracle_row_the_card_is_held_to`
+  (three params: e1, e2, the double tap). The chain had a seam: the resolver is
+  pinned to the table, the table is pinned to the card, and nothing said the
+  REAL races land on the row the other two are arguing about — a table can be
+  right about a state nobody is ever in. This arm takes the document the real
+  updater leaves behind, checks every axis of the row it claims to be against
+  the install itself (phase from `state.json`, the marker file and its paths,
+  the receipts about B, the newest record not about B, the ledger fault), and
+  then asserts that row's expectations are the refused sentence with Apply
+  withdrawn — the row `lib/updates.test.ts` renders the card from. RED at
+  `c0a92731`: `FileNotFoundError: …/.updates/refusals/bbbb….json`, because the
+  durable store the table describes did not exist there.
+* **The races, rendered.** `update-card.test.tsx` now renders `<UpdateCard/>`
+  on the shape both races leave — a constitutional verdict standing on the
+  waiting bundle with a timing note beside it, about no bundle (e1) and about
+  another (e2). **GREEN at `c0a92731` too, and the arm says so**: at those bytes
+  the card was handed the wrong DOCUMENT, not handed the right one and rendered
+  wrong. The red for that is the resolver's, and it is recorded there.
+* **The rollback-classify arm is relabelled**, per the round-5 note. It is
+  green against every production tree and always will be — `_classify_kind` is
+  a helper in the test file — so it is now labelled a sensor on the parity
+  sweep's own eyesight rather than counted among the arms that red on
+  production bytes.
+* **`docs/proposals/update-path-event-expansion-2026-09-07.md:74`** said in the
+  present tense that the briefing reads the three types through
+  `_update_receipt_for`. That helper is retired; the line now names
+  `_update_receipts` and dates the old spelling. (Line 89-91, the residual the
+  round-5 review named, was already fixed in the commit above.)
+
 ## Budget, locked set, agnostic law
 
 * **Budget:** `framework_production_noncomment_lines` **81466 → 81577 = +111**;

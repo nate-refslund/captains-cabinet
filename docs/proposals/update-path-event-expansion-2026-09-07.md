@@ -71,8 +71,10 @@ Corrected two ways in the same commit:
 
 1. **The claim is now true.** The three rows name
    `framework/frontdoor/run_briefing.py`, which reads all three types back by
-   name through `_update_receipt_for` (`emitter.replay(event_types=…)`,
-   selected on the bundle rather than on recency). It is not decoration: a
+   name through `_update_receipts` (`emitter.replay(event_types=…)`) and
+   resolves them per bundle — the spelling on 2026-09-07 was
+   `_update_receipt_for`, retired by A5.17 and named in the correction below.
+   It is not decoration: a
    bundle whose diff touches the constitutional set would otherwise sit in the
    inbox for ever while the only sentence the Captain ever saw said "ready to
    take — tap Apply", which did nothing every time he tapped it.

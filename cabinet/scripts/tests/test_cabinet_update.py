@@ -2992,6 +2992,104 @@ def test_the_double_tap_on_one_bundle_keeps_its_verdict(tmp_path):
     assert report["last_refusal"]["paths"]
 
 
+@pytest.mark.parametrize("race,command,bundle,other_axis", [
+    ("e1", "rollback", "", "busy-empty"),
+    ("e2", "apply", OTHER_SHA, "busy-other"),
+    ("double-tap", "apply", NEW_SHA, "none"),
+])
+def test_the_races_land_on_the_oracle_row_the_card_is_held_to(
+        tmp_path, race, command, bundle, other_axis):
+    """THE WELD between the real updater and the card's half of the table.
+
+    The three arms above prove the REAL updater, the REAL `status --json` and
+    the REAL briefing. The card is a TypeScript reader and cannot be rendered
+    from here, so what closes the loop is IDENTITY: the document the real
+    updater leaves behind IS a row of `update_surface_oracle.json`, and that
+    row is the one `lib/updates.test.ts` drives `updateHeadline`,
+    `refusalToShow` and the Apply gate from over all 5250.
+
+    Without this the chain has a seam wide enough to hide exactly the round-5
+    defect: the resolver is pinned to the table, and the table is pinned to the
+    card, but nothing said the real races land on the row the other two are
+    arguing about. A table can be right about a state nobody is ever in.
+
+    Every axis of the row is CHECKED against the install rather than asserted
+    by name, because a hand-named row that does not match the install is a
+    sensor pointed at the wrong state — the failure class this whole unit keeps
+    finding."""
+    root = make_install(tmp_path)
+    _refuse_then_busy(tmp_path, root, command=command, bundle=bundle)
+    report = status_json(root)
+    doc = state(root)
+
+    # --- the axes, read off the install itself -----------------------------
+    # phase: the state document's own last event.
+    assert doc["phase"] == "refused", doc
+    # waiting: the bundle the surfaces are asked about is B.
+    assert report["latest"]["sha"] == NEW_SHA, report["latest"]
+    # state-about-B: a marker with paths. The legacy mirror is there too and
+    # names the same verdict (A5.17.2 keeps it), and it is NOT what answers:
+    # A5.17.5 admits the legacy record only where there is no marker store, so
+    # the row this install is on is the marker one.
+    marker_path = root / ".updates" / "refusals" / (NEW_SHA + ".json")
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    assert marker["bundle"] == NEW_SHA and marker["paths"], marker
+    assert doc["last_refusal"]["bundle"] == NEW_SHA, doc["last_refusal"]
+    # ledger-about-B: exactly one verdict, nothing after it about B.
+    about_b = [event for event in events(root)
+               if (event.get("payload") or {}).get("to_sha") == NEW_SHA
+               or (event.get("payload") or {}).get("from_sha") == NEW_SHA]
+    kinds = [event["event_type"] for event in about_b]
+    if other_axis == "none":
+        # The double tap's busy note is ABOUT B, so it sits in the sequence
+        # axis rather than the not-about-B one: V then busy(B).
+        assert kinds == ["cabinet_update_refused", "cabinet_update_refused"], kinds
+        assert (about_b[1]["payload"]["reason"] == "busy"), about_b[1]
+        ledger_axis = "V-busy"
+    else:
+        assert kinds == ["cabinet_update_refused"], kinds
+        ledger_axis = "V"
+    # newest-not-about-B: the timing note, naming no bundle or another one.
+    not_about_b = [event for event in events(root) if event not in about_b]
+    if other_axis == "none":
+        assert not not_about_b, not_about_b
+    else:
+        newest = not_about_b[-1]
+        assert newest["payload"]["reason"] == "busy", newest
+        assert newest["payload"]["to_sha"] == bundle, newest
+    # ledger_error: the ledger took every record.
+    assert not report.get("ledger_error"), report.get("ledger_error")
+
+    row_id = "refused/same/marker-locked/%s/%s/noledger" % (ledger_axis, other_axis)
+    rows = {row["id"]: row for row in _oracle_doc()["rows"]}
+    assert row_id in rows, row_id
+    row = rows[row_id]
+
+    # --- what the real document produced == what that row declares ---------
+    # Two literals are the install's own and not the table's: the locked path
+    # this fixture widens, and the second the refusal happened. Everything the
+    # surfaces turn on is compared.
+    resolved = report["last_refusal"]
+    want = row["resolved"]["last_refusal"]
+    assert resolved["bundle"] == want["bundle"], (resolved, want)
+    assert len(resolved["paths"]) == len(want["paths"]) == 1, (resolved, want)
+    assert resolved["reason"] and resolved["reason"] != "busy", resolved
+    assert report["last_refusal_source"] == row["resolved"]["source"], report
+    assert report.get("waiting_rollback") == row["resolved"]["waiting_rollback"]
+
+    # --- and that row is the one the card is held to ----------------------
+    sentence = ("Update refused \u2014 1 constitutional file differs; "
+                "needs the Captain (%s)" % NEW_SHA[:8])
+    assert row["expect"]["card"] == sentence, row["expect"]
+    assert row["expect"]["briefing"] == sentence, row["expect"]
+    assert row["expect"]["refusal_speaks"] is True, row["expect"]
+    assert row["expect"]["apply_live"] is False, row["expect"]
+    assert row["expect"]["last_refusal_source"] == report["last_refusal_source"]
+    # The briefing is a Python reader, so its half of the row can be run here
+    # rather than trusted: the same install, the same sentence.
+    assert _briefing_line(root) == sentence, _briefing_line(root)
+
+
 def test_a_marker_survives_a_whole_document_state_replace(tmp_path):
     """WHY THE STORE IS A FILE PER BUNDLE AND NOT A FIELD (A5.17.2 / gate D1).
 
