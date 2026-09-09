@@ -1540,6 +1540,52 @@ print((d.get("latest") or {}).get("sha") or "")
   REFUSED_DELTA=$((REFUSED_AFTER - REFUSED_BEFORE))
   [ "$REFUSED_DELTA" -eq 1 ] || fail 50 P7 "the refused bundle emitted $REFUSED_DELTA cabinet_update_refused event(s) of its own (the ledger holds $REFUSED_AFTER in all); a refusal nobody recorded is a refusal nobody can audit"
 
+  # A5.15 — the STATE FILE too, not only the ledger. The delta above is the
+  # receipt an auditor reads; `state.json` is what the card and the briefing
+  # line read, and that is the surface the refusal was invisible on when this
+  # was measured (2026-09-08: refused exactly as designed, and left
+  # `phase: idle, last: null`, so the card went on offering the same bundle).
+  # A drill watching only the ledger cannot see that half regress — and the
+  # paths are the load-bearing part, because "refused" alone is not a sentence
+  # anyone can act on.
+  # A5.17 — and the DURABLE store, which is the half `state.json` cannot be.
+  # Every write to that document is a whole-document replace, and during an
+  # update one of the writers can be an older updater copy that never knew the
+  # field; the marker under `.updates/refusals/<sha>.json` is what survives it.
+  # A drill that watched only the mirror would pass on an install whose next
+  # state write silently forgot the verdict.
+  REFUSAL_STATE="$("$PY" - "$INSTALL/.updates/state.json" "$LOCK_SHA" "$INSTALL/.updates/refusals" <<'PYREFUSAL'
+import json, sys
+from pathlib import Path
+try:
+    doc = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception as exc:
+    print("state.json is unreadable: %s" % exc)
+    raise SystemExit(0)
+record = doc.get("last_refusal") or {}
+marker_path = Path(sys.argv[3]) / (sys.argv[2] + ".json")
+try:
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+except Exception as exc:
+    marker = {"unreadable": str(exc)}
+if doc.get("phase") != "refused":
+    print("phase is %r, expected refused" % (doc.get("phase"),))
+elif record.get("bundle") != sys.argv[2]:
+    print("last_refusal names bundle %r, expected %s"
+          % (record.get("bundle"), sys.argv[2]))
+elif not record.get("paths"):
+    print("last_refusal names no paths, so no surface can say which files")
+elif marker.get("bundle") != sys.argv[2]:
+    print("no durable marker at %s (got %r): the verdict lives only in a "
+          "document the next write replaces" % (marker_path, marker))
+elif not marker.get("paths") or not marker.get("ts"):
+    print("the marker names no paths or no time of its own: %r" % (marker,))
+else:
+    print("ok")
+PYREFUSAL
+)"
+  [ "$REFUSAL_STATE" = "ok" ] || fail 50 P7 "the refused bundle left no durable refusal any surface can read: $REFUSAL_STATE"
+
   "$PY" "$LIB_DIR/stub_dashboard.py" stop --state-file "$STUB_STATE" >/dev/null 2>&1 || true
   STUB_STATE=""
   if [ "$WITH_REBUILD" = "1" ]; then

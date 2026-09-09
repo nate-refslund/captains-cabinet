@@ -1,0 +1,300 @@
+{
+ "_what_this_is": [
+  "The states the two update surfaces must agree about, written once and driven",
+  "through BOTH of them: the home card (cabinet/dashboard/src/lib/updates.ts,",
+  "updateHeadline + refusalToShow + applyTarget, vitest) and the briefing line",
+  "(framework/frontdoor/run_briefing._update_notice, pytest). Each reader gets",
+  "the SAME bytes -- `state` is written verbatim as .updates/state.json, and the",
+  "card fixture is derived from these same fields exactly as `cabinet-update.sh",
+  "status --json` derives its report from them.",
+  "",
+  "`resolved` IS PART OF THE FIXTURE (A5.17). Both surfaces consume ONE resolved",
+  "refusal and nothing else: the verdict standing on the WAITING bundle, or --",
+  "when nothing waits -- the newest verdict nothing has overtaken. The card is",
+  "handed it by `status --json`; the briefing resolves it itself. So each case",
+  "declares what the resolution must be, hand-derived from the contract, and",
+  "BOTH suites assert it: pytest against the briefing's resolver over these very",
+  "bytes, vitest by feeding the card exactly what the report would carry. Before",
+  "round 6 the card re-derived the scoping itself from `state`, which is what",
+  "made the two surfaces able to disagree about which bundle a refusal was",
+  "about at all.",
+  "",
+  "WHY IT IS ONE FILE. Both sides carried the comment 'two surfaces reading one",
+  "state file must not be able to disagree' while the third of the three rules",
+  "was written on the card only: `refusalToShow` opened with `applying -> null`",
+  "and `_update_refusal_line` had no applying guard, so through every retry of a",
+  "digest-mismatch refusal the card said 'Taking an update' and the briefing said",
+  "'Update refused'. Two independently-authored fixture sets cannot catch that --",
+  "each side proves only itself. One fixture set, two readers, can.",
+  "",
+  "`agree.kind` is the classification both sentences must land on; the wording",
+  "differs on purpose (one is a card headline, one is a briefing line), so what",
+  "is asserted is the kind, the bundle every sha-shaped token in the sentence",
+  "names, and any wording the two genuinely share. Add a state here and BOTH",
+  "suites start asserting it. The WHOLE product of the six axes these readers",
+  "branch on is update_surface_oracle.json; these seven are the argued cases,",
+  "kept because a table cannot say why a state was ever in doubt."
+ ],
+ "shas": {
+  "installed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "waiting": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "other": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+ },
+ "cases": [
+  {
+   "name": "idle, one bundle waiting",
+   "installed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "waiting": {
+    "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "file_count": 12,
+    "built_at": "2026-09-07T00:00:00Z"
+   },
+   "state": null,
+   "agree": {
+    "kind": "ready",
+    "bundle": "bbbbbbbb",
+    "shared_wording": []
+   },
+   "resolved": {
+    "last_refusal": null,
+    "source": "",
+    "waiting_rollback": null
+   }
+  },
+  {
+   "name": "refused, same sha, constitutional paths",
+   "installed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "waiting": {
+    "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "file_count": 12,
+    "built_at": "2026-09-07T00:00:00Z"
+   },
+   "state": {
+    "phase": "refused",
+    "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "reason": "bundle changes locked constitutional paths",
+    "paths": [
+     "cabinet/scripts/start-officer-mac.sh"
+    ],
+    "ts": "2026-09-08T18:58:00Z",
+    "door": "terminal",
+    "last_refusal": {
+     "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "reason": "bundle changes locked constitutional paths",
+     "paths": [
+      "cabinet/scripts/start-officer-mac.sh"
+     ],
+     "ts": "2026-09-08T18:58:00Z",
+     "door": "terminal"
+    }
+   },
+   "agree": {
+    "kind": "refusal",
+    "bundle": "bbbbbbbb",
+    "shared_wording": [
+     "Update refused",
+     "1 constitutional file",
+     "needs the Captain"
+    ]
+   },
+   "resolved": {
+    "last_refusal": {
+     "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "reason": "bundle changes locked constitutional paths",
+     "paths": [
+      "cabinet/scripts/start-officer-mac.sh"
+     ],
+     "ts": "2026-09-08T18:58:00Z",
+     "door": "terminal"
+    },
+    "source": "state",
+    "waiting_rollback": null
+   }
+  },
+  {
+   "name": "refused, same sha, busy -- timing, never a verdict on the bytes",
+   "installed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "waiting": {
+    "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "file_count": 12,
+    "built_at": "2026-09-07T00:00:00Z"
+   },
+   "state": {
+    "phase": "refused",
+    "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "reason": "busy",
+    "paths": [],
+    "ts": "2026-09-08T18:58:00Z",
+    "door": "web",
+    "last_refusal": {
+     "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "reason": "busy",
+     "paths": [],
+     "ts": "2026-09-08T18:58:00Z",
+     "door": "web"
+    }
+   },
+   "agree": {
+    "kind": "ready",
+    "bundle": "bbbbbbbb",
+    "shared_wording": []
+   },
+   "resolved": {
+    "last_refusal": null,
+    "source": "",
+    "waiting_rollback": null
+   }
+  },
+  {
+   "name": "refused, some OTHER sha -- never silences the one that is waiting",
+   "installed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "waiting": {
+    "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "file_count": 12,
+    "built_at": "2026-09-07T00:00:00Z"
+   },
+   "state": {
+    "phase": "refused",
+    "bundle": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "reason": "bundle changes locked constitutional paths",
+    "paths": [
+     "cabinet/scripts/start-officer-mac.sh"
+    ],
+    "ts": "2026-09-08T18:00:00Z",
+    "door": "terminal",
+    "last_refusal": {
+     "bundle": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+     "reason": "bundle changes locked constitutional paths",
+     "paths": [
+      "cabinet/scripts/start-officer-mac.sh"
+     ],
+     "ts": "2026-09-08T18:00:00Z",
+     "door": "terminal"
+    }
+   },
+   "agree": {
+    "kind": "ready",
+    "bundle": "bbbbbbbb",
+    "shared_wording": []
+   },
+   "resolved": {
+    "last_refusal": null,
+    "source": "",
+    "waiting_rollback": null
+   }
+  },
+  {
+   "name": "applying, the same bundle still waiting, its refusal still on record",
+   "_why": [
+    "The retry the card is designed for: it KEEPS Apply for a digest-mismatch,",
+    "unreadable or busy refusal, tapping it moves phase to `applying` with that",
+    "same sha still in `last_refusal` (the write carries that field) and the",
+    "bundle still in the inbox until the apply lands. Durable, too: a killed",
+    "apply leaves `phase: applying` and its snapshot on disk. This is the state",
+    "the two surfaces disagreed about until 2026-09-09."
+   ],
+   "installed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "waiting": {
+    "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "file_count": 12,
+    "built_at": "2026-09-07T00:00:00Z"
+   },
+   "state": {
+    "phase": "applying",
+    "to_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "snapshot": "20260908T185800-aaaaaaaa",
+    "last_refusal": {
+     "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "reason": "failed per-file digest verification",
+     "paths": [],
+     "ts": "2026-09-08T18:58:00Z",
+     "door": "web"
+    }
+   },
+   "agree": {
+    "kind": "apply-in-flight",
+    "bundle": "bbbbbbbb",
+    "shared_wording": []
+   },
+   "resolved": {
+    "last_refusal": {
+     "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "reason": "failed per-file digest verification",
+     "paths": [],
+     "ts": "2026-09-08T18:58:00Z",
+     "door": "web"
+    },
+    "source": "state",
+    "waiting_rollback": null
+   }
+  },
+  {
+   "name": "applied, nothing left waiting",
+   "installed": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+   "waiting": null,
+   "state": {
+    "phase": "applied",
+    "to_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "changed": 4
+   },
+   "agree": {
+    "kind": "applied",
+    "bundle": "bbbbbbbb",
+    "shared_wording": [
+     "Updated to bbbbbbbb",
+     "4 change"
+    ]
+   },
+   "resolved": {
+    "last_refusal": null,
+    "source": "",
+    "waiting_rollback": null
+   }
+  },
+  {
+   "name": "applied, nothing waiting, and the refusal it overtook still on record",
+   "_why": [
+    "The end of the busy race the `phase != applying` guard exists for, driven",
+    "through the real record_refusal and the real write_state: the winner takes",
+    "bbbb..., the loser records `busy` about bbbb..., the winner lands, and",
+    "`last_refusal` is carried onto the applied document by CARRIED_STATE_FIELDS",
+    "-- deliberately, because a refusal is still true after the next thing",
+    "happens. The install IS bbbb... now, so `status --json` excludes it and",
+    "nothing is waiting. Until 2026-09-09 both surfaces answered that state with",
+    "'Update refused -- busy (bbbbbbbb)', over a Cabinet running exactly those",
+    "bytes, and went on answering it for ever: nothing clears `last_refusal`.",
+    "The `applied` case above cannot see it -- it carries no refusal, which is",
+    "the one field the carry rule guarantees will be there on any install that",
+    "has ever refused anything. A refusal speaks while it is the LAST THING THAT",
+    "HAPPENED; an apply or a rollback since has overtaken it."
+   ],
+   "installed": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+   "waiting": null,
+   "state": {
+    "phase": "applied",
+    "to_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "changed": 4,
+    "last_refusal": {
+     "bundle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "reason": "busy",
+     "paths": [],
+     "ts": "2026-09-08T18:58:00Z",
+     "door": "web"
+    }
+   },
+   "agree": {
+    "kind": "applied",
+    "bundle": "bbbbbbbb",
+    "shared_wording": [
+     "Updated to bbbbbbbb",
+     "4 change"
+    ]
+   },
+   "resolved": {
+    "last_refusal": null,
+    "source": "",
+    "waiting_rollback": null
+   }
+  }
+ ]
+}

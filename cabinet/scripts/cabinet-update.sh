@@ -27,6 +27,31 @@
 #   Partial application is never a legal state: the check precedes the first
 #   write and the whole bundle stands or falls.
 #
+# EVERY REFUSAL IS DURABLE AND VISIBLE (A5.15). A refusal writes
+# `<root>/.updates/state.json` as `{phase: refused, bundle, reason, paths, ts,
+# door}` and keeps that record in `last_refusal`, which `status --json` carries
+# and every surface reads: the home card and the daily line say "Update
+# refused" and name the files, and the same bundle is never offered as "Update
+# ready" again. Measured on the first real apply, 2026-09-08: the refusal was
+# correct and left NOTHING behind — `status --json` answered `phase: idle,
+# last: null`, the card would have offered the same bundle for ever, and the
+# only record on the box was one line in the log. Two exceptions, both stated
+# in the code that makes them: a BUSY refusal never takes `phase` from an
+# interrupted apply (that marker is the only way back for a half-written tree),
+# and a refusal recorded while nothing else is happening does own it.
+#
+# THE RECORD SURVIVES AN OLDER INSTALLED LEDGER (A5.16). Events go through this
+# updater's OWN recorder (`lib/update_bundle.py record-event`), which tries the
+# INSTALLED `framework.events.emitter` and, when that emitter does not know the
+# event kind, holds an identical record in `<root>/.updates/events.jsonl` and
+# marks `state.json.event_fallback`. This is not an edge case: the emitter that
+# knows `cabinet_update_applied` arrives WITH the update that event announces,
+# so the first apply on any install cut before this leg existed would otherwise
+# be unannounced — measured, as `ValueError: Unknown event type:
+# cabinet_update_refused`. The next successful apply replays the held records
+# into the ledger once each, keyed on the record's own id, and renames the
+# sidecar to `events.ingested-<ts>.jsonl`.
+#
 # WHAT IT NEVER TOUCHES. Any path in the preserve set (the operator's own
 # data); any path the previous bundle did not ship — deletions are
 # manifest-to-manifest, never bundle-versus-installed, because a bundle is a
@@ -138,15 +163,119 @@ log() {
 
 now_utc() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
-# ---- events -----------------------------------------------------------------
-# Never silenced: a swallowed emit is an update with no record. A failure to
-# record is REPORTED and does not abort the update itself — the bytes are
-# already where they are, and pretending otherwise would be the larger lie.
+# ---- events and the durable record ------------------------------------------
+# EVERY record goes through the updater's OWN recorder in lib/update_bundle.py,
+# never straight at `python -m framework.events.emitter` (A5.16). Measured on
+# the first real apply, 2026-09-08: the INSTALLED emitter predated the update
+# path and answered `ValueError: Unknown event type: cabinet_update_refused`,
+# so the refusal reached no ledger at all. That is not an accident of one box —
+# the emitter that knows `cabinet_update_applied` arrives WITH the update it is
+# meant to announce, so the FIRST apply on any install cut before this leg
+# existed is unannounced by construction. The recorder tries the installed
+# emitter and, when it will not take the event, holds an identical record in
+# `<root>/.updates/events.jsonl` for the next apply to replay. Never silenced,
+# never fatal: the bytes are already where they are, and a failure to record is
+# reported rather than pretended away.
 emit_event() {
-  local kind="$1" actor="$2" payload="$3"
-  if ! ( cd "$ROOT" && "$PY" -m framework.events.emitter "$kind" "$actor" "$payload" ) >>"$LOG" 2>&1; then
-    log "WARN: $kind was NOT recorded in the ledger (emitter failed; see $LOG)"
+  local kind="$1" actor="$2" payload="$3" out
+  if ! out="$("$PY" "$BUNDLE_PY" record-event --root "$ROOT" --type "$kind" \
+        --actor "$actor" --payload "$payload" 2>>"$LOG")"; then
+    log "WARN: $kind was NOT recorded anywhere (the recorder failed; see $LOG)"
+    return 0
   fi
+  report_held "$kind" "$out"
+}
+
+# A held record is REPORTED, every time. The alternative — a quiet sidecar —
+# is a second silent channel, which is the defect this exists to close.
+#
+# TWO SENTENCES, because there are two facts (A5.16, round 2). An emitter that
+# does not know the event type yet is filed by the next update, by
+# construction. A ledger that will not take a write — a full disk, a
+# permission — is not filed by any update, and round 1 said "the next update
+# replays it" about both. The recorder decides which (`fault` in its JSON) and
+# carries the reason (`why`); this line only says what it was told, so the
+# classification cannot drift between the surfaces that read it.
+report_held() { # <kind> <recorder-json>
+  # The OTHER half that can fail. `ledger_error` has named a ledger that would
+  # not take the record since A5.16; nothing named a STATE FILE that would not
+  # take it, and that is the failure that leaves a refusal in the ledger alone
+  # — which is precisely the state `status --json` now has to resolve. It is
+  # not fatal (the receipt is written first and survives), so it is said out
+  # loud here rather than raised.
+  case "$2" in
+    *'"state_error"'*)
+      log "STATE WRITE FAILED: $1 was recorded, but $UPD/state.json could not be written — the durable half of this record is missing and surfaces will resolve it from the ledger receipt instead"
+      ;;
+  esac
+  case "$2" in
+    *'"fallback"'*) : ;;
+    *) return 0 ;;
+  esac
+  local parsed why
+  parsed="$(printf '%s' "$2" | "$PY" -c '
+import json, sys
+try:
+    doc = json.load(sys.stdin)
+except Exception:
+    doc = {}
+sys.stdout.write(("fault " if doc.get("fault") else "skew ") + str(doc.get("why") or ""))
+' 2>/dev/null)"
+  why="${parsed#* }"
+  case "$parsed" in
+    fault*)
+      log "LEDGER FAULT: $1 is held in $UPD/events.jsonl and the ledger REFUSED it — ledger fault: ${why:-the emitter raised}. This is not a version difference and no update fixes it; the ledger itself needs looking at"
+      ;;
+    *)
+      log "NOTE: $1 is held in $UPD/events.jsonl — this install's ledger does not know the event kind yet (${why:-no reason given}); the next update replays it"
+      ;;
+  esac
+  return 0
+}
+
+# The durable refusal (A5.15). One call writes both halves: the record every
+# surface reads (`state.json`) and the receipt the ledger reads, in that order
+# of importance. On the box this was measured on, neither existed.
+record_refusal() { # <bundle> <reason> <paths-json>
+  local out
+  if ! out="$("$PY" "$BUNDLE_PY" record-refusal --root "$ROOT" --bundle "${1:-}" \
+        --reason "$2" --paths "${3:-[]}" --door "$DOOR" \
+        --actor "$(door_actor "$DOOR")" 2>>"$LOG")"; then
+    log "WARN: the refusal of ${1:-this bundle} was NOT recorded (see $LOG)"
+    return 0
+  fi
+  report_held cabinet_update_refused "$out"
+}
+
+# THE VERDICT IS SPENT THE MOMENT THE TREE MOVES (A5.17.2). An apply and a
+# rollback delete the markers of every sha they NAME, in the same operation
+# that writes their receipt — bounded to those shas, so a rollback that names
+# two never touches a third. Without it a refused bundle that was later applied
+# by a Captain who unlocked, applied and relocked would carry its verdict for
+# ever, and the card would keep withdrawing Apply from bytes that are already
+# installed.
+drop_refusal_markers() { # <sha>...
+  local args=() sha
+  for sha in "$@"; do [ -n "$sha" ] && args+=(--sha "$sha"); done
+  [ "${#args[@]}" -gt 0 ] || return 0
+  "$PY" "$BUNDLE_PY" drop-refusals --root "$ROOT" "${args[@]}" >>"$LOG" 2>&1     || log "WARN: the refusal markers for $* could not be dropped (see $LOG)"
+  return 0
+}
+
+# Replay whatever an older emitter refused, now that a newer one is in place.
+# Called by `apply` AFTER the new tree has landed and BEFORE the gate — the
+# record belongs in the ledger whether or not the update survives its gate.
+ingest_held_events() {
+  local out
+  out="$("$PY" "$BUNDLE_PY" ingest-events --root "$ROOT" 2>>"$LOG")" || {
+    log "the held records could not be replayed this time — they stay held"
+    return 0
+  }
+  case "$out" in
+    *'"ingested": 0'*) : ;;
+    *) log "replayed the records this install's previous emitter could not take" ;;
+  esac
+  return 0
 }
 
 # Door kind -> ledger actor. The terminal is attribution, not authentication:
@@ -248,8 +377,12 @@ preparse_bundle() {
 # surface that reads receipts rather than exit codes.
 refuse_busy() { # <to_sha>
   echo "cabinet-update: another update is running" >&2
-  emit_event cabinet_update_refused "$(door_actor "$DOOR")" \
-    "{\"to_sha\":$(json_escape "${1:-}"),\"reason\":\"busy\",\"locked_paths\":[],\"door\":$(json_escape "$DOOR")}"
+  # A5.15: durable like every other refusal — and the ONE refusal that must not
+  # own `phase`. The updater it lost to may be mid-write, and `phase: applying`
+  # plus a snapshot name is the only thing telling the next run which snapshot
+  # puts a half-written tree back. `record-refusal` keeps that marker and
+  # records the refusal beside it.
+  record_refusal "${1:-}" "busy" "[]"
   exit "$EXIT_BUSY"
 }
 
@@ -296,8 +429,18 @@ os.execvp(sys.argv[1], sys.argv[1:])
 }
 
 # ---- state ------------------------------------------------------------------
+# THE WRITE IS A REPLACE, AND ONE FIELD SURVIVES IT. `last_refusal` is carried
+# forward by the helper (A5.15): every other write here replaces the whole
+# document, so without the carry a refusal would be forgotten the moment
+# anything else happened and the card would offer the refused bundle again the
+# next time some other apply landed. The plain write is kept as the fallback
+# for the one case where the helper cannot run at all — losing the phase is
+# worse than losing the carry, and a state file that never got written is how
+# an interrupted apply becomes unrecoverable.
 write_state() { # <json>
   mkdir -p "$UPD"
+  "$PY" "$BUNDLE_PY" write-state --root "$ROOT" --state "$1" 2>>"$LOG" && return 0
+  log "WARN: the state helper failed — writing the state file directly (see $LOG)"
   printf '%s\n' "$1" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 }
 
@@ -385,7 +528,7 @@ cmd_status() {
       *) fail_usage "unknown status option '$1'" ;;
     esac
   done
-  "$PY" - "$ROOT" "$as_json" <<'PYSTATUS'
+  "$PY" - "$ROOT" "$as_json" "$LIB_DIR" <<'PYSTATUS'
 import json, os, pwd, sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -445,6 +588,44 @@ if (upd / "state.json").is_file():
     except Exception:
         state = {}
 
+# THE ONE REFUSAL EVERY SURFACE READS, resolved PER BUNDLE from every channel.
+#
+# A verdict is written down three times by one call — its own marker, the
+# ledger receipt and `state.json` — and any one of them can be the only survivor:
+# the state write can fail, the document is replaced whole by every other writer
+# (including an older updater copy that never knew the field), and an install
+# whose emitter predates the update path refuses the event kind (A5.16). This
+# report is the home card's ONLY input.
+#
+# PER BUNDLE, and that is the round-5 must-fix (A5.17). The resolver this
+# replaces took the newest refusal receipt in the window GLOBALLY: a `busy`
+# note written by a rollback that lost the lock — a record about no bundle at
+# all — blanked the constitutional verdict on the bundle sitting in the inbox,
+# and this card then offered Apply on it. `current(W)` asks each channel about
+# the WAITING bundle and nothing else; when nothing waits, the newest verdict
+# that is still the last thing that happened. Fail-open: if the resolver cannot
+# be imported at all, the state file's own record still stands.
+waiting_sha = available[0]["sha"] if available else ""
+refusal = state.get("last_refusal")
+refusal_source = "state" if refusal else ""
+waiting_rollback = None
+last_busy = state.get("last_busy") if isinstance(state.get("last_busy"), dict) else None
+state_error = str(state.get("state_error") or "")
+try:
+    lib_dir = sys.argv[3] if len(sys.argv) > 3 else ""
+    if lib_dir and lib_dir not in sys.path:
+        sys.path.insert(0, lib_dir)
+    import update_bundle
+
+    resolved = update_bundle.resolve_update_surface(root, state, waiting_sha)
+    refusal = resolved["last_refusal"]
+    refusal_source = resolved["last_refusal_source"]
+    waiting_rollback = resolved["waiting_rollback"]
+    last_busy = resolved["last_busy"]
+    state_error = resolved["state_error"]
+except Exception:
+    pass
+
 snapshots = []
 if (upd / "snapshots").is_dir():
     snapshots = sorted(p.name for p in (upd / "snapshots").iterdir() if p.is_dir())
@@ -457,6 +638,26 @@ report = {
     "available": available,
     "latest": available[0] if available else None,
     "snapshots": snapshots,
+    # A5.15/A5.16. `last_refusal` is the record every surface reads to keep
+    # a refused bundle from being offered as "ready" again; it outlives the
+    # phase, because a refusal is still true after the next thing happens.
+    # `event_fallback` says a record is held outside the ledger because this
+    # install's emitter does not know the event kind yet. `ledger_error` is the
+    # discriminator: non-empty means the ledger did not merely decline the type,
+    # it FAILED, and no update files that.
+    "last_refusal": refusal,
+    "last_refusal_source": refusal_source,
+    # A5.17.7: the bundle in the inbox is one this box already took and put
+    # back. Not a refusal — Apply stays, because a retry is legitimate — but
+    # not "ready" either, and both surfaces say the same sentence about it.
+    "waiting_rollback": waiting_rollback,
+    # A5.17.1: a timing note is about no bundle. It is never a headline
+    # anywhere; it is carried here and said in words below.
+    "last_busy": last_busy,
+    # A5.17.2: the half of a refusal that could not be written down says so.
+    "state_error": state_error,
+    "event_fallback": bool(state.get("event_fallback")),
+    "ledger_error": state.get("ledger_error") or "",
 }
 if as_json:
     json.dump(report, sys.stdout, indent=2, sort_keys=True)
@@ -471,6 +672,32 @@ else:
               % (row["short"], row["built_at"], row["file_count"], row["owner"]))
         for line in row["changelog"][:5]:
             print("            - %s" % line)
+    refusal = report["last_refusal"]
+    if refusal:
+        print("refused   : %s  %s%s" % (
+            (refusal.get("bundle") or "")[:8], refusal.get("reason") or "",
+            "  (from the ledger receipt; the state file carries no refusal)"
+            if report["last_refusal_source"] == "receipt" else ""))
+        for path in refusal.get("paths") or []:
+            print("            %s" % path)
+    rolled = report["waiting_rollback"]
+    if rolled:
+        print("rolled back: %s  %s  (still waiting)" % (
+            (rolled.get("bundle") or "")[:8],
+            rolled.get("reason") or "it did not come up healthy"))
+    busy = report["last_busy"]
+    if busy:
+        print("busy      : another updater held the lock at %s%s"
+              % (busy.get("ts") or "an unrecorded time",
+                 "  (%s)" % busy.get("bundle")[:8] if busy.get("bundle") else ""))
+    if report["state_error"]:
+        print("held      : the durable half of a refusal could not be written: %s"
+              % report["state_error"])
+    if report["ledger_error"]:
+        print("held      : ledger fault: %s" % report["ledger_error"])
+        print("            a record is waiting in .updates/events.jsonl; no update files this")
+    elif report["event_fallback"]:
+        print("held      : a record is waiting in .updates/events.jsonl for a newer ledger")
     print("snapshots : %d" % len(snapshots))
 PYSTATUS
 }
@@ -742,6 +969,7 @@ cmd_rollback() {
   write_state "{\"phase\":\"rolled_back\",\"from_sha\":$(json_escape "$before"),\"to_sha\":$(json_escape "$after"),\"snapshot\":$(json_escape "$snap_name"),\"reason\":\"requested\",\"finished_at\":$(json_escape "$(now_utc)"),\"door\":$(json_escape "$DOOR")}"
   emit_event cabinet_update_rolled_back "$(door_actor "$DOOR")" \
     "{\"from_sha\":$(json_escape "$before"),\"to_sha\":$(json_escape "$after"),\"reason\":\"requested\",\"door\":$(json_escape "$DOOR")}"
+  drop_refusal_markers "$before" "$after"
   log "rolled back to $snap_name"
   return 0
 }
@@ -753,8 +981,11 @@ refuse() { # <exit> <reason> <to_sha> [locked-json]
   # Several refusals happen AFTER the bundle is unpacked (a digest mismatch, an
   # unreadable plan, a locked path). A5.14: none of them leaves a tree behind.
   drop_stage "$to_sha"
-  emit_event cabinet_update_refused "$(door_actor "$DOOR")" \
-    "{\"to_sha\":$(json_escape "$to_sha"),\"reason\":$(json_escape "$reason"),\"locked_paths\":$locked,\"door\":$(json_escape "$DOOR")}"
+  # A5.15: the state file, then the ledger. Before this line a refusal wrote
+  # NOTHING a surface could read — measured on the install, 2026-09-08, where
+  # `status --json` answered `phase: idle, last: null` after a refusal and the
+  # home card would have offered the same bundle again for ever.
+  record_refusal "$to_sha" "$reason" "$locked"
   exit "$code"
 }
 
@@ -865,6 +1096,7 @@ roll_back_after() { # <snapshot-dir> <to_sha> <from_sha> <reason> <skip_restart>
   write_state "{\"phase\":\"rolled_back\",\"from_sha\":$(json_escape "$to_sha"),\"to_sha\":$(json_escape "$from_sha"),\"snapshot\":$(json_escape "$(basename "$snap")"),\"reason\":$(json_escape "$reason"),\"finished_at\":$(json_escape "$(now_utc)")}"
   emit_event cabinet_update_rolled_back "$(door_actor "$DOOR")" \
     "{\"from_sha\":$(json_escape "$to_sha"),\"to_sha\":$(json_escape "$from_sha"),\"reason\":$(json_escape "$reason"),\"door\":$(json_escape "$DOOR")}"
+  drop_refusal_markers "$to_sha" "$from_sha"
   exit 1
 }
 
@@ -1005,6 +1237,13 @@ for path in json.load(open(sys.argv[1]))["locked_hits"]:
   "$PY" "$BUNDLE_PY" stamp-identity --root "$ROOT" --source-commit "$sha" \
     --applied-at "$(now_utc)" ${here:+--from-sha "$here"} >>"$LOG" 2>&1
 
+  # THE BOOTSTRAP HOP (A5.16). The new tree is in place, so the emitter this
+  # install has is now the one that arrived with the bundle — the first moment
+  # a record an older emitter refused can actually reach the ledger. Before the
+  # gate on purpose: what happened happened, and a rollback that undoes the
+  # bytes must not also undo the record of them.
+  ingest_held_events
+
   # THE REBUILD IS CONDITIONAL, AND SO IS THE LEG THAT CHECKS IT. The dashboard
   # is rebuilt only when the bundle changed one of its files — a full `next
   # build` on every framework-only update would cost a minute or two and, on a
@@ -1060,6 +1299,7 @@ print(datetime.fromtimestamp(os.stat(sys.argv[1]).st_mtime, timezone.utc).strfti
   write_state "{\"phase\":\"applied\",\"from_sha\":$(json_escape "$here"),\"to_sha\":$(json_escape "$sha"),\"snapshot\":$(json_escape "$(basename "$snap")"),\"started_at\":$(json_escape "$started"),\"finished_at\":$(json_escape "$(now_utc)"),\"changed\":$changed_n,\"deleted\":$deleted_n,\"skipped_preserved\":$skipped,\"built_at\":$(json_escape "$built_at"),\"door\":$(json_escape "$DOOR")}"
   emit_event cabinet_update_applied "$(door_actor "$DOOR")" \
     "{\"from_sha\":$(json_escape "$here"),\"to_sha\":$(json_escape "$sha"),\"changed\":$changed_n,\"deleted\":$deleted_n,\"snapshot\":$(json_escape "$(basename "$snap")"),\"door\":$(json_escape "$DOOR"),\"built_at\":$(json_escape "$built_at"),\"inbox_owner\":$(json_escape "$owner"),\"inbox_mtime\":$(json_escape "$mtime"),\"skipped_preserved\":$skipped}"
+  drop_refusal_markers "$here" "$sha"
   log "applied ${here:0:8} -> ${sha:0:8}: $changed_n changed, $deleted_n deleted"
   if [ "$skipped" != "[]" ]; then
     log "kept your own data instead of the shipped copy: $skipped"

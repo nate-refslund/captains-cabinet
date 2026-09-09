@@ -1322,7 +1322,176 @@ budgets:
     # two, and every expansion paragraph from both sides is kept. RE-MEASURED
     # over this merge tree with cognitive-architecture-census.py rather than
     # added on paper. observed == maximum, zero headroom.
-    maximum: 66638
+    #
+    # 66638 -> 66660 (+22 measured 2026-09-08 via cognitive-architecture-census.py,
+    # 81376 -> 81398 against the effective ceiling): U5b's refused arm in
+    # framework/frontdoor/run_briefing.py. The update path's briefing line could
+    # only learn about a refusal from the event ledger, and the first real apply
+    # on the installed Cabinet (2026-09-08) proved that channel can be shut: the
+    # INSTALLED emitter predated the update path and rejected
+    # `cabinet_update_refused`, so the refusal reached no ledger, wrote no state,
+    # and the sentence the Captain would have read was "an update is ready to
+    # take - tap Apply" over a bundle already turned down. The mass is
+    # `_update_refusal_line` (17 lines: the state read, the two filters that stop
+    # it announcing a refusal of some OTHER bundle or a `busy` that is about
+    # timing rather than these bytes, and the two sentences), three lines wiring
+    # it ahead of the waiting-bundle arm, and two docstring lines saying the
+    # refusal leads. Every other line the change adds to framework/ is a `#`
+    # comment by construction. RAISED VISIBLY rather than paid by a temporary
+    # allowance, same reason as every row above: an allowance promises a deletion
+    # gate, and a surface that can announce a refusal is permanent - the
+    # bootstrap-ordering hole it covers recurs on every install cut before the
+    # update path existed. Zero new production MODULES
+    # (framework_production_modules unchanged at 253: the helper lives in the
+    # existing frontdoor module, and every other file the unit touches is under
+    # cabinet/, outside this budget's path). observed == maximum, zero headroom.
+    #
+    # 66660 -> 66667 (+7 measured 2026-09-09 via cognitive-architecture-census.py,
+    # 81398 -> 81405 against the effective ceiling): U5b round 2, closing the two
+    # things the independent review found on this same line. Four of the seven
+    # are the ledger-FAULT arm — a record held because the ledger raised (a full
+    # disk, a permission) is not a record held because the emitter is one
+    # version behind, and only the second is filed by the next update; round 1
+    # told the Captain the reassuring one about both, on all four surfaces. Two
+    # are `_update_state`, one reader for the state file where there were three
+    # open-and-parse sites, which is what keeps the three sentences on this line
+    # from disagreeing about the same document. One is the `busy` filter growing
+    # a second clause so this line and the card's `refusalToShow` scope a
+    # refusal to its bundle identically — the round-1 defect was precisely the
+    # two surfaces disagreeing. RAISED VISIBLY, same reason as every row above.
+    # observed == maximum, zero headroom.
+    #
+    # 66667 -> 66669 (+2 measured 2026-09-09 via cognitive-architecture-census.py,
+    # 81405 -> 81407 against the effective ceiling): U5b round 3, the THIRD of the
+    # three rules this line and the card's `refusalToShow` are meant to share. The
+    # card opened with `phase === 'applying' -> null`; `_update_refusal_line` had
+    # no applying guard at all, so through every retry of a digest-mismatch,
+    # unreadable or busy refusal — the retry the card is deliberately built for,
+    # since it keeps Apply for exactly those — the card said "Taking an update"
+    # while this line said "Update refused", and with a locked-path refusal on
+    # record it said "needs the Captain" over a running apply. Durable, too: a
+    # killed apply leaves `phase: applying` and its snapshot on disk by design, so
+    # the wrong sentence outlived the process. The mass is exactly the guard
+    # (`if state.get("phase") == "applying": return ""`). The other half of the
+    # fix — hoisting the `applying` arm of `_update_notice` ahead of the
+    # waiting-bundle arm that made it unreachable — is a MOVE and costs nothing,
+    # and the six-state parity fixture that now holds the claim is a test file,
+    # outside this budget by construction. RAISED VISIBLY, same reason as every
+    # row above. observed == maximum, zero headroom.
+    #
+    # 66669 -> 66673 (+4 measured 2026-09-09 via cognitive-architecture-census.py,
+    # 81407 -> 81411 against the effective ceiling): U5b round 4, the CURRENCY of
+    # a refusal — the fourth rule this line and the card's `refusalToShow` share,
+    # and the third defect three rounds of review found in the same two readers.
+    # Nothing ever clears `last_refusal`: the updater carries it onto every later
+    # state document on purpose, because a refusal is still TRUE after the next
+    # thing happens. What it stops being is the NEWS, and neither reader asked.
+    # So the busy race the `phase != applying` guard exists for — the winner
+    # applies the bundle, the loser records `busy` about it, the install IS those
+    # bytes and nothing is left waiting — ended with both surfaces saying "Update
+    # refused - busy" over a Cabinet running exactly them, for ever; and after the
+    # constitutional ceremony (refusal on the old bundle, the Captain unlocks and
+    # relocks, a new bundle applies) both said "needs the Captain" and the card
+    # withdrew Apply over an install that HAD been updated. The mass is the four
+    # lines of the nothing-waiting branch: it was one clause of a compound `if`
+    # and is now its own arm with its own rule, because four rules in one boolean
+    # is how the third one got written on one surface only. Everything else this
+    # commit adds is a test file and outside this budget by construction — the
+    # oracle that closes the class (`framework/frontdoor/tests/
+    # update_surface_oracle.json`, the whole 240-row product of the five axes
+    # these two readers branch on, driven through BOTH of them) and the arms that
+    # read it. RAISED VISIBLY, same reason as every row above. observed ==
+    # maximum, zero headroom.
+    #
+    # 66673 -> 66728 (+55 measured 2026-09-09 via cognitive-architecture-census.py,
+    # 81411 -> 81466 against the effective ceiling): U5b round 5, THE SECOND
+    # REFUSAL CHANNEL. A refusal is written down twice by one call — the state
+    # file and the ledger receipt — and round 4 had the four rules enforced on
+    # the first while the second spoke underneath them unfiltered. Measured: a
+    # `busy` refusal of the bundle still in the inbox gave this line "An update
+    # is waiting but was REFUSED: busy" while the card said "Update ready" with
+    # Apply live, and a locked-path refusal that reached only the LEDGER gave
+    # this line "REFUSED: it changes locked constitutional paths" while the card
+    # rendered Apply — the button that fails identically every tap, which is
+    # A5.15's own rationale. The mass is the shape that makes that structurally
+    # impossible rather than fixed once: `_update_receipts` (one ledger read),
+    # `_update_receipt_refusal` (the ledger's CURRENT refusal, in the state
+    # file's own record shape), `_state_refusal` (the state document's record,
+    # whichever of its two forms it is in — which also deletes round-4 note N2),
+    # `_update_resolved_refusal` (the two channels into ONE record, and which
+    # one answered), and `_refusal_speaks` (the four rules, written once, run
+    # once, on that one record). The card needed no change at all: it already
+    # read one resolved record, and what changed is its INPUT —
+    # `cabinet-update.sh status --json` now resolves both channels into
+    # `last_refusal` and tags it `last_refusal_source`, and that file is in
+    # cabinet/, outside this budget. Everything else this commit adds is a test
+    # file and outside it by construction — the oracle grew the LEDGER as its
+    # sixth axis (1440 rows, the whole product) because a completeness claim
+    # that holds one input constant is a green hole, not a covered one. RAISED
+    # VISIBLY, same reason as every row above. observed == maximum, zero
+    # headroom.
+    #
+    # 66728 -> 66839 (+111 measured 2026-09-09 via cognitive-architecture-census.py,
+    # 81466 -> 81577 against the effective ceiling): U5b round 6, A5.17 — THE
+    # CURRENT REFUSAL OF A BUNDLE. Round 5 landed the resolution and got its
+    # CURRENCY wrong: it took the newest `cabinet_update_refused` receipt in the
+    # window GLOBALLY and, when that record named another bundle or no bundle at
+    # all, threw the rest of the channel away. `refuse_busy` writes exactly such
+    # a record on every lock contention — `record_refusal "" busy` when a
+    # rollback loses the lock — so a constitutional verdict on the bundle
+    # sitting in the inbox was blanked by a note about a moment, and BOTH
+    # surfaces then said "an update is ready to take — tap Apply" over bytes
+    # this box had already turned down. Round 4 was card-wrong and
+    # briefing-right; round 5 was both wrong, in agreement, which is worse.
+    #
+    # Ruled by a blind two-model gate (Fable 5.1, Opus 5) as contract amendment
+    # A5.17 and adjudicated in designs/employee-phase1-2026-09-07/
+    # a517-gate-2026-09-09/. The mass here is the briefing's half of the
+    # resolution, which cannot be an import: `framework/` does not import from
+    # `cabinet/`, and a briefing may never hang on a subprocess, so the resolver
+    # is a deliberate twin of `update_bundle.resolve_update_surface` pinned to
+    # the same 5250-row table. It is `_is_verdict` (the two classes — a VERDICT
+    # about bytes, a TIMING NOTE about a moment), `_refusal_marker` /
+    # `_refusal_markers` (the per-bundle durable store, which exists because
+    # every write to `state.json` is a whole-document replace and one of the
+    # writers can be an OLDER updater copy), `_legacy_state_verdict` (the
+    # pre-marker mirror, admitted only where there is no marker store),
+    # `_record_time` (the record's OWN timestamp, carried in ONE named payload
+    # field on all three update event types — `recorded_at`, stamped by the
+    # updater at record time; the ledger's insertion time is not usable,
+    # because a record held for an older emitter is replayed by the next apply
+    # and inserted days later than the events it happened before),
+    # `_receipt_about` / `_state_event` / `_state_event_about` (rule 4's subject
+    # test, including a rollback's `from_sha`), `_verdict_candidates` +
+    # `_supersede_times` + `_resolve_refusal` (current(B), and the newest
+    # standing verdict when nothing waits), `_rollback_about` (the one other
+    # fact a surface speaks about a waiting bundle) and `_rollback_line`. Two
+    # helpers were RETIRED in the same commit — `_update_receipt_for` and
+    # `_update_receipt_refusal`, the global-currency reader that caused this —
+    # so the +111 is net of that deletion.
+    #
+    # THE ORACLE THIS IS PINNED TO, named here because a budget row is where a
+    # later session looks for what the mass bought:
+    # framework/frontdoor/tests/update_surface_oracle.json is the whole product
+    # of six axes — phase (5) x what is waiting (3: nothing | B | another
+    # bundle) x what the state channel says about B (5: none | marker locked |
+    # marker digest | legacy verdict | legacy busy) x the ledger's time-ordered
+    # SEQUENCE about B (7: none | V | V then applied(B) | V then
+    # rolled_back(from B) | V then busy(B) | V then a newer digest verdict |
+    # applied(B) then V) x the newest ledger record NOT about B (5: none | busy
+    # with an empty sha | busy about E | a verdict about E | applied E) x ledger
+    # fault (2) = 5250 rows, no exclusions. Each row carries the exact sentence
+    # for BOTH surfaces, whether the refusal speaks, whether Apply is live and
+    # which channel answered, and it is driven through all three readers: the
+    # briefing, the resolver `status --json` reports, and the card. Four inputs
+    # are held OUTSIDE the product as invariance arms over sampled rows (a
+    # marker about another bundle, `last_busy` in any value, `event_fallback`
+    # either way, and the ledger's record ORDER), because each is claimed
+    # independent and a claim of independence is worth what it is tested at. The card's own change is one gate
+    # helper and one sentence, in cabinet/, outside this budget; the oracle and
+    # every arm are test files, outside it by construction. RAISED VISIBLY,
+    # same reason as every row above. observed == maximum, zero headroom.
+    maximum: 66839
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
@@ -2889,8 +3058,9 @@ temporary_allowances:
       RAISED 54 -> 88 on 2026-09-07 (round-1 review) for the fourth thing the
       lines buy: (4) a REFUSAL has no state file to be read out of — a bundle
       whose diff touches the constitutional set is refused before anything is
-      written and leaves a receipt and nothing else — so `_update_receipt_for`
-      reads the three `cabinet_update_*` types back off the ledger and the
+      written and leaves a receipt and nothing else — so the module reads the
+      three `cabinet_update_*` types back off the ledger (`_update_receipts`,
+      spelled `_update_receipt_for` until A5.17 retired that selector) and the
       waiting-bundle sentence says REFUSED, or rolled back, instead of
       inviting the Captain to tap Apply on a bundle that will refuse itself
       every time. That read is also what makes this module a truthful
@@ -2927,8 +3097,9 @@ expansions:
       could not consume this member and never will. The census's consumer field
       is an existence-and-disjointness check by its own docstring, so the gate
       passed on a false claim. It now names the surface that reads these three
-      types back by name (run_briefing._update_receipt_for, over
-      emitter.replay), and
+      types back by name (run_briefing._update_receipts, over emitter.replay —
+      `_update_receipt_for` was its spelling until A5.17 retired it, along with
+      every direct read of a refusal receipt by a surface), and
       test_an_event_type_expansion_names_a_consumer_that_actually_names_it
       checks the LIVE contract for use rather than existence.
   - member: cabinet_update_refused
@@ -2960,8 +3131,9 @@ expansions:
       could not consume this member and never will. The census's consumer field
       is an existence-and-disjointness check by its own docstring, so the gate
       passed on a false claim. It now names the surface that reads these three
-      types back by name (run_briefing._update_receipt_for, over
-      emitter.replay), and
+      types back by name (run_briefing._update_receipts, over emitter.replay —
+      `_update_receipt_for` was its spelling until A5.17 retired it, along with
+      every direct read of a refusal receipt by a surface), and
       test_an_event_type_expansion_names_a_consumer_that_actually_names_it
       checks the LIVE contract for use rather than existence.
   - member: cabinet_update_rolled_back
@@ -2993,8 +3165,9 @@ expansions:
       could not consume this member and never will. The census's consumer field
       is an existence-and-disjointness check by its own docstring, so the gate
       passed on a false claim. It now names the surface that reads these three
-      types back by name (run_briefing._update_receipt_for, over
-      emitter.replay), and
+      types back by name (run_briefing._update_receipts, over emitter.replay —
+      `_update_receipt_for` was its spelling until A5.17 retired it, along with
+      every direct read of a refusal receipt by a surface), and
       test_an_event_type_expansion_names_a_consumer_that_actually_names_it
       checks the LIVE contract for use rather than existence.
   - member: framework/onboarding/salience.py

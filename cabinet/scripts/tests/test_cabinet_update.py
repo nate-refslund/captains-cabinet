@@ -85,7 +85,8 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def make_install(tmp_path: Path, *, source_commit: str = OLD_SHA) -> Path:
+def make_install(tmp_path: Path, *, source_commit: str = OLD_SHA,
+                 emitter: str = "real") -> Path:
     """A fixture install: the real updater, the real boundary, real operator data."""
 
     root = tmp_path / "install"
@@ -123,8 +124,92 @@ def make_install(tmp_path: Path, *, source_commit: str = OLD_SHA) -> Path:
 
     # The real emitter, so the new event types are validated by the real
     # VALID_EVENT_TYPES rather than by a stub that would accept anything.
-    os.symlink(_REPO_ROOT / "framework", root / "framework")
+    #
+    # A5.16 EXCEPTION, and why it is not a weakening. The defect this unit
+    # exists for is an INSTALLED emitter of an OLDER vintage than the bundle:
+    # the box measured on 2026-09-08 raised `ValueError: Unknown event type:
+    # cabinet_update_refused` and the refusal went unannounced. The repo's
+    # emitter cannot be made to reject a type it already registers, so the arms
+    # that need one plant a stand-in of a stated vintage instead (`emitter=`).
+    # The stub is not standing in for the thing under test — the RECORDER is
+    # under test, and the stub is the environment it has to survive. Every
+    # other arm in this file keeps the real emitter.
+    if emitter == "real":
+        os.symlink(_REPO_ROOT / "framework", root / "framework")
+    else:
+        install_stub_emitter(root, emitter)
     return root
+
+
+#: A stand-in for an installed `framework/events/emitter.py`, parameterised by
+#: the one thing that matters here: whether its `VALID_EVENT_TYPES` knows the
+#: update path's kinds. "old" is every egg cut before the update path landed.
+_STUB_EMITTER = r'''"""A fixture emitter of a stated vintage. See make_install's A5.16 note."""
+import json
+import os
+import uuid
+from datetime import datetime, timezone
+
+VALID_EVENT_TYPES = frozenset(__TYPES__)
+
+
+def emit(event_type, actor, payload=None, parent_id=None):
+    if event_type not in VALID_EVENT_TYPES:
+        raise ValueError(
+            "Unknown event type: {0}. Add it to VALID_EVENT_TYPES in {1}".format(
+                event_type, __file__))
+    event = {
+        "id": str(uuid.uuid4()),
+        "event_type": event_type,
+        "actor": actor,
+        "payload": payload or {},
+        "parent_id": parent_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    log_dir = os.environ.get("CABINET_EVENT_LOG_DIR") or "."
+    os.makedirs(log_dir, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    with open(os.path.join(log_dir, "events-" + stamp + ".jsonl"), "a",
+              encoding="utf-8") as handle:
+        handle.write(json.dumps(event) + "\n")
+    return event
+'''
+
+_UPDATE_EVENT_TYPES = (
+    "cabinet_update_applied",
+    "cabinet_update_refused",
+    "cabinet_update_rolled_back",
+)
+
+
+#: An emitter whose LEDGER IS BROKEN, which is a different thing from one of an
+#: older vintage. The recorder catches every exception, on purpose (nothing may
+#: cost the record) — and round 1 reported all of them, on all four surfaces, as
+#: "this install's ledger does not know the event kind yet, and the next update
+#: files it". A full disk is not filed by the next update, or by any update.
+_FAULTY_EMITTER = '''\
+def emit(event_type, actor, payload=None, parent_id=None):
+    raise OSError(28, "No space left on device", "events-2026-09-08.jsonl")
+'''
+
+
+def stub_emitter_source(vintage: str) -> str:
+    """`vintage` is "old" (an egg cut before the update path), "new", or
+    "faulty" (a current emitter whose ledger will not take a write)."""
+    if vintage == "faulty":
+        return _FAULTY_EMITTER
+    types = ["officer_session_started"]
+    if vintage == "new":
+        types.extend(_UPDATE_EVENT_TYPES)
+    elif vintage != "old":
+        raise AssertionError("unknown emitter vintage %r" % vintage)
+    return _STUB_EMITTER.replace("__TYPES__", repr(sorted(types)))
+
+
+def install_stub_emitter(root: Path, vintage: str) -> None:
+    _write(root / "framework/__init__.py", "")
+    _write(root / "framework/events/__init__.py", "")
+    _write(root / "framework/events/emitter.py", stub_emitter_source(vintage))
 
 
 def make_bundle(
@@ -155,9 +240,15 @@ def make_bundle(
         # anything. The price of that realism is that a fixture bundle shipping
         # a `framework/...` path would have the real updater write through the
         # symlink into the repo under test. No fixture ships one today; this is
-        # what keeps that true when the next one is written.
+        # what keeps that true when the next one is written. An install built
+        # with a PLANTED emitter (`emitter="old"/"new"`, A5.16) has a real
+        # directory there and nothing to reach through, so the guard is scoped
+        # to the symlink rather than to the path prefix — the hazard is the
+        # symlink, and a guard that also refused the safe case would have made
+        # the bootstrap-ordering arms unwritable.
+        symlinked = (install_root / "framework").is_symlink()
         for rel in content:
-            assert not rel.startswith("framework/"), (
+            assert not (rel.startswith("framework/") and symlinked), (
                 "a fixture bundle may not ship a framework/ path: the install's "
                 "framework/ is a symlink to the repo under test (%s)" % rel)
         for rel, text in content.items():
@@ -1101,9 +1192,17 @@ def test_a_fixture_bundle_may_not_ship_a_framework_path(tmp_path):
     fixture would reach the LIVE repo tree through the install's `framework/`
     symlink."""
     root = make_install(tmp_path)
+    assert (root / "framework").is_symlink(), "this arm needs the symlinked install"
     with pytest.raises(AssertionError, match="framework/"):
         make_bundle(tmp_path, root, NEW_SHA,
                     extra={"framework/events/emitter.py": "# not on my watch\n"})
+
+    # ...and the same bundle against an install whose framework/ is REAL bytes
+    # is allowed, because there is nothing to write through.
+    planted = make_install(tmp_path / "planted", emitter="old")
+    assert not (planted / "framework").is_symlink()
+    make_bundle(tmp_path / "planted", planted, NEW_SHA,
+                extra={"framework/events/emitter.py": stub_emitter_source("new")})
 
 
 # ===========================================================================
@@ -1844,3 +1943,1352 @@ def test_a_re_execed_updater_takes_the_lock_for_itself(tmp_path):
     finally:
         fcntl.flock(holder.fileno(), fcntl.LOCK_UN)
         holder.close()
+
+
+# ===========================================================================
+# 12. A5.15 — a refusal is DURABLE and VISIBLE
+#
+# Measured on the installed Cabinet, 2026-09-08: the first real apply refused
+# exactly as designed (one constitutional path differed) and then left no trace
+# any surface could read. `status --json` answered `phase: idle, last: null`,
+# so the home card would have offered "Update ready" for the same bundle again,
+# for ever, and the only record on the box was one line in a log file nobody
+# reads. A refusal that leaves no state is a refusal the operator never learns
+# about — the same silence, one layer up, that this whole path exists to end.
+# ===========================================================================
+
+def refusal(install_root: Path) -> dict:
+    return state(install_root).get("last_refusal") or {}
+
+
+def status_json(install_root: Path) -> dict:
+    result = run_updater(install_root, "status", "--json")
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+def test_a_locked_refusal_is_durable_in_state_and_in_status(tmp_path):
+    """A5.15: the refusal the box actually produced, made readable.
+
+    The paths are the load-bearing half: "refused" alone cannot be turned into
+    a sentence that says what to do, and what to do here is a deliberate
+    unlock-and-relock on the named files."""
+    root = make_install(tmp_path)
+    tree = make_bundle(tmp_path, root, NEW_SHA,
+                       extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
+    (tree / "cabinet/scripts/germline-lock.sh").write_text(
+        _LOCK_SH.read_text() + "\n# widened\n", encoding="utf-8")
+    make_bundle_refresh(tmp_path, root, NEW_SHA, tree)
+
+    result = run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                         "--skip-restart", "--from", "web")
+    assert result.returncode == 3, (result.returncode, result.stderr)
+
+    doc = state(root)
+    assert doc["phase"] == "refused", doc
+    assert doc["bundle"] == NEW_SHA
+    assert doc["door"] == "web"
+    assert doc["ts"]
+    assert "cabinet/scripts/germline-lock.sh" in doc["paths"]
+    assert "locked constitutional paths" in doc["reason"]
+
+    report = status_json(root)
+    assert report["phase"] == "refused"
+    assert report["last_refusal"]["bundle"] == NEW_SHA
+    assert "cabinet/scripts/germline-lock.sh" in report["last_refusal"]["paths"]
+    assert report["last_refusal"]["reason"]
+    # The bundle is still sitting there — which is exactly why the refusal has
+    # to travel with it. Without `last_refusal` this is indistinguishable from
+    # a bundle nobody has tried yet.
+    assert report["latest"]["sha"] == NEW_SHA
+
+
+def test_a_digest_mismatch_and_an_absent_bundle_are_durable_too(tmp_path):
+    """Every refusal path, not only the constitutional one (A5.15 names four).
+
+    A card that could only see the locked refusal would show "Update ready"
+    for ever over a bundle whose bytes do not match its own manifest."""
+    root = make_install(tmp_path)
+    make_bundle(tmp_path, root, NEW_SHA,
+                extra={"cabinet/scripts/hello.sh": "echo hello v2\n"}, corrupt=True)
+    assert run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                       "--skip-restart").returncode == 3
+    assert state(root)["phase"] == "refused"
+    assert "digest" in state(root)["reason"]
+    assert state(root)["paths"] == []
+    assert state(root)["bundle"] == NEW_SHA
+
+    other = "c" * 40
+    assert run_updater(root, "apply", "--bundle", other, "--skip-rebuild",
+                       "--skip-restart").returncode == 3
+    assert refusal(root)["bundle"] == other
+    assert "no manifest" in refusal(root)["reason"]
+
+
+def test_a_busy_refusal_is_recorded_and_never_erases_an_interrupted_apply(tmp_path):
+    """The one refusal that must NOT own `phase`.
+
+    `phase: applying` plus a snapshot name is the resume marker: it is the only
+    thing that tells the next run a tree is half-written and which snapshot
+    puts it back. A busy refusal that stamped `phase: refused` over it would
+    turn a recoverable interrupted apply into a tree that is neither version
+    with nothing left saying so — a durability feature eating a durability
+    feature. So the refusal is recorded in `last_refusal` either way, and
+    `phase` moves only when it is not standing on a resume marker."""
+    root = make_install(tmp_path)
+    make_bundle(tmp_path, root, NEW_SHA, extra={
+        "cabinet/scripts/hello.sh": "echo hello v2\n",
+        "cabinet/docs/readme.md": "readme v2\n",
+        "framework-note.txt": "note v2\n",
+    })
+    killed = run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                         "--skip-restart",
+                         env_extra={"CABINET_UPDATE_TEST_KILL_AFTER": "1"})
+    assert killed.returncode != 0
+    assert state(root)["phase"] == "applying"
+    snapshot_name = state(root)["snapshot"]
+    assert snapshot_name
+
+    holder = open(root / ".updates" / ".lock", "a+")
+    fcntl.flock(holder.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    try:
+        busy = run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                           "--skip-restart", "--from", "web", timeout=60)
+        assert busy.returncode == 4, (busy.returncode, busy.stderr)
+    finally:
+        fcntl.flock(holder.fileno(), fcntl.LOCK_UN)
+        holder.close()
+
+    doc = state(root)
+    assert doc["phase"] == "applying", doc
+    assert doc["snapshot"] == snapshot_name
+    # A5.17.1, and the reversal of A5.15's letter this round carried out: a
+    # timing note lands in `last_busy` and NOWHERE else. It is not a verdict on
+    # any bundle's bytes, so it never occupies the verdict store, never touches
+    # the legacy mirror and never moves the phase. Round 5 measured the cost of
+    # the other reading: this record, written by a rollback that lost the lock,
+    # blanked a constitutional verdict on the bundle in the inbox.
+    assert doc["last_busy"]["bundle"] == NEW_SHA, doc
+    assert doc["last_busy"]["door"] == "web", doc
+    assert "last_refusal" not in doc, doc
+    assert not (root / ".updates" / "refusals").exists(), \
+        "a timing note wrote a verdict marker"
+
+    # And the resume still works, which is the property the refusal record was
+    # not allowed to cost.
+    again = run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild", "--skip-restart")
+    assert again.returncode == 0, again.stderr
+    assert "restoring" in again.stderr
+    assert installed_sha(root) == NEW_SHA
+
+
+def test_the_refusal_record_outlives_the_next_state_write(tmp_path):
+    """A refused bundle must never read as "ready" again — including after some
+    OTHER bundle applied cleanly in between.
+
+    Every other write to the state file replaces the whole document, so without
+    an explicit carry-forward the record of a refusal lasts exactly until the
+    next thing happens, and the card offers the refused bundle again."""
+    root = make_install(tmp_path)
+    refused_sha = "c" * 40
+    assert run_updater(root, "apply", "--bundle", refused_sha, "--skip-rebuild",
+                       "--skip-restart").returncode == 3
+    assert refusal(root)["bundle"] == refused_sha
+
+    assert update_bundle.read_refusal_marker(root, refused_sha), "no marker was written"
+
+    make_bundle(tmp_path, root, NEW_SHA, extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
+    assert run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                       "--skip-restart").returncode == 0
+    doc = state(root)
+    assert doc["phase"] == "applied"
+    # The legacy mirror is still carried (CARRIED_STATE_FIELDS), and the
+    # DURABLE record — the marker for the sha that was refused — is untouched
+    # by an apply that never named it (A5.17.2).
+    assert doc["last_refusal"]["bundle"] == refused_sha, doc
+    marker = update_bundle.read_refusal_marker(root, refused_sha)
+    assert marker and marker["bundle"] == refused_sha, marker
+    # So the verdict still stands ON THAT BUNDLE: offer those bytes again and
+    # the card withdraws Apply exactly as it did the first time.
+    record, source = update_bundle.resolve_last_refusal(root, waiting_sha=refused_sha)
+    assert record and record["bundle"] == refused_sha, (record, source)
+    # And `status --json` says nothing, because nothing is waiting and an apply
+    # has happened since — a refusal is still TRUE after the next thing
+    # happens; what it stops being is the NEWS (A5.17.6, round 3's rule).
+    assert status_json(root)["last_refusal"] is None
+
+
+def test_without_the_refusal_record_the_status_is_silent(tmp_path):
+    """The INVERTED arm for this whole section.
+
+    Run a MUTATED copy of the updater with the refusal record stripped and
+    watch `status --json` go back to what the box measured on 2026-09-08:
+    a refused bundle, and nothing on any surface that says so. Without this the
+    arms above would pass over a script that recorded the refusal somewhere
+    nobody reads."""
+    root = make_install(tmp_path)
+    make_bundle(tmp_path, root, NEW_SHA,
+                extra={"cabinet/scripts/hello.sh": "echo hello v2\n"}, corrupt=True)
+
+    text = _UPDATER.read_text()
+    marker = '  record_refusal "$to_sha" "$reason" "$locked"'
+    assert marker in text, "the refusal record moved; this inverted arm must be re-aimed"
+    mutated = root / "cabinet" / "scripts" / "mutated-update.sh"
+    mutated.write_text(text.replace(marker, "  :", 1), encoding="utf-8")
+
+    assert run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                       "--skip-restart", script=mutated).returncode == 3
+    assert state(root) == {}
+    report = status_json(root)
+    assert report["phase"] == "idle"
+    assert report["last_refusal"] is None
+
+
+# ===========================================================================
+# 13. A5.16 — the record survives an emitter older than the update path
+#
+# Measured on the same run: the INSTALLED emitter predates the update path and
+# raised `ValueError: Unknown event type: cabinet_update_refused`, so the
+# refusal reached no ledger at all. The same is true of `cabinet_update_applied`
+# on the FIRST successful apply of ANY pre-update-path install — the event that
+# announces the update arrives only WITH the update. A bootstrap ordering hole,
+# and the honest fix is not to weaken the emitter but to hold the record until
+# an emitter that knows the type is in place.
+# ===========================================================================
+
+def deferred_events(install_root: Path) -> list[dict]:
+    path = install_root / ".updates" / "events.jsonl"
+    if not path.is_file():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()]
+
+
+def test_a_refusal_is_still_recorded_when_the_installed_emitter_rejects_the_type(tmp_path):
+    """The measured defect, as an arm: an older emitter must cost the LEDGER
+    row, never the RECORD."""
+    root = make_install(tmp_path, emitter="old")
+    make_bundle(tmp_path, root, NEW_SHA,
+                extra={"cabinet/scripts/hello.sh": "echo hello v2\n"}, corrupt=True)
+
+    result = run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                         "--skip-restart", "--from", "web")
+    assert result.returncode == 3, (result.returncode, result.stderr)
+
+    held = deferred_events(root)
+    assert len(held) == 1, held
+    assert held[0]["event_type"] == "cabinet_update_refused"
+    assert held[0]["actor"] == "captain"
+    assert held[0]["payload"]["to_sha"] == NEW_SHA
+    assert held[0]["payload"]["door"] == "web"
+    assert held[0]["id"] and held[0]["ts"]
+
+    report = status_json(root)
+    assert report["event_fallback"] is True
+    assert report["last_refusal"]["bundle"] == NEW_SHA
+    # Loud, not silent: the operator's log says where the record went.
+    assert "events.jsonl" in result.stderr
+    # And the ledger the old emitter writes has no row, which is the fact the
+    # fallback exists to survive rather than to hide.
+    assert "cabinet_update_refused" not in event_types(root)
+
+
+def test_an_install_with_no_emitter_at_all_still_records(tmp_path):
+    """The other named arm of A5.16: ImportError, not only ValueError.
+
+    An install whose `framework/` never arrived is the degenerate end of the
+    same question, and "no module" must not be the one failure that loses the
+    record."""
+    root = make_install(tmp_path, emitter="old")
+    shutil.rmtree(root / "framework")
+    make_bundle(tmp_path, root, NEW_SHA,
+                extra={"cabinet/scripts/hello.sh": "echo hello v2\n"}, corrupt=True)
+    assert run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                       "--skip-restart").returncode == 3
+    held = deferred_events(root)
+    assert len(held) == 1 and held[0]["event_type"] == "cabinet_update_refused"
+    assert status_json(root)["event_fallback"] is True
+
+
+def test_with_a_current_emitter_the_row_lands_in_the_ledger_and_nothing_is_held(tmp_path):
+    """The inverse direction, on the REAL emitter: no fallback file at all.
+
+    A recorder that always wrote the sidecar would be green on the arm above
+    and would also have quietly stopped using the ledger."""
+    root = make_install(tmp_path)
+    make_bundle(tmp_path, root, NEW_SHA,
+                extra={"cabinet/scripts/hello.sh": "echo hello v2\n"}, corrupt=True)
+    assert run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                       "--skip-restart").returncode == 3
+
+    assert "cabinet_update_refused" in event_types(root)
+    assert not (root / ".updates" / "events.jsonl").exists()
+    assert status_json(root)["event_fallback"] is False
+
+
+def test_a_held_record_is_ingested_exactly_once_across_two_applies(tmp_path):
+    """The bootstrap hop, end to end.
+
+    Apply one runs against the OLD emitter and its `cabinet_update_applied` is
+    held. Apply two ships an emitter that knows the type, and the held record
+    is replayed into the ledger AFTER the new tree is in place — once, and only
+    once, however many applies follow."""
+    root = make_install(tmp_path, emitter="old")
+    make_bundle(tmp_path, root, NEW_SHA, extra={
+        "cabinet/scripts/hello.sh": "echo hello v2\n",
+        "framework/events/emitter.py": stub_emitter_source("old"),
+    })
+    assert run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                       "--skip-restart").returncode == 0
+    held = deferred_events(root)
+    assert [e["event_type"] for e in held] == ["cabinet_update_applied"], held
+    held_id = held[0]["id"]
+    assert "cabinet_update_applied" not in event_types(root)
+
+    third = "c" * 40
+    make_bundle(tmp_path, root, third, extra={
+        "cabinet/scripts/hello.sh": "echo hello v3\n",
+        "framework/events/emitter.py": stub_emitter_source("new"),
+    })
+    assert run_updater(root, "apply", "--bundle", third, "--skip-rebuild",
+                       "--skip-restart").returncode == 0
+
+    replayed = [e for e in events(root)
+                if (e.get("payload") or {}).get("deferred_record_id") == held_id]
+    assert len(replayed) == 1, replayed
+    assert replayed[0]["event_type"] == "cabinet_update_applied"
+    assert replayed[0]["payload"]["to_sha"] == NEW_SHA
+    # The held file is gone and the replay is kept where a person can find it.
+    assert not (root / ".updates" / "events.jsonl").exists()
+    assert list((root / ".updates").glob("events.ingested-*.jsonl"))
+    assert status_json(root)["event_fallback"] is False
+
+    fourth = "d" * 40
+    make_bundle(tmp_path, root, fourth, extra={
+        "cabinet/scripts/hello.sh": "echo hello v4\n",
+        "framework/events/emitter.py": stub_emitter_source("new"),
+    })
+    assert run_updater(root, "apply", "--bundle", fourth, "--skip-rebuild",
+                       "--skip-restart").returncode == 0
+    still = [e for e in events(root)
+             if (e.get("payload") or {}).get("deferred_record_id") == held_id]
+    assert len(still) == 1, still
+
+
+def test_the_ingest_is_idempotent_by_id_not_only_by_the_rename(tmp_path):
+    """Two halves, and the arm that says the id half is real.
+
+    The rename alone would replay everything a second time the moment the
+    pending file came back — a torn write, a partial ingest, an operator
+    copying the sidecar back. The processed-id marker is what makes "exactly
+    once" a property of the RECORD rather than of the filename."""
+    root = make_install(tmp_path, emitter="new")
+    bundle_py = root / "cabinet" / "scripts" / "lib" / "update_bundle.py"
+    event = {"id": "held-0001", "event_type": "cabinet_update_refused",
+             "actor": "system", "ts": "2026-09-08T20:58:00Z",
+             "payload": {"to_sha": NEW_SHA, "reason": "busy", "locked_paths": [],
+                         "door": "terminal"}}
+    pending = root / ".updates" / "events.jsonl"
+    pending.parent.mkdir(parents=True, exist_ok=True)
+    pending.write_text(json.dumps(event) + "\n", encoding="utf-8")
+
+    env = dict(os.environ, CABINET_EVENT_LOG_DIR=str(root / ".events"),
+               PYTHONDONTWRITEBYTECODE="1")
+    first = subprocess.run([_PY, str(bundle_py), "ingest-events", "--root", str(root)],
+                           capture_output=True, text=True, env=env, timeout=60)
+    assert first.returncode == 0, first.stderr
+    assert json.loads(first.stdout)["ingested"] == 1
+
+    # The sidecar comes back carrying the same record.
+    pending.write_text(json.dumps(event) + "\n", encoding="utf-8")
+    second = subprocess.run([_PY, str(bundle_py), "ingest-events", "--root", str(root)],
+                            capture_output=True, text=True, env=env, timeout=60)
+    assert second.returncode == 0, second.stderr
+    assert json.loads(second.stdout)["ingested"] == 0
+    assert json.loads(second.stdout)["already_recorded"] == 1
+
+    rows = [e for e in events(root)
+            if (e.get("payload") or {}).get("deferred_record_id") == "held-0001"]
+    assert len(rows) == 1, rows
+
+
+# ===========================================================================
+# 14. A5.15 — the durable record is not allowed to eat the durable record
+#
+# Found in review, round 1, driven against these bytes: `record_refusal` read
+# `state.json`, the updater it had lost the lock to finished and wrote
+# `applied`, and the refusal then wrote its own stale copy of the document back
+# — leaving `phase: applying` with a snapshot name over an apply that had
+# SUCCEEDED. The next apply or rollback reads exactly that as an interrupted
+# apply and restores the snapshot, silently undoing it. The `phase != applying`
+# guard the refusal carries is check-then-act on unsynchronised state, so it
+# cannot be the thing that closes this; the read and the write have to be one
+# indivisible step.
+#
+# The interleaving is DRIVEN, not waited for. The loser is told to stop between
+# its read and its write and to proceed as soon as the winner's write is
+# visible — which, unlocked, is immediately. Under a lock the winner cannot get
+# in at all, and the loser proceeds on its deadline instead, so both directions
+# are deterministic rather than timing-dependent.
+# ===========================================================================
+
+_LOSER_SRC = '''\
+import json, pathlib, sys, time
+
+root = pathlib.Path(sys.argv[1])
+entry = sys.argv[2]
+sys.path.insert(0, str(root / "cabinet" / "scripts" / "lib"))
+import update_bundle as ub
+
+if entry == "record_refusal":
+    # The ledger half is not part of the interleaving under test, and stubbing
+    # it leaves exactly ONE read-modify-write in this process to instrument.
+    ub.record_event = lambda *a, **k: {"recorded": "stub"}
+
+state_path = root / ".updates" / "state.json"
+signal = root / ".updates" / "LOSER-HAS-READ"
+original = ub.read_state
+
+
+def read_then_wait(install_root):
+    document = original(install_root)
+    signal.write_text("read\\n", encoding="utf-8")
+    deadline = time.time() + 6.0
+    while time.time() < deadline:
+        try:
+            if json.loads(state_path.read_text(encoding="utf-8"))["phase"] == "applied":
+                break
+        except Exception:
+            pass
+        time.sleep(0.02)
+    return document
+
+
+ub.read_state = read_then_wait
+if entry == "record_refusal":
+    ub.record_refusal(root, "b" * 40, "busy", [], "terminal", "system")
+else:
+    ub.record_event(root, "cabinet_update_refused", "system", {"reason": "busy"})
+'''
+
+
+@pytest.mark.parametrize("entry", ["record_refusal", "record_event"])
+def test_a_losing_updaters_state_write_cannot_revert_the_winners(tmp_path, entry):
+    """Both writers of `state.json`, against a winner that lands mid-window.
+
+    `record_refusal` and `record_event -> update_state` are the two
+    read-modify-writes a LOSER performs — by definition while the winner holds
+    the updater lock and is writing the same file. Whichever one is
+    instrumented, the document the winner wrote must survive, and the refusal
+    must still be recorded: losing either is a durable record destroyed by the
+    thing that was supposed to make records durable."""
+    root = make_install(tmp_path)
+    upd = root / ".updates"
+    upd.mkdir(parents=True, exist_ok=True)
+    (upd / "state.json").write_text(json.dumps({
+        "phase": "applying", "from_sha": OLD_SHA, "to_sha": NEW_SHA,
+        "snapshot": "20260908T195800Z-" + OLD_SHA[:8],
+        "started_at": "2026-09-08T19:58:00Z", "door": "web",
+    }), encoding="utf-8")
+
+    loser_py = tmp_path / "loser.py"
+    loser_py.write_text(_LOSER_SRC, encoding="utf-8")
+    env = dict(os.environ, CABINET_EVENT_LOG_DIR=str(root / ".events"),
+               PYTHONDONTWRITEBYTECODE="1")
+    loser = subprocess.Popen([_PY, str(loser_py), str(root), entry],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             text=True, env=env)
+    try:
+        deadline = time.time() + 30
+        while not (upd / "LOSER-HAS-READ").is_file():
+            assert time.time() < deadline, "the loser never reached its read"
+            assert loser.poll() is None, ("the loser died before its read: %s"
+                                          % loser.communicate()[1])
+            time.sleep(0.02)
+
+        # The winner finishes and writes the whole document, through the same
+        # seam cabinet-update.sh uses (`write-state`).
+        winner = subprocess.run(
+            [_PY, str(root / "cabinet" / "scripts" / "lib" / "update_bundle.py"),
+             "write-state", "--root", str(root), "--state", json.dumps({
+                 "phase": "applied", "from_sha": OLD_SHA, "to_sha": NEW_SHA,
+                 "changed": 3, "deleted": 0,
+                 "finished_at": "2026-09-08T19:58:03Z", "door": "web"})],
+            capture_output=True, text=True, env=env, timeout=60)
+        assert winner.returncode == 0, winner.stderr
+        out, err = loser.communicate(timeout=60)
+        assert loser.returncode == 0, err
+    finally:
+        if loser.poll() is None:
+            loser.kill()
+
+    final = state(root)
+    assert final.get("phase") == "applied", (
+        "the loser wrote its stale copy back over the winner: %s" % final)
+    assert "snapshot" not in final, (
+        "a completed apply is carrying a snapshot name again, which the next "
+        "run restores from: %s" % final)
+    if entry == "record_refusal":
+        # A5.17.1: the loser's record is a TIMING NOTE, so what must survive the
+        # winner's whole-document write is `last_busy`, not a verdict slot.
+        assert (final.get("last_busy") or {}).get("bundle") == NEW_SHA, final
+        assert "last_refusal" not in final, final
+
+
+# ===========================================================================
+# 15. A5.16 — a broken ledger is a FAULT, and never reads as version skew
+#
+# The recorder catches everything, deliberately: no failure of the ledger may
+# cost the record. Round 1 then reported every one of those failures, on all
+# four surfaces, as the benign bootstrap-ordering condition — "this install's
+# ledger does not know the event kind yet, and the next update files it". Two
+# very different facts wearing one sentence, and the reassuring one is the
+# wrong one: no update files a full disk. The `why` was computed and dropped.
+# ===========================================================================
+
+def test_a_broken_ledger_is_named_as_a_fault_on_every_surface(tmp_path):
+    """An emitter that raises OSError, not one of an older vintage.
+
+    The record still has to be held — that half is not in question — but the
+    operator has to be able to tell "wait for the next update" from "go and
+    look at the disk", and only one of those two is ever true."""
+    root = make_install(tmp_path, emitter="faulty")
+    make_bundle(tmp_path, root, NEW_SHA,
+                extra={"cabinet/scripts/hello.sh": "echo hello v2\n"}, corrupt=True)
+
+    result = run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                         "--skip-restart")
+    assert result.returncode == 3, (result.returncode, result.stderr)
+
+    # Unchanged: the record is kept, whatever went wrong.
+    held = deferred_events(root)
+    assert len(held) == 1 and held[0]["event_type"] == "cabinet_update_refused"
+
+    document = state(root)
+    assert "No space left on device" in (document.get("ledger_error") or ""), document
+    report = status_json(root)
+    assert report["event_fallback"] is True
+    assert "No space left on device" in (report.get("ledger_error") or ""), report
+
+    # The operator's log, which is the only surface a terminal apply has.
+    assert "ledger fault" in result.stderr.lower(), result.stderr
+    assert "No space left on device" in result.stderr, result.stderr
+    assert "does not know the event kind yet" not in result.stderr, result.stderr
+
+    human = run_updater(root, "status")
+    assert human.returncode == 0, human.stderr
+    assert "ledger fault" in human.stdout, human.stdout
+    assert "No space left on device" in human.stdout, human.stdout
+
+
+def test_version_skew_is_still_reported_as_version_skew(tmp_path):
+    """The inverse arm, and the one that keeps the fix from being a relabel.
+
+    A fault field set on every fallback would be green above and would have
+    turned the ordinary, self-healing bootstrap case into an alarm nobody can
+    act on."""
+    root = make_install(tmp_path, emitter="old")
+    make_bundle(tmp_path, root, NEW_SHA,
+                extra={"cabinet/scripts/hello.sh": "echo hello v2\n"}, corrupt=True)
+
+    result = run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                         "--skip-restart")
+    assert result.returncode == 3, (result.returncode, result.stderr)
+    assert len(deferred_events(root)) == 1
+
+    assert (state(root).get("ledger_error") or "") == "", state(root)
+    assert (status_json(root).get("ledger_error") or "") == ""
+    assert "does not know the event kind yet" in result.stderr, result.stderr
+    assert "ledger fault" not in result.stderr.lower(), result.stderr
+    # The reason travels even when it is only skew: "which type, on which
+    # install" is the first question anyone asks about a held record.
+    assert "Unknown event type" in result.stderr, result.stderr
+
+
+def test_a_ledger_that_starts_working_clears_the_fault(tmp_path):
+    """The field is a fact about the last attempt, not a sticky alarm.
+
+    A fault that outlived the fault would put "go and look at the disk" on the
+    card for ever, which is the same defect as the wrong label — one surface
+    saying something the box can no longer measure."""
+    root = make_install(tmp_path, emitter="faulty")
+    make_bundle(tmp_path, root, NEW_SHA,
+                extra={"cabinet/scripts/hello.sh": "echo hello v2\n"}, corrupt=True)
+    assert run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                       "--skip-restart").returncode == 3
+    assert "No space left on device" in (state(root).get("ledger_error") or "")
+
+    install_stub_emitter(root, "new")
+    second = "c" * 40
+    make_bundle(tmp_path, root, second,
+                extra={"cabinet/scripts/hello.sh": "echo hello v3\n"}, corrupt=True)
+    assert run_updater(root, "apply", "--bundle", second, "--skip-rebuild",
+                       "--skip-restart").returncode == 3
+    assert (state(root).get("ledger_error") or "") == "", state(root)
+    assert "cabinet_update_refused" in event_types(root)
+
+
+# ===========================================================================
+# 16. A5.16 — the ingest window: a record appended WHILE the replay runs
+#
+# Found in review, round 1. The replay read `events.jsonl`, emitted every row
+# in it, and renamed the file at the end — so a fallback append that landed
+# between the read and the rename was retired into `events.ingested-*.jsonl`
+# having never been replayed, and nothing ever reads that file again. Narrow
+# (it needs a concurrent hold inside the window) and silent, which is the
+# combination this unit exists to remove: the one guarantee it makes is that
+# no record is ever lost.
+# ===========================================================================
+
+_MIDINGEST_SRC = '''\
+import json, pathlib, sys
+
+root = pathlib.Path(sys.argv[1])
+sys.path.insert(0, str(root / "cabinet" / "scripts" / "lib"))
+import update_bundle as ub
+
+LATE = {"id": "held-late", "event_type": "cabinet_update_refused",
+        "actor": "system", "ts": "2026-09-09T00:00:00Z",
+        "payload": {"to_sha": "c" * 40, "reason": "busy", "locked_paths": [],
+                    "door": "terminal"}}
+
+original = ub._installed_emit
+
+
+def emit_and_append(install_root):
+    """The emitter, plus one concurrent fallback append on the first row.
+
+    This is the window: another updater refusing while the replay is running
+    holds its record through `_append_deferred`, which is an O_APPEND write to
+    whatever `events.jsonl` is at that moment."""
+    emit = original(install_root)
+    appended = []
+
+    def wrapper(event_type, actor, payload=None):
+        if not appended:
+            appended.append(True)
+            ub._append_deferred(install_root, LATE)
+        return emit(event_type, actor, payload)
+
+    return wrapper
+
+
+ub._installed_emit = emit_and_append
+print(json.dumps(ub.ingest_deferred_events(root)))
+'''
+
+
+def test_a_record_appended_during_the_ingest_is_not_swept_away_unreplayed(tmp_path):
+    """The record held mid-replay still reaches the ledger, on the next pass."""
+    root = make_install(tmp_path, emitter="new")
+    bundle_py = root / "cabinet" / "scripts" / "lib" / "update_bundle.py"
+    first = {"id": "held-0001", "event_type": "cabinet_update_refused",
+             "actor": "system", "ts": "2026-09-08T20:58:00Z",
+             "payload": {"to_sha": NEW_SHA, "reason": "busy", "locked_paths": [],
+                         "door": "terminal"}}
+    pending = root / ".updates" / "events.jsonl"
+    pending.parent.mkdir(parents=True, exist_ok=True)
+    pending.write_text(json.dumps(first) + "\n", encoding="utf-8")
+
+    driver = tmp_path / "midingest.py"
+    driver.write_text(_MIDINGEST_SRC, encoding="utf-8")
+    env = dict(os.environ, CABINET_EVENT_LOG_DIR=str(root / ".events"),
+               PYTHONDONTWRITEBYTECODE="1")
+    run = subprocess.run([_PY, str(driver), str(root)], capture_output=True,
+                         text=True, env=env, timeout=60)
+    assert run.returncode == 0, run.stderr
+    assert json.loads(run.stdout)["ingested"] == 1, run.stdout
+
+    # The record that arrived mid-replay is still HELD, and the state file
+    # still says so — an ingest that ends with a sidecar on disk has not
+    # cleared the fallback.
+    assert [row["id"] for row in deferred_events(root)] == ["held-late"], \
+        "the mid-ingest record was swept into the retired file, unreplayed"
+    assert status_json(root)["event_fallback"] is True
+
+    second = subprocess.run([_PY, str(bundle_py), "ingest-events", "--root", str(root)],
+                            capture_output=True, text=True, env=env, timeout=60)
+    assert second.returncode == 0, second.stderr
+    assert json.loads(second.stdout)["ingested"] == 1, second.stdout
+
+    replayed = [e for e in events(root)
+                if (e.get("payload") or {}).get("deferred_record_id") == "held-late"]
+    assert len(replayed) == 1, replayed
+    # And the first record is still exactly once, not once per pass.
+    once = [e for e in events(root)
+            if (e.get("payload") or {}).get("deferred_record_id") == "held-0001"]
+    assert len(once) == 1, once
+    assert status_json(root)["event_fallback"] is False
+
+
+# ===========================================================================
+# `status --json` IS THE READER OF BOTH REFUSAL CHANNELS (round-4 must-fix)
+#
+# A refusal is written down twice, by one call, in one order: the state file
+# and the ledger receipt. Until 2026-09-09 `status --json` read only the first,
+# and the home card — whose ONLY input is this report — therefore could not see
+# a refusal that reached only the second. `_update_state` swallows every
+# exception, so an absent or unreadable `state.json` beside a perfectly good
+# ledger left the card offering Apply on a bundle the box had already turned
+# down for constitutional paths: an Apply button that fails identically every
+# tap, with nothing anywhere saying why, which is A5.15's own rationale.
+#
+# So the resolution lives HERE, once, and every surface consumes its result:
+# `last_refusal` is the state file's record if it has one, else the ledger's
+# CURRENT refusal receipt, and `last_refusal_source` says which. Currency on
+# the receipt channel is the same idea as `phase: refused` on the state
+# channel — a refusal is the news until something else happens to that bundle.
+# ===========================================================================
+
+def _refuse_locked(tmp_path: Path, root: Path, sha: str = NEW_SHA) -> None:
+    """Drive a REAL constitutional refusal on this install."""
+    tree = make_bundle(tmp_path, root, sha,
+                       extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
+    (tree / "cabinet/scripts/germline-lock.sh").write_text(
+        _LOCK_SH.read_text() + "\n# widened\n", encoding="utf-8")
+    make_bundle_refresh(tmp_path, root, sha, tree)
+    result = run_updater(root, "apply", "--bundle", sha, "--skip-rebuild",
+                         "--skip-restart", "--from", "web")
+    assert result.returncode == 3, (result.returncode, result.stderr)
+
+
+def _lose_the_state_channel(root: Path) -> None:
+    """Everything this box wrote down about a refusal EXCEPT the ledger receipt.
+
+    Since A5.17 the state channel is two things — the per-bundle marker and the
+    legacy `last_refusal` mirror — so deleting `state.json` alone no longer
+    produces a ledger-only refusal: the marker survives, which is the whole
+    point of it. This is the shape an install gets when the marker write is the
+    half that failed, and the shape every install cut before this round is in
+    for the refusals it recorded through the ledger alone."""
+    shutil.rmtree(root / ".updates" / "refusals", ignore_errors=True)
+    (root / ".updates" / "state.json").unlink(missing_ok=True)
+
+
+def test_a_refusal_that_reached_only_the_ledger_is_still_the_last_refusal(tmp_path):
+    """The card's input, on the state the card could not see.
+
+    The refusal is real, the receipt is real, and `state.json` is gone — the
+    shape any install gets when the state write is the half that failed, and
+    the shape every install cut before this branch is in for the refusals it
+    recorded through the ledger alone."""
+    root = make_install(tmp_path)
+    _refuse_locked(tmp_path, root)
+    _lose_the_state_channel(root)
+
+    report = status_json(root)
+    assert report["last_refusal"], report
+    assert report["last_refusal"]["bundle"] == NEW_SHA, report["last_refusal"]
+    assert "cabinet/scripts/germline-lock.sh" in report["last_refusal"]["paths"]
+    assert report["last_refusal_source"] == "receipt", report["last_refusal_source"]
+    # The card withdraws Apply on exactly this coincidence: the refusal is
+    # about the bundle being offered, and the reason is about the bytes.
+    assert report["latest"]["sha"] == report["last_refusal"]["bundle"]
+    assert report["last_refusal"]["reason"] != "busy"
+
+
+def test_an_unreadable_state_file_does_not_lose_the_refusal_either(tmp_path):
+    """Truncated rather than absent — the other half of the same silence."""
+    root = make_install(tmp_path)
+    _refuse_locked(tmp_path, root)
+    _lose_the_state_channel(root)
+    (root / ".updates" / "state.json").write_text("{ torn", encoding="utf-8")
+
+    report = status_json(root)
+    assert report["last_refusal_source"] == "receipt", report
+    assert report["last_refusal"]["bundle"] == NEW_SHA
+
+
+def test_the_state_file_is_the_source_whenever_it_has_a_refusal(tmp_path):
+    """The inverse, so the fallback cannot become the channel.
+
+    Both are written by one call, so they normally agree; the state file is
+    this box's record of itself and stays the one that is resolved."""
+    root = make_install(tmp_path)
+    _refuse_locked(tmp_path, root)
+    report = status_json(root)
+    assert report["last_refusal_source"] == "state", report
+    assert report["last_refusal"]["bundle"] == NEW_SHA
+
+
+def test_a_receipt_refusal_an_apply_overtook_is_not_resolved(tmp_path):
+    """Currency, on the receipt channel.
+
+    `phase: refused` is how the state file says the refusal is still the last
+    thing that happened. A receipt says it by being the newest receipt about
+    that bundle: a later apply of the same bundle has overtaken it exactly as
+    a later phase does, and a refusal that keeps speaking after the thing it
+    was about succeeded is the round-3 defect on the other channel."""
+    root = make_install(tmp_path)
+    _refuse_locked(tmp_path, root)
+    _lose_the_state_channel(root)
+    subprocess.run(
+        [_PY, str(_BUNDLE_PY), "record-event", "--root", str(root),
+         "--type", "cabinet_update_applied", "--actor", "system",
+         # STRICTLY newer, stated rather than raced (A5.17.5): the updater
+         # stamps whole seconds, so a refusal and an apply inside the same one
+         # are a TIE, and a tie keeps the refusal. An arm that depended on the
+         # clock ticking between two subprocesses would pass or fail by speed.
+         "--payload", json.dumps({"from_sha": OLD_SHA, "to_sha": NEW_SHA,
+                                  "changed": 1, "deleted": 0, "door": "web",
+                                  "recorded_at": "2036-01-01T00:00:00Z"})],
+        check=True, capture_output=True, text=True,
+        env=dict(os.environ, CABINET_EVENT_LOG_DIR=str(root / ".events"),
+                 PYTHONDONTWRITEBYTECODE="1"),
+    )
+    (root / ".updates" / "state.json").unlink(missing_ok=True)
+
+    report = status_json(root)
+    assert report["last_refusal"] is None, report["last_refusal"]
+    assert report["last_refusal_source"] == "", report["last_refusal_source"]
+
+
+def test_a_state_write_that_fails_is_named_rather_than_swallowed(tmp_path):
+    """A5.15/A5.16 symmetry: `ledger_error` names a ledger that failed, and
+    nothing named a STATE FILE that failed — the very failure that produces a
+    ledger-only refusal. `record_refusal` returns `state_error` now, and the
+    updater logs it, so the missing half of the record says it is missing."""
+    root = make_install(tmp_path)
+    upd = root / ".updates"
+    upd.mkdir(parents=True, exist_ok=True)
+    # A directory where the state file goes: every write to it raises, and the
+    # refusal has nowhere durable to land but the ledger.
+    (upd / "state.json").mkdir()
+
+    out = subprocess.run(
+        [_PY, str(_BUNDLE_PY), "record-refusal", "--root", str(root),
+         "--bundle", NEW_SHA, "--reason", "busy", "--paths", "[]",
+         "--door", "web", "--actor", "system"],
+        capture_output=True, text=True,
+        env=dict(os.environ, CABINET_EVENT_LOG_DIR=str(root / ".events"),
+                 PYTHONDONTWRITEBYTECODE="1"),
+    )
+    assert out.returncode == 0, (out.returncode, out.stderr)
+    doc = json.loads(out.stdout)
+    assert doc["state_error"], doc
+    # The record itself was not lost: the ledger has it.
+    assert "cabinet_update_refused" in event_types(root)
+
+
+# ===========================================================================
+# 15. A5.17 — THE CURRENT REFUSAL OF A BUNDLE, PER BUNDLE, ON EVERY CHANNEL
+#
+# The round-5 must-fix. `status --json` resolved the newest refusal receipt in
+# the window GLOBALLY: if that record named another bundle, or no bundle at
+# all, the rest of the channel was thrown away. `refuse_busy` writes exactly
+# such a record on every lock contention — `record_refusal "" busy` when a
+# rollback loses the lock, `record_refusal <other> busy` when an apply does —
+# so a constitutional verdict on the bundle sitting in the inbox was blanked by
+# a note about a moment, and BOTH surfaces then said "an update is ready to
+# take — tap Apply" over bytes this box had already turned down. Round 4 was
+# card-wrong and briefing-right; that was both wrong, in agreement.
+#
+# A5.17 is the ruling. A refusal is a fact about ONE sha, in one of two classes
+# (a VERDICT about the bytes, a TIMING NOTE about a moment); a verdict lives in
+# its own marker file so a whole-document state replace by any writer cannot
+# lose it; currency is per bundle, ordered by each record's OWN timestamp; and
+# both surfaces consume ONE resolved answer about the bundle that is waiting.
+# ===========================================================================
+
+ORACLE_FIXTURES = (_REPO_ROOT / "framework" / "frontdoor" / "tests"
+                   / "update_surface_oracle.json")
+ORACLE_ROWS = 5250
+
+
+def _oracle_doc() -> dict:
+    """The one table. A FileNotFoundError here is the right failure: a fixture
+    that went missing must FAIL this suite, never skip it."""
+    return json.loads(ORACLE_FIXTURES.read_text(encoding="utf-8"))
+
+
+def _oracle_root(tmp_path: Path, doc: dict, row: dict, index: int) -> Path:
+    """One row on disk — its state document, its marker and its ledger."""
+    axes = row["axes"]
+    root = tmp_path / ("row%05d" % index)
+    (root / ".updates" / "inbox").mkdir(parents=True)
+    (root / "egg-manifest.json").write_text(
+        json.dumps({"source_commit": doc["shas"]["installed"]}), encoding="utf-8")
+    state = dict(doc["phase_state"][axes["phase"]])
+    if axes["state"] in doc["legacy"]:
+        state["last_refusal"] = dict(doc["legacy"][axes["state"]])
+    if axes["ledger_error"]:
+        state["ledger_error"] = doc["ledger_error_text"]
+    if state:
+        (root / ".updates" / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    marker = doc["markers"].get(axes["state"])
+    if marker:
+        path = root / ".updates" / "refusals" / (marker["bundle"] + ".json")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(marker), encoding="utf-8")
+    return root
+
+
+def test_the_resolver_answers_every_state_the_way_the_oracle_says(tmp_path,
+                                                                  monkeypatch):
+    """THE RESOLVER THAT FEEDS THE CARD, held to the table — all 5250 rows.
+
+    The round-5 review named this gap precisely: the BRIEFING's resolver was
+    pinned to the oracle and `update_bundle.resolve_update_surface`, which is
+    what `cabinet-update.sh status --json` reports and therefore the card's
+    whole input, was pinned only by hand-written arms. Both twins are now
+    driven against the same declaration, independently — never against each
+    other, which would let them agree by construction.
+
+    Real files and a real ledger per row: the state document, the marker file
+    and the receipts are written to disk and the resolver reads them the way it
+    reads an install."""
+    doc = _oracle_doc()
+    rows = doc["rows"]
+    assert len(rows) == ORACLE_ROWS, len(rows)
+    from framework.events.emitter import emit
+
+    wrong = []
+    for index, row in enumerate(rows):
+        log_dir = tmp_path / ("ledger%05d" % index)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(log_dir))
+        axes = row["axes"]
+        for seed in (doc["ledger_seeds"][axes["ledger"]]
+                     + doc["other_seeds"][axes["other"]]):
+            emit(seed["event_type"], "system", seed["payload"])
+        root = _oracle_root(tmp_path, doc, row, index)
+        waiting = (doc["waiting_bundles"].get(axes["waiting"]) or {}).get("sha", "")
+        got = update_bundle.resolve_update_surface(root, waiting_sha=waiting)
+        trio = {"last_refusal": got["last_refusal"], "source": got["last_refusal_source"],
+                "waiting_rollback": got["waiting_rollback"]}
+        if trio != row["resolved"]:
+            wrong.append("%s:\n    got  %s\n    want %s" % (
+                row["id"], json.dumps(trio, sort_keys=True),
+                json.dumps(row["resolved"], sort_keys=True)))
+    assert not wrong, "%d of %d resolutions are not what the contract says:\n%s" % (
+        len(wrong), len(rows), "\n".join(wrong[:10]))
+
+
+def test_the_resolver_never_writes(tmp_path, monkeypatch):
+    """A5.17.6: `status --json` is a report. A report that changed the thing it
+    reports on would make every surface a writer — and the surface most likely
+    to be asked twice in a second is a home page."""
+    doc = _oracle_doc()
+    monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(tmp_path / "events"))
+    (tmp_path / "events").mkdir()
+    row = next(r for r in doc["rows"]
+               if r["id"] == "refused/same/marker-locked/V-busy/busy-empty/fault")
+    root = _oracle_root(tmp_path, doc, row, 0)
+    before = {path: path.read_bytes()
+              for path in sorted((root / ".updates").rglob("*")) if path.is_file()}
+    assert before, "the fixture wrote nothing to compare"
+    for _ in range(3):
+        update_bundle.resolve_update_surface(root, waiting_sha="b" * 40)
+    after = {path: path.read_bytes()
+             for path in sorted((root / ".updates").rglob("*")) if path.is_file()}
+    assert after == before, "the resolver wrote to the install it was asked about"
+
+
+# ---------------------------------------------------------------------------
+# THE TWO RACES THE ROUND-5 REVIEW MEASURED, end to end through the REAL
+# updater, the REAL recorder and the REAL `status --json`, and then through the
+# REAL briefing on the same install root.
+#
+# e1: a locked-path refusal of the waiting bundle, then a ROLLBACK that loses
+#     the lock — `refuse_busy ""`, a record naming no bundle at all.
+# e2: the same refusal, then an APPLY of another bundle that loses the lock —
+#     `refuse_busy <other>`, a record about a bundle nobody is looking at.
+#
+# At c0a92731 both left `status --json` reporting no refusal (e1) or a busy
+# note about the other bundle (e2), and both surfaces said "ready to take".
+# ---------------------------------------------------------------------------
+
+OTHER_SHA = "e" * 40
+
+
+def _hold_the_lock(root: Path):
+    handle = open(root / ".updates" / ".lock", "a+")
+    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    return handle
+
+
+def _briefing_line(root: Path) -> str:
+    from framework.frontdoor import run_briefing
+    return run_briefing._update_notice(str(root))
+
+
+def _refuse_then_busy(tmp_path: Path, root: Path, *, command: str, bundle: str):
+    """The real refusal, then a real lock contention on the door named."""
+    _refuse_locked(tmp_path, root)
+    holder = _hold_the_lock(root)
+    try:
+        argv = (["rollback"] if command == "rollback"
+                else ["apply", "--bundle", bundle])
+        busy = run_updater(root, *argv, "--skip-restart", "--from", "web", timeout=60)
+        assert busy.returncode == 4, (busy.returncode, busy.stderr)
+    finally:
+        fcntl.flock(holder.fileno(), fcntl.LOCK_UN)
+        holder.close()
+
+
+def _assert_the_verdict_still_speaks(root: Path):
+    report = status_json(root)
+    assert report["last_refusal"], report
+    assert report["last_refusal"]["bundle"] == NEW_SHA, report["last_refusal"]
+    assert report["last_refusal"]["paths"], report["last_refusal"]
+    assert report["last_refusal_source"] in ("state", "receipt"), report
+    assert report["latest"]["sha"] == NEW_SHA
+    # The busy note is carried, and it is not the answer.
+    assert report["last_busy"], report
+    # The card's whole input says the same thing the briefing says.
+    line = _briefing_line(root)
+    assert line.startswith("Update refused"), line
+    assert "needs the Captain" in line, line
+    return report
+
+
+def test_e1_a_rollback_that_lost_the_lock_does_not_blank_the_verdict(tmp_path):
+    """e1 — the record that names NO bundle.
+
+    `cabinet-update.sh rollback` losing the lock calls `refuse_busy ""`, which
+    is a timing note about nothing at all. Under the resolver this replaces it
+    was the newest refusal receipt in the window, so it became the channel's
+    answer, and — naming no bundle — it resolved to nothing: `last_refusal:
+    null`, "Update ready — tap Apply", over a bundle refused for constitutional
+    paths, on both doors."""
+    root = make_install(tmp_path)
+    _refuse_then_busy(tmp_path, root, command="rollback", bundle="")
+    report = _assert_the_verdict_still_speaks(root)
+    # The note landed where a note goes, and nowhere else: it did not take the
+    # phase, and it did not touch the legacy mirror of the verdict.
+    doc = state(root)
+    assert doc["last_busy"]["bundle"] == "", doc["last_busy"]
+    assert doc["phase"] == "refused", doc
+    assert doc["last_refusal"]["bundle"] == NEW_SHA, doc["last_refusal"]
+    assert report["last_refusal_source"] == "state", report
+
+
+def test_e2_an_apply_of_another_bundle_that_lost_the_lock_does_not_blank_it(tmp_path):
+    """e2 — the record about ANOTHER bundle.
+
+    `apply --bundle <other>` losing the lock writes `busy` about that other
+    sha (the preparse runs before `--bundle` is even validated). The resolver
+    this replaces reported it as `last_refusal` with `source: state` — a note
+    about a bundle nobody is looking at, while the constitutional verdict on
+    the one in the inbox was discarded."""
+    root = make_install(tmp_path)
+    _refuse_then_busy(tmp_path, root, command="apply", bundle=OTHER_SHA)
+    report = _assert_the_verdict_still_speaks(root)
+    assert state(root)["last_busy"]["bundle"] == OTHER_SHA, state(root)["last_busy"]
+    assert report["last_refusal"]["bundle"] != OTHER_SHA
+
+
+def test_the_double_tap_on_one_bundle_keeps_its_verdict(tmp_path):
+    """A verdict on B, then a busy note about B — the double tap.
+
+    The Captain taps Apply, it is refused for constitutional paths, he taps
+    again while the first updater is still winding down. The second tap is a
+    lock contention about the SAME sha, and a timing note about B must not
+    clear the verdict on B: nothing has re-tested those bytes."""
+    root = make_install(tmp_path)
+    _refuse_then_busy(tmp_path, root, command="apply", bundle=NEW_SHA)
+    report = _assert_the_verdict_still_speaks(root)
+    assert state(root)["last_busy"]["bundle"] == NEW_SHA
+    assert report["last_refusal"]["paths"]
+
+
+@pytest.mark.parametrize("race,command,bundle,other_axis", [
+    ("e1", "rollback", "", "busy-empty"),
+    ("e2", "apply", OTHER_SHA, "busy-other"),
+    ("double-tap", "apply", NEW_SHA, "none"),
+])
+def test_the_races_land_on_the_oracle_row_the_card_is_held_to(
+        tmp_path, race, command, bundle, other_axis):
+    """THE WELD between the real updater and the card's half of the table.
+
+    The three arms above prove the REAL updater, the REAL `status --json` and
+    the REAL briefing. The card is a TypeScript reader and cannot be rendered
+    from here, so what closes the loop is IDENTITY: the document the real
+    updater leaves behind IS a row of `update_surface_oracle.json`, and that
+    row is the one `lib/updates.test.ts` drives `updateHeadline`,
+    `refusalToShow` and the Apply gate from over all 5250.
+
+    Without this the chain has a seam wide enough to hide exactly the round-5
+    defect: the resolver is pinned to the table, and the table is pinned to the
+    card, but nothing said the real races land on the row the other two are
+    arguing about. A table can be right about a state nobody is ever in.
+
+    Every axis of the row is CHECKED against the install rather than asserted
+    by name, because a hand-named row that does not match the install is a
+    sensor pointed at the wrong state — the failure class this whole unit keeps
+    finding."""
+    root = make_install(tmp_path)
+    _refuse_then_busy(tmp_path, root, command=command, bundle=bundle)
+    report = status_json(root)
+    doc = state(root)
+
+    # --- the axes, read off the install itself -----------------------------
+    # phase: the state document's own last event.
+    assert doc["phase"] == "refused", doc
+    # waiting: the bundle the surfaces are asked about is B.
+    assert report["latest"]["sha"] == NEW_SHA, report["latest"]
+    # state-about-B: a marker with paths. The legacy mirror is there too and
+    # names the same verdict (A5.17.2 keeps it), and it is NOT what answers:
+    # A5.17.5 admits the legacy record only where there is no marker store, so
+    # the row this install is on is the marker one.
+    marker_path = root / ".updates" / "refusals" / (NEW_SHA + ".json")
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    assert marker["bundle"] == NEW_SHA and marker["paths"], marker
+    assert doc["last_refusal"]["bundle"] == NEW_SHA, doc["last_refusal"]
+    # ledger-about-B: exactly one verdict, nothing after it about B.
+    about_b = [event for event in events(root)
+               if (event.get("payload") or {}).get("to_sha") == NEW_SHA
+               or (event.get("payload") or {}).get("from_sha") == NEW_SHA]
+    kinds = [event["event_type"] for event in about_b]
+    if other_axis == "none":
+        # The double tap's busy note is ABOUT B, so it sits in the sequence
+        # axis rather than the not-about-B one: V then busy(B).
+        assert kinds == ["cabinet_update_refused", "cabinet_update_refused"], kinds
+        assert (about_b[1]["payload"]["reason"] == "busy"), about_b[1]
+        ledger_axis = "V-busy"
+    else:
+        assert kinds == ["cabinet_update_refused"], kinds
+        ledger_axis = "V"
+    # newest-not-about-B: the timing note, naming no bundle or another one.
+    not_about_b = [event for event in events(root) if event not in about_b]
+    if other_axis == "none":
+        assert not not_about_b, not_about_b
+    else:
+        newest = not_about_b[-1]
+        assert newest["payload"]["reason"] == "busy", newest
+        assert newest["payload"]["to_sha"] == bundle, newest
+    # ledger_error: the ledger took every record.
+    assert not report.get("ledger_error"), report.get("ledger_error")
+
+    row_id = "refused/same/marker-locked/%s/%s/noledger" % (ledger_axis, other_axis)
+    rows = {row["id"]: row for row in _oracle_doc()["rows"]}
+    assert row_id in rows, row_id
+    row = rows[row_id]
+
+    # --- what the real document produced == what that row declares ---------
+    # Two literals are the install's own and not the table's: the locked path
+    # this fixture widens, and the second the refusal happened. Everything the
+    # surfaces turn on is compared.
+    resolved = report["last_refusal"]
+    want = row["resolved"]["last_refusal"]
+    assert resolved["bundle"] == want["bundle"], (resolved, want)
+    assert len(resolved["paths"]) == len(want["paths"]) == 1, (resolved, want)
+    assert resolved["reason"] and resolved["reason"] != "busy", resolved
+    assert report["last_refusal_source"] == row["resolved"]["source"], report
+    assert report.get("waiting_rollback") == row["resolved"]["waiting_rollback"]
+
+    # --- and that row is the one the card is held to ----------------------
+    sentence = ("Update refused \u2014 1 constitutional file differs; "
+                "needs the Captain (%s)" % NEW_SHA[:8])
+    assert row["expect"]["card"] == sentence, row["expect"]
+    assert row["expect"]["briefing"] == sentence, row["expect"]
+    assert row["expect"]["refusal_speaks"] is True, row["expect"]
+    assert row["expect"]["apply_live"] is False, row["expect"]
+    assert row["expect"]["last_refusal_source"] == report["last_refusal_source"]
+    # The briefing is a Python reader, so its half of the row can be run here
+    # rather than trusted: the same install, the same sentence.
+    assert _briefing_line(root) == sentence, _briefing_line(root)
+
+
+def test_a_marker_survives_a_whole_document_state_replace(tmp_path):
+    """WHY THE STORE IS A FILE PER BUNDLE AND NOT A FIELD (A5.17.2 / gate D1).
+
+    Every write to `state.json` replaces the whole document, and one of the
+    writers can be an OLDER updater copy that has never heard of the field —
+    the install carries the updater it was cut with, and an update is exactly
+    the moment two versions exist on one box. Emulated here by writing the
+    state document the way a pre-A5.17 updater does: a plain replace with no
+    carry at all. The legacy mirror goes, as it must; the verdict does not."""
+    root = make_install(tmp_path)
+    _refuse_locked(tmp_path, root)
+    assert (root / ".updates" / "refusals" / (NEW_SHA + ".json")).is_file()
+
+    (root / ".updates" / "state.json").write_text(
+        json.dumps({"phase": "idle", "note": "written by an older updater"}),
+        encoding="utf-8")
+    assert "last_refusal" not in state(root), state(root)
+
+    report = status_json(root)
+    assert report["last_refusal"]["bundle"] == NEW_SHA, report
+    assert report["last_refusal_source"] == "state", report
+    assert _briefing_line(root).startswith("Update refused")
+
+
+def test_the_legacy_state_record_is_read_where_there_is_no_marker_store(tmp_path):
+    """The other direction, and the reason the mirror is kept.
+
+    An install that refused something before this round has a `last_refusal`
+    and no `.updates/refusals/` at all. It is admitted — bundle non-empty,
+    reason a verdict — so nothing that was already known is lost by the change
+    of store. And it is admitted ONLY there: once a marker store exists,
+    `last_refusal` is the mirror of one of its files (A5.17.5)."""
+    root = make_install(tmp_path)
+    upd = root / ".updates"
+    upd.mkdir(parents=True, exist_ok=True)
+    upd.joinpath("state.json").write_text(json.dumps({
+        "phase": "refused", "bundle": NEW_SHA, "reason": "bundle changes locked "
+        "constitutional paths", "paths": ["cabinet/scripts/start-officer-mac.sh"],
+        "ts": "2026-09-08T18:58:00Z", "door": "web",
+        "last_refusal": {"bundle": NEW_SHA, "reason": "bundle changes locked "
+                         "constitutional paths",
+                         "paths": ["cabinet/scripts/start-officer-mac.sh"],
+                         "ts": "2026-09-08T18:58:00Z", "door": "web"}}),
+        encoding="utf-8")
+    assert not (upd / "refusals").exists()
+
+    report = status_json(root)
+    assert report["last_refusal"]["bundle"] == NEW_SHA, report
+    assert report["last_refusal_source"] == "state", report
+
+    # AND THE ADMISSION SWITCH, stated rather than left to be discovered: one
+    # marker about ANY bundle turns the legacy read off (A5.17.5's parenthesis
+    # — "legacy, WHEN NO refusals/ DIRECTORY EXISTS"), because from that point
+    # the mirror is a copy of a marker and adds nothing. Nothing is waiting
+    # here, so what answers instead is rule 6's newest standing verdict, which
+    # is the marker. The cost is real and is the contract's: on an install
+    # upgrading mid-refusal, the first verdict this updater writes retires the
+    # legacy record of any OTHER bundle.
+    marker = upd / "refusals" / (OTHER_SHA + ".json")
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({
+        "bundle": OTHER_SHA, "reason": "bundle changes locked constitutional paths",
+        "paths": ["cabinet/scripts/start-officer-mac.sh"],
+        "ts": "2026-09-09T10:00:00Z", "door": "web"}), encoding="utf-8")
+    after = status_json(root)
+    assert after["last_refusal"]["bundle"] == OTHER_SHA, after["last_refusal"]
+
+
+def test_two_verdicts_on_one_bundle_leave_the_newest_speaking(tmp_path):
+    """A5.17.5, and the gate's D3: newest wins, with no ranking among reasons.
+
+    A digest verdict recorded after a locked one supersedes it because the
+    bytes it judged are not the bytes on disk any more — the bundle was
+    replaced in the inbox. Ranking locked-paths above every other reason would
+    make "current" non-temporal, which is the one property the whole resolution
+    turns on."""
+    root = make_install(tmp_path)
+    _refuse_locked(tmp_path, root)
+    first = update_bundle.read_refusal_marker(root, NEW_SHA)
+    assert first["paths"], first
+
+    # The same bundle id, new bytes, a digest that no longer matches.
+    make_bundle(tmp_path, root, NEW_SHA,
+                extra={"cabinet/scripts/hello.sh": "echo hello v3\n"}, corrupt=True)
+    assert run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                       "--skip-restart").returncode == 3
+
+    report = status_json(root)
+    assert "digest" in report["last_refusal"]["reason"], report["last_refusal"]
+    assert report["last_refusal"]["paths"] == [], report["last_refusal"]
+    # A retryable verdict keeps the button — the next tap re-tests everything.
+    assert _briefing_line(root) == (
+        "Update refused — %s (%s)" % (report["last_refusal"]["reason"], NEW_SHA[:8]))
+
+
+def test_an_apply_in_the_same_second_does_not_supersede_the_verdict(tmp_path):
+    """A5.17.5's tie rule (gate D4): superseding takes a STRICTLY newer fact.
+
+    The updater stamps whole seconds. A relock, an apply and a verdict can land
+    inside one of them, and "the apply is newer, so the bundle is fine now" is
+    a conclusion drawn from a clock that cannot tell them apart. The refusal
+    stands: it is the answer that costs a retry rather than an unnoticed
+    application of bytes nothing re-tested."""
+    root = make_install(tmp_path)
+    upd = root / ".updates"
+    (upd / "refusals").mkdir(parents=True, exist_ok=True)
+    same_second = "2026-09-09T10:00:00Z"
+    (upd / "refusals" / (NEW_SHA + ".json")).write_text(json.dumps({
+        "bundle": NEW_SHA, "reason": "bundle changes locked constitutional paths",
+        "paths": ["cabinet/scripts/start-officer-mac.sh"], "ts": same_second,
+        "door": "web"}), encoding="utf-8")
+    upd.joinpath("state.json").write_text(json.dumps({
+        "phase": "applied", "from_sha": OLD_SHA, "to_sha": NEW_SHA, "changed": 1,
+        "finished_at": same_second}), encoding="utf-8")
+
+    record, source = update_bundle.resolve_last_refusal(
+        root, waiting_sha=NEW_SHA)
+    assert record and record["bundle"] == NEW_SHA, (record, source)
+    # One second later it IS superseded, so this is a ranking and not a mute.
+    upd.joinpath("state.json").write_text(json.dumps({
+        "phase": "applied", "from_sha": OLD_SHA, "to_sha": NEW_SHA, "changed": 1,
+        "finished_at": "2026-09-09T10:00:01Z"}), encoding="utf-8")
+    assert update_bundle.resolve_last_refusal(root, waiting_sha=NEW_SHA) == (None, "")
+
+
+def test_an_apply_and_a_rollback_drop_the_markers_of_the_shas_they_name(tmp_path):
+    """A5.17.2: the verdict is spent the moment the tree moves.
+
+    The Captain unlocks, applies and relocks; the bundle he refused is now the
+    bundle he is running. A marker that outlived it would withdraw Apply from
+    bytes that are already installed — round 1's defect, reappearing in the
+    durable store instead of in the phase."""
+    root = make_install(tmp_path)
+    refused_sha = "c" * 40
+    assert run_updater(root, "apply", "--bundle", refused_sha, "--skip-rebuild",
+                       "--skip-restart").returncode == 3
+    assert update_bundle.read_refusal_marker(root, refused_sha)
+
+    # A marker about a bundle the apply does NOT name stays put.
+    keep = update_bundle.refusal_marker_path(root, OTHER_SHA)
+    keep.parent.mkdir(parents=True, exist_ok=True)
+    keep.write_text(json.dumps({
+        "bundle": OTHER_SHA, "reason": "bundle changes locked constitutional paths",
+        "paths": ["cabinet/scripts/start-officer-mac.sh"],
+        "ts": "2026-09-09T10:00:00Z", "door": "web"}), encoding="utf-8")
+
+    make_bundle(tmp_path, root, refused_sha,
+                extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
+    assert run_updater(root, "apply", "--bundle", refused_sha, "--skip-rebuild",
+                       "--skip-restart").returncode == 0
+    assert update_bundle.read_refusal_marker(root, refused_sha) is None
+    assert update_bundle.read_refusal_marker(root, OTHER_SHA), \
+        "an apply dropped a marker about a bundle it never named"
+
+
+def test_the_marker_store_is_bounded_but_never_evicts_a_waiting_bundle(tmp_path):
+    """A5.17.2's other half. The store is bounded, and the bound may never
+    reach a sha that is still in the inbox: that is precisely the marker some
+    surface is about to ask for."""
+    root = make_install(tmp_path)
+    make_bundle(tmp_path, root, NEW_SHA,
+                extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
+    update_bundle.write_refusal_marker(root, {
+        "bundle": NEW_SHA, "reason": "bundle changes locked constitutional paths",
+        "paths": ["cabinet/scripts/start-officer-mac.sh"],
+        "ts": "2000-01-01T00:00:00Z", "door": "web"})
+    for index in range(update_bundle.MARKER_KEEP + 8):
+        update_bundle.write_refusal_marker(root, {
+            "bundle": "%040x" % index, "reason": "failed per-file digest verification",
+            "paths": [], "ts": "2026-09-09T10:%02d:00Z" % index, "door": "web"})
+    kept = {record["bundle"] for record in update_bundle.read_refusal_markers(root)}
+    assert len(kept) <= update_bundle.MARKER_KEEP + 1, len(kept)
+    assert NEW_SHA in kept, "the oldest marker was evicted while its bundle waited"
+
+
+def test_a_failed_marker_write_is_named_rather_than_swallowed(tmp_path):
+    """A5.17.2: the durable half that could not be written SAYS so.
+
+    `ledger_error` has named a ledger that would not take the record since
+    A5.16 and `state_error` a state file since round 5; the marker is the store
+    the resolution actually reads first, so a marker that cannot be written is
+    the one silence left. Not fatal — the receipt still lands — and not
+    raised, which would lose it."""
+    root = make_install(tmp_path)
+    (root / ".updates" / "refusals").mkdir(parents=True, exist_ok=True)
+    # A directory where the marker file goes: every write to it raises.
+    (root / ".updates" / "refusals" / (NEW_SHA + ".json")).mkdir()
+
+    out = subprocess.run(
+        [_PY, str(_BUNDLE_PY), "record-refusal", "--root", str(root),
+         "--bundle", NEW_SHA, "--reason", "bundle changes locked constitutional paths",
+         "--paths", json.dumps(["cabinet/scripts/start-officer-mac.sh"]),
+         "--door", "web", "--actor", "system"],
+        capture_output=True, text=True,
+        env=dict(os.environ, CABINET_EVENT_LOG_DIR=str(root / ".events"),
+                 PYTHONDONTWRITEBYTECODE="1"))
+    assert out.returncode == 0, (out.returncode, out.stderr)
+    doc = json.loads(out.stdout)
+    assert doc["state_error"], doc
+    assert "cabinet_update_refused" in event_types(root)
+    # And the refusal is still resolvable — from the channel that survived.
+    assert status_json(root)["state_error"], status_json(root)
