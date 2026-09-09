@@ -111,16 +111,42 @@ application is never a legal state.
 
 ### Every refusal is durable, and every surface reads it
 
-A refusal writes `state.json` — `{phase: "refused", bundle, reason, paths, ts,
-door}` — and keeps the same record under `last_refusal`, which `status --json`
-carries beside the phase:
+A refusal is written down TWICE, by one call, in one order: `state.json` —
+`{phase: "refused", bundle, reason, paths, ts, door}`, kept under
+`last_refusal` — and a `cabinet_update_refused` receipt in the ledger. Either
+half can be the only one that survives: the state write can fail (the updater
+logs `STATE WRITE FAILED` and the recorder returns `state_error`), the file can
+be truncated or removed, and an install whose emitter predates the update path
+refuses the event kind outright and holds the record in the sidecar instead.
+
+**`status --json` is the one reader of both channels.** It resolves ONE
+`last_refusal` — the state file's record if it has one, else the ledger's
+CURRENT refusal — and says which channel answered:
 
 ```json
 { "phase": "refused",
+  "last_refusal_source": "state",
   "last_refusal": { "bundle": "113b52c4…", "reason": "bundle 113b52c4… changes
     locked constitutional paths", "paths": ["cabinet/scripts/start-officer-mac.sh"],
     "ts": "2026-09-08T18:58:00Z", "door": "terminal" } }
 ```
+
+`last_refusal_source` is `state`, `receipt`, or empty when there is none, and
+`cabinet-update.sh status` prints *(from the ledger receipt; the state file
+carries no refusal)* beside the line when it is `receipt`. Nothing renders off
+it — it is there so a state file that has gone missing is a fact on the report
+rather than a silence. Currency on the receipt channel is the receipt spelling
+of `phase: refused`: the newest `cabinet_update_refused` receipt is the
+resolved one only while nothing has happened to that bundle since.
+
+Until 2026-09-09 this report read the state file alone while the briefing read
+both — and read the second one outside the four rules below. A `busy` refusal
+of the bundle still in the inbox gave the briefing *An update is waiting but
+was REFUSED: busy* while the card said *Update ready* with Apply live; a
+locked-path refusal that had reached only the ledger gave the briefing *REFUSED:
+it changes locked constitutional paths* while the card rendered Apply — the
+button that fails identically every tap, which is the whole reason a refusal is
+durable at all.
 
 The home card and the briefing line read that: *Update refused — 1
 constitutional file differs; needs the Captain*, with the files named on the
@@ -154,9 +180,13 @@ So there are four rules:
 4. something waiting, it speaks only about the same sha, and only when it is a
    verdict on those bytes rather than about timing.
 
-The card (`lib/updates.refusalToShow`) and the briefing line
-(`run_briefing._update_refusal_line`) are those same four rules written twice on
-purpose — two surfaces reading one state file must not be able to disagree.
+The rules run ONCE, on the ONE resolved record, whichever channel it came from
+— that is what round 5 changed. The card (`lib/updates.refusalToShow`) and the
+briefing line (`run_briefing._update_refusal_line`) are those same four rules
+written twice on purpose — two surfaces reading one record must not be able to
+disagree. The briefing still reads the ledger for `applied` and `rolled_back`
+receipts, which are not refusals and cannot contradict a live Apply button; a
+refusal reaches it only through the resolved record.
 Rule 2 was written on the card only until 2026-09-09, and the disagreement it
 let through was the ordinary retry: the card keeps Apply for a digest-mismatch,
 unreadable or busy refusal (a retry is a reasonable thing to do about all
@@ -172,12 +202,25 @@ somebody thought of. Two checked-in fixtures under
 `framework/frontdoor/tests/` are driven through BOTH readers, by
 `test_card_update_notice.py` and by `lib/updates.test.ts`:
 `update_surface_parity.json`, the argued cases with the exact wording each must
-produce, and `update_surface_oracle.json` — the WHOLE product of the five axes
-these readers branch on (phase × waiting × refusal × ledger fault × held
-record, 240 rows), each row carrying the headline kind each surface must land
-on and whether the refusal sub-surface speaks. A kind changed in either file
-reds both suites. Three rounds of hand-written arms each aimed at the state
-that already worked; a product does not have to be thought of.
+produce, and `update_surface_oracle.json` — the WHOLE product of the six axes
+these readers branch on (phase × waiting × refusal × ledger fault × held record
+× LEDGER RECEIPT, 1440 rows), each row carrying the headline kind each surface
+must land on, whether the refusal sub-surface speaks, and what the resolution
+must produce. A kind changed in either file reds both suites. Four rounds of
+hand-written arms each aimed at the state that already worked; a product does
+not have to be thought of. The ledger became the sixth axis when round 4 found
+the defect living exactly where the table did not look: all 240 rows had run on
+an empty ledger, so a claim that the product was whole was true of five axes
+and blind to the one a whole refusal channel lived on.
+
+The two surfaces differ on two states by SHAPE, both written per surface in
+that table rather than skipped: a ledger fault takes the briefing's one line
+and sits beside the card's headline, and a `cabinet_update_rolled_back` receipt
+about the bundle in the inbox takes the briefing's line (*An update to abc1234
+was rolled back … and is still in the inbox*) while the card says *Update
+ready* and keeps Apply — a rollback is not a refusal and retrying one is
+reasonable, exactly as the card keeps Apply for a digest mismatch. What never
+differs is whether the refusal speaks, which is what withdraws Apply.
 
 Two deliberate exceptions, both about not letting one durability feature eat
 another:

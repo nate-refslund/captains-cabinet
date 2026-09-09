@@ -2593,3 +2593,133 @@ def test_a_record_appended_during_the_ingest_is_not_swept_away_unreplayed(tmp_pa
             if (e.get("payload") or {}).get("deferred_record_id") == "held-0001"]
     assert len(once) == 1, once
     assert status_json(root)["event_fallback"] is False
+
+
+# ===========================================================================
+# `status --json` IS THE READER OF BOTH REFUSAL CHANNELS (round-4 must-fix)
+#
+# A refusal is written down twice, by one call, in one order: the state file
+# and the ledger receipt. Until 2026-09-09 `status --json` read only the first,
+# and the home card — whose ONLY input is this report — therefore could not see
+# a refusal that reached only the second. `_update_state` swallows every
+# exception, so an absent or unreadable `state.json` beside a perfectly good
+# ledger left the card offering Apply on a bundle the box had already turned
+# down for constitutional paths: an Apply button that fails identically every
+# tap, with nothing anywhere saying why, which is A5.15's own rationale.
+#
+# So the resolution lives HERE, once, and every surface consumes its result:
+# `last_refusal` is the state file's record if it has one, else the ledger's
+# CURRENT refusal receipt, and `last_refusal_source` says which. Currency on
+# the receipt channel is the same idea as `phase: refused` on the state
+# channel — a refusal is the news until something else happens to that bundle.
+# ===========================================================================
+
+def _refuse_locked(tmp_path: Path, root: Path, sha: str = NEW_SHA) -> None:
+    """Drive a REAL constitutional refusal on this install."""
+    tree = make_bundle(tmp_path, root, sha,
+                       extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
+    (tree / "cabinet/scripts/germline-lock.sh").write_text(
+        _LOCK_SH.read_text() + "\n# widened\n", encoding="utf-8")
+    make_bundle_refresh(tmp_path, root, sha, tree)
+    result = run_updater(root, "apply", "--bundle", sha, "--skip-rebuild",
+                         "--skip-restart", "--from", "web")
+    assert result.returncode == 3, (result.returncode, result.stderr)
+
+
+def test_a_refusal_that_reached_only_the_ledger_is_still_the_last_refusal(tmp_path):
+    """The card's input, on the state the card could not see.
+
+    The refusal is real, the receipt is real, and `state.json` is gone — the
+    shape any install gets when the state write is the half that failed, and
+    the shape every install cut before this branch is in for the refusals it
+    recorded through the ledger alone."""
+    root = make_install(tmp_path)
+    _refuse_locked(tmp_path, root)
+    (root / ".updates" / "state.json").unlink()
+
+    report = status_json(root)
+    assert report["last_refusal"], report
+    assert report["last_refusal"]["bundle"] == NEW_SHA, report["last_refusal"]
+    assert "cabinet/scripts/germline-lock.sh" in report["last_refusal"]["paths"]
+    assert report["last_refusal_source"] == "receipt", report["last_refusal_source"]
+    # The card withdraws Apply on exactly this coincidence: the refusal is
+    # about the bundle being offered, and the reason is about the bytes.
+    assert report["latest"]["sha"] == report["last_refusal"]["bundle"]
+    assert report["last_refusal"]["reason"] != "busy"
+
+
+def test_an_unreadable_state_file_does_not_lose_the_refusal_either(tmp_path):
+    """Truncated rather than absent — the other half of the same silence."""
+    root = make_install(tmp_path)
+    _refuse_locked(tmp_path, root)
+    (root / ".updates" / "state.json").write_text("{ torn", encoding="utf-8")
+
+    report = status_json(root)
+    assert report["last_refusal_source"] == "receipt", report
+    assert report["last_refusal"]["bundle"] == NEW_SHA
+
+
+def test_the_state_file_is_the_source_whenever_it_has_a_refusal(tmp_path):
+    """The inverse, so the fallback cannot become the channel.
+
+    Both are written by one call, so they normally agree; the state file is
+    this box's record of itself and stays the one that is resolved."""
+    root = make_install(tmp_path)
+    _refuse_locked(tmp_path, root)
+    report = status_json(root)
+    assert report["last_refusal_source"] == "state", report
+    assert report["last_refusal"]["bundle"] == NEW_SHA
+
+
+def test_a_receipt_refusal_an_apply_overtook_is_not_resolved(tmp_path):
+    """Currency, on the receipt channel.
+
+    `phase: refused` is how the state file says the refusal is still the last
+    thing that happened. A receipt says it by being the newest receipt about
+    that bundle: a later apply of the same bundle has overtaken it exactly as
+    a later phase does, and a refusal that keeps speaking after the thing it
+    was about succeeded is the round-3 defect on the other channel."""
+    root = make_install(tmp_path)
+    _refuse_locked(tmp_path, root)
+    (root / ".updates" / "state.json").unlink()
+    subprocess.run(
+        [_PY, str(_BUNDLE_PY), "record-event", "--root", str(root),
+         "--type", "cabinet_update_applied", "--actor", "system",
+         "--payload", json.dumps({"from_sha": OLD_SHA, "to_sha": NEW_SHA,
+                                  "changed": 1, "deleted": 0, "door": "web"})],
+        check=True, capture_output=True, text=True,
+        env=dict(os.environ, CABINET_EVENT_LOG_DIR=str(root / ".events"),
+                 PYTHONDONTWRITEBYTECODE="1"),
+    )
+    (root / ".updates" / "state.json").unlink(missing_ok=True)
+
+    report = status_json(root)
+    assert report["last_refusal"] is None, report["last_refusal"]
+    assert report["last_refusal_source"] == "", report["last_refusal_source"]
+
+
+def test_a_state_write_that_fails_is_named_rather_than_swallowed(tmp_path):
+    """A5.15/A5.16 symmetry: `ledger_error` names a ledger that failed, and
+    nothing named a STATE FILE that failed — the very failure that produces a
+    ledger-only refusal. `record_refusal` returns `state_error` now, and the
+    updater logs it, so the missing half of the record says it is missing."""
+    root = make_install(tmp_path)
+    upd = root / ".updates"
+    upd.mkdir(parents=True, exist_ok=True)
+    # A directory where the state file goes: every write to it raises, and the
+    # refusal has nowhere durable to land but the ledger.
+    (upd / "state.json").mkdir()
+
+    out = subprocess.run(
+        [_PY, str(_BUNDLE_PY), "record-refusal", "--root", str(root),
+         "--bundle", NEW_SHA, "--reason", "busy", "--paths", "[]",
+         "--door", "web", "--actor", "system"],
+        capture_output=True, text=True,
+        env=dict(os.environ, CABINET_EVENT_LOG_DIR=str(root / ".events"),
+                 PYTHONDONTWRITEBYTECODE="1"),
+    )
+    assert out.returncode == 0, (out.returncode, out.stderr)
+    doc = json.loads(out.stdout)
+    assert doc["state_error"], doc
+    # The record itself was not lost: the ledger has it.
+    assert "cabinet_update_refused" in event_types(root)

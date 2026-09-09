@@ -395,7 +395,15 @@ function classifyKind(line: string | null): string {
   if (line.startsWith('Update refused')) return 'refused'
   if (line.startsWith('Update ready')) return 'ready'
   if (line.startsWith('Updated to ')) return 'applied'
-  if (line.startsWith('An update was rolled back')) return 'rolled_back'
+  // Two rollback sentences share this vocabulary: the state file's ("An update
+  // was rolled back: …") and the briefing's receipt-channel one ("An update to
+  // <sha> was rolled back … and is still in the inbox"). The card produces only
+  // the first; the classifier stays the twin of the briefing's so the two
+  // suites cannot describe the same table in different words.
+  if (line.startsWith('An update was rolled back') ||
+      (line.startsWith('An update to ') && line.includes('was rolled back'))) {
+    return 'rolled_back'
+  }
   return 'unclassified'
 }
 
@@ -475,6 +483,64 @@ describe('surface parity with the briefing line', () => {
 })
 
 // ---------------------------------------------------------------------------
+// A REFUSAL THE STATE FILE NEVER CARRIED — the round-4 must-fix, this side.
+//
+// A refusal is written down twice by one call, and either half can be the only
+// one that survives. Round 4 measured a locked-path refusal that had reached
+// only the LEDGER: the briefing said "REFUSED: it changes locked constitutional
+// paths" and this card rendered Apply on the same bundle — the button that
+// fails identically every tap, which is A5.15's own rationale.
+//
+// THIS CARD'S CODE IS NOT WHAT CHANGED, and saying so is the point. It reads
+// `status.last_refusal` and always did; what it could not see was a refusal
+// that never reached that field. The fix is in its INPUT — `cabinet-update.sh
+// status --json` now resolves both channels into that one field and tags it —
+// so these two arms are declared guards, green in both directions: they pin
+// that a receipt-sourced record is treated exactly like a state-sourced one,
+// which is what makes the resolution safe to do upstream. The arms that are
+// RED without the fix are on the resolver itself
+// (`test_cabinet_update.py::test_a_refusal_that_reached_only_the_ledger_...`)
+// and on the briefing.
+// ---------------------------------------------------------------------------
+
+describe('a refusal resolved from the ledger receipt', () => {
+  const refused = 'b'.repeat(40)
+  const waiting = {
+    sha: refused, short: refused.slice(0, 8), built_at: '2026-09-07T00:00:00Z',
+    from_sha: null, file_count: 7, changelog: [], owner: 'someone',
+    mtime: '2026-09-07T00:00:00Z',
+  }
+
+  it('withdraws Apply exactly as one the state file carried would', () => {
+    const status: UpdateStatus = {
+      ...BASE, available: [waiting], latest: waiting,
+      last_refusal: {
+        bundle: refused, reason: 'bundle changes locked constitutional paths',
+        paths: ['cabinet/scripts/start-officer-mac.sh'], ts: '', door: 'web',
+      },
+      last_refusal_source: 'receipt',
+    }
+    expect(refusalToShow(status)).not.toBeNull()
+    expect(updateHeadline(status)).toBe(
+      'Update refused — 1 constitutional file differs; needs the Captain (bbbbbbbb)'
+    )
+  })
+
+  it('is still filtered by rule 4 when the reason is only timing', () => {
+    // The other half, and the round-1 defect arriving on the second channel:
+    // `busy` says another updater held the lock, never anything about these
+    // bytes. Resolving a refusal from the ledger must not smuggle that back in.
+    const status: UpdateStatus = {
+      ...BASE, available: [waiting], latest: waiting,
+      last_refusal: { bundle: refused, reason: 'busy', paths: [], ts: '', door: 'web' },
+      last_refusal_source: 'receipt',
+    }
+    expect(refusalToShow(status)).toBeNull()
+    expect(updateHeadline(status)).toBe('Update ready — 7 files changed (bbbbbbbb)')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // THE WHOLE STATE SPACE — every state, not the ones somebody thought of.
 //
 // Three review rounds each found one more adjacent state in this reader and
@@ -485,8 +551,10 @@ describe('surface parity with the briefing line', () => {
 // hand-written arms — the defect is always in the state nobody thought to
 // write one for.
 //
-// `update_surface_oracle.json` is the whole product of the five axes these two
-// readers branch on (240 rows), with the expected headline kind for EACH
+// `update_surface_oracle.json` is the whole product of the six axes these two
+// readers branch on (1440 rows — the ledger became the sixth in round 4, which
+// found the previous table complete over five and blind to the one a whole
+// refusal channel lived on), with the expected headline kind for EACH
 // surface and whether the refusal sub-surface speaks. It is derived from the
 // contract (A5.13/A5.15/A5.16), not from either implementation: a row where
 // the code disagrees is a defect in the code. The briefing's half of the same
@@ -507,12 +575,23 @@ type OracleRow = {
   installed: string
   waiting: { sha: string; file_count: number; built_at: string } | null
   state: Record<string, unknown> | null
+  resolved: { last_refusal: Record<string, unknown> | null; source: string }
   expect: { briefing: string; card: string; refusal_speaks: boolean }
 }
 
 /** The row as `cabinet-update.sh status --json` reports it — the same
  *  derivation, field for field, so this is the state file and not an object
- *  shaped to agree with the card by construction. */
+ *  shaped to agree with the card by construction.
+ *
+ *  `last_refusal` comes from the row's `resolved`, because that is where it
+ *  comes from in production: the updater resolves the state file and the
+ *  ledger receipt into ONE record and this card reads only the result. Round 4
+ *  measured what the other arrangement costs — the briefing read a second
+ *  channel this card could not see, so the two surfaces disagreed on every
+ *  state where the state file had lost the record and the ledger had not. The
+ *  briefing's own resolver is held to the same `resolved` by
+ *  `test_the_briefing_resolves_the_refusal_the_table_says_it_must`, so the two
+ *  halves are not driven from two different resolutions. */
 function statusOfRow(row: OracleRow): UpdateStatus {
   const state = (row.state || {}) as Record<string, never>
   const latest = row.waiting
@@ -531,7 +610,8 @@ function statusOfRow(row: OracleRow): UpdateStatus {
     available: latest ? [latest] : [],
     latest,
     snapshots: [],
-    last_refusal: (state.last_refusal as never) ?? null,
+    last_refusal: (row.resolved.last_refusal as never) ?? null,
+    last_refusal_source: row.resolved.source,
     event_fallback: Boolean(state.event_fallback),
     ledger_error: (state.ledger_error as string) || '',
   } as UpdateStatus
@@ -543,7 +623,10 @@ describe('the whole state space', () => {
 
   it('the oracle covers the whole product of the axes it declares', () => {
     // Derived from the declared axes rather than compared to a number, so it
-    // detects a REMOVED row as well as a changed one.
+    // detects a REMOVED row as well as a changed one. The sixth axis is the
+    // LEDGER: round 4 found the table complete over the five it declared and
+    // blind to the one it did not, which is a green hole rather than a
+    // covered one.
     const axes = doc.axes as Record<string, (string | boolean)[]>
     const expected = new Set<string>()
     for (const phase of axes.phase)
@@ -551,12 +634,17 @@ describe('the whole state space', () => {
         for (const refusal of axes.refusal)
           for (const ledger of axes.ledger_error)
             for (const fallback of axes.event_fallback)
-              expected.add(
-                `${phase}/${waiting}/${refusal}/` +
-                `${ledger ? 'fault' : 'noledger'}/${fallback ? 'held' : 'nohold'}`
-              )
-    expect(expected.size).toBe(240)
+              for (const receipt of axes.receipt)
+                expected.add(
+                  `${phase}/${waiting}/${refusal}/` +
+                  `${ledger ? 'fault' : 'noledger'}/${fallback ? 'held' : 'nohold'}/` +
+                  `${receipt}`
+                )
+    expect(expected.size).toBe(1440)
     expect(rows.map((r) => r.id).sort()).toEqual([...expected].sort())
+    // A declared axis with no seeds behind it is an axis held constant under a
+    // name — exactly what the ledger was until this round.
+    expect(Object.keys(doc.receipt_seeds).sort()).toEqual([...axes.receipt].sort())
   })
 
   it('the card answers every state the way the oracle says', () => {
@@ -574,7 +662,7 @@ describe('the whole state space', () => {
       }
     }
     // The count leads the sample: a sensor that shows twenty rows without
-    // saying how many there are reads the same at 20 as at 240.
+    // saying how many there are reads the same at 20 as at 1440.
     expect([`${wrong.length} of ${rows.length} wrong`, ...wrong.slice(0, 20)])
       .toEqual([`0 of ${rows.length} wrong`])
   })

@@ -806,6 +806,108 @@ def _is_version_skew(exc: BaseException) -> bool:
     return isinstance(exc, ValueError) and "unknown event type" in str(exc).lower()
 
 
+#: The refusal record's own fields, and the whole of what any reader uses.
+REFUSAL_FIELDS = ("bundle", "reason", "paths", "ts", "door")
+
+#: The three receipts the update path writes. The ledger is the SECOND channel
+#: a refusal lands in; `state.json` is the first.
+UPDATE_RECEIPT_TYPES = (
+    "cabinet_update_applied",
+    "cabinet_update_refused",
+    "cabinet_update_rolled_back",
+)
+
+
+def _receipt_rows(install_root: Path, days: int = 30) -> list[dict[str, Any]]:
+    """Every update receipt in the recent window, oldest first."""
+
+    import datetime as _dt
+
+    root = str(install_root.resolve())
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from framework.events.emitter import replay  # noqa: PLC0415  (deliberately late)
+
+    since = (_dt.datetime.now(_dt.timezone.utc)
+             - _dt.timedelta(days=days)).isoformat()
+    return replay(since=since, event_types=list(UPDATE_RECEIPT_TYPES))
+
+
+def current_receipt_refusal(install_root: Path, days: int = 30) -> dict[str, Any] | None:
+    """The LEDGER's current refusal, in `last_refusal` shape, or None.
+
+    CURRENCY IS THE RECEIPT SPELLING OF `phase: refused`. A refusal is the news
+    until something else happens TO THAT BUNDLE, so a later receipt about the
+    same bundle overtakes it exactly as a later phase does. A receipt naming no
+    bundle cannot be scoped to one and is not resolvable — `refuse_busy` with
+    no sha writes one, and both readers reject such a record anyway.
+
+    Fail-open like everything else on this path: a ledger this cannot read is
+    silence, never a guess."""
+
+    try:
+        rows = _receipt_rows(install_root, days)
+    except Exception:  # noqa: BLE001 — a ledger that cannot be read is silence
+        return None
+    newest = -1
+    for index, row in enumerate(rows):
+        if row.get("event_type") == "cabinet_update_refused":
+            newest = index
+    if newest < 0:
+        return None
+    payload = rows[newest].get("payload") or {}
+    bundle = str(payload.get("to_sha") or "")
+    if not bundle:
+        return None
+    for row in rows[newest + 1:]:
+        if str((row.get("payload") or {}).get("to_sha") or "") == bundle:
+            return None
+    return {
+        "bundle": bundle,
+        "reason": str(payload.get("reason") or ""),
+        "paths": [str(entry) for entry in (payload.get("locked_paths") or [])],
+        "ts": str(rows[newest].get("created_at") or ""),
+        "door": str(payload.get("door") or ""),
+    }
+
+
+def resolve_last_refusal(install_root: Path,
+                         state: dict[str, Any] | None = None
+                         ) -> tuple[dict[str, Any] | None, str]:
+    """THE ONE REFUSAL EVERY SURFACE READS, and the channel it came from.
+
+    A refusal is written down twice by one call — `state.json` and the ledger
+    receipt — and either half can be the only one that survives: the state
+    write can fail (`state_error`, below), the file can be truncated or
+    removed, and an install whose emitter predates the update path refuses the
+    event kind outright (A5.16). Until 2026-09-09 `status --json` read only the
+    first, so the home card — whose only input is this report — could not see a
+    refusal that reached only the second, and offered Apply on a bundle this
+    box had already turned down for constitutional paths.
+
+    The state file wins when it has a record: it is this box's account of
+    itself, and the ledger may carry a row the sidecar replayed late. The
+    briefing resolves the same two channels the same way in
+    `run_briefing._update_resolved_refusal` — a deliberate twin rather than an
+    import, because a briefing may not shell out and `framework/` does not
+    import from `cabinet/`; the two are pinned against each other by
+    `framework/frontdoor/tests/update_surface_oracle.json`, which both drive."""
+
+    if state is None:
+        state = read_state(install_root)
+    record = state.get("last_refusal")
+    if isinstance(record, dict) and record.get("bundle"):
+        return record, "state"
+    if state.get("phase") == "refused" and state.get("bundle"):
+        # `record_refusal` writes `last_refusal` AND the top-level copy in one
+        # indivisible step, so the two are the same record. A document carrying
+        # only the second — truncated, hand-edited — used to be visible to the
+        # briefing and invisible to the card, which reads `last_refusal` alone.
+        return {field: state.get(field) for field in REFUSAL_FIELDS}, "state"
+    record = current_receipt_refusal(install_root)
+    return (record, "receipt") if record else (None, "")
+
+
 def record_event(
     install_root: Path,
     event_type: str,
@@ -848,8 +950,11 @@ def record_event(
         update_state(install_root,
                      event_fallback=deferred_events_path(install_root).is_file(),
                      ledger_error=outcome["why"] if outcome.get("fault") else "")
-    except OSError as exc:
-        outcome["state_error"] = str(exc)
+    except Exception as exc:  # noqa: BLE001 — the record is already safe; say
+        # so out loud instead. `ledger_error` names a ledger that failed and
+        # nothing named a STATE FILE that failed, which is the very failure
+        # that leaves a refusal in the ledger alone.
+        outcome["state_error"] = "%s: %s" % (type(exc).__name__, exc)
     return outcome
 
 
@@ -887,13 +992,22 @@ def record_refusal(
     # One indivisible step, guard included: the winner may land between a read
     # and a write here, and a `phase` decided on a document that is already
     # stale is how a busy refusal reverted a completed apply (round-1 review).
-    with _state_lock(install_root):
-        document = read_state(install_root)
-        document["last_refusal"] = refusal
-        if document.get("phase") != "applying":
-            document["phase"] = "refused"
-            document.update(refusal)
-        _write_state_document(install_root, document)
+    document: dict[str, Any] = {}
+    try:
+        with _state_lock(install_root):
+            document = read_state(install_root)
+            document["last_refusal"] = refusal
+            if document.get("phase") != "applying":
+                document["phase"] = "refused"
+                document.update(refusal)
+            _write_state_document(install_root, document)
+    except Exception as exc:  # noqa: BLE001 — a refusal that cannot be written
+        # down is exactly the silence A5.15 exists to end, and raising here
+        # loses the receipt the ledger already took. So the call survives and
+        # the missing half SAYS it is missing: `state_error` is `ledger_error`
+        # the other way round, and `status --json` then resolves this refusal
+        # from the receipt and tags it `receipt` rather than answering `none`.
+        outcome["state_error"] = "%s: %s" % (type(exc).__name__, exc)
     outcome["refusal"] = refusal
     outcome["phase"] = document.get("phase")
     return outcome

@@ -1402,7 +1402,35 @@ budgets:
     # these two readers branch on, driven through BOTH of them) and the arms that
     # read it. RAISED VISIBLY, same reason as every row above. observed ==
     # maximum, zero headroom.
-    maximum: 66673
+    #
+    # 66673 -> 66728 (+55 measured 2026-09-09 via cognitive-architecture-census.py,
+    # 81411 -> 81466 against the effective ceiling): U5b round 5, THE SECOND
+    # REFUSAL CHANNEL. A refusal is written down twice by one call — the state
+    # file and the ledger receipt — and round 4 had the four rules enforced on
+    # the first while the second spoke underneath them unfiltered. Measured: a
+    # `busy` refusal of the bundle still in the inbox gave this line "An update
+    # is waiting but was REFUSED: busy" while the card said "Update ready" with
+    # Apply live, and a locked-path refusal that reached only the LEDGER gave
+    # this line "REFUSED: it changes locked constitutional paths" while the card
+    # rendered Apply — the button that fails identically every tap, which is
+    # A5.15's own rationale. The mass is the shape that makes that structurally
+    # impossible rather than fixed once: `_update_receipts` (one ledger read),
+    # `_update_receipt_refusal` (the ledger's CURRENT refusal, in the state
+    # file's own record shape), `_state_refusal` (the state document's record,
+    # whichever of its two forms it is in — which also deletes round-4 note N2),
+    # `_update_resolved_refusal` (the two channels into ONE record, and which
+    # one answered), and `_refusal_speaks` (the four rules, written once, run
+    # once, on that one record). The card needed no change at all: it already
+    # read one resolved record, and what changed is its INPUT —
+    # `cabinet-update.sh status --json` now resolves both channels into
+    # `last_refusal` and tags it `last_refusal_source`, and that file is in
+    # cabinet/, outside this budget. Everything else this commit adds is a test
+    # file and outside it by construction — the oracle grew the LEDGER as its
+    # sixth axis (1440 rows, the whole product) because a completeness claim
+    # that holds one input constant is a green hole, not a covered one. RAISED
+    # VISIBLY, same reason as every row above. observed == maximum, zero
+    # headroom.
+    maximum: 66728
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

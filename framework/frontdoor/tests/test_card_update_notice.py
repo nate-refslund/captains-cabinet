@@ -157,11 +157,14 @@ def test_the_newest_of_several_waiting_bundles_wins(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_a_refused_bundle_does_not_read_as_ready_to_take(tmp_path, monkeypatch):
-    """A refusal writes no state file: it is a receipt and nothing else.
+    """A refusal on the LEDGER and nowhere else — as it was before A5.15, and
+    as it still is whenever the state write is the half that failed.
 
-    So a bundle whose diff touches the constitutional set sits in the inbox for
-    ever while the only sentence the Captain ever sees says "ready to take —
-    tap Apply", which does nothing every time he taps it."""
+    Without this a bundle whose diff touches the constitutional set sits in the
+    inbox for ever while the only sentence the Captain ever sees says "ready to
+    take — tap Apply", which does nothing every time he taps it. (The docstring
+    said "a refusal writes no state file", which stopped being true on this
+    branch — round-4 note N4.)"""
     _ledger(monkeypatch, tmp_path)
     root = _install(tmp_path)
     _waiting(root)
@@ -169,9 +172,17 @@ def test_a_refused_bundle_does_not_read_as_ready_to_take(tmp_path, monkeypatch):
         "to_sha": NEW, "reason": "it changes locked constitutional paths",
         "locked_paths": ["cabinet/scripts/germline-lock.sh"], "door": "terminal"})
     line = run_briefing._update_notice(str(root))
-    assert "REFUSED" in line, line
-    assert "locked constitutional paths" in line
+    # ONE sentence for a refusal, whichever channel it survived on. The
+    # receipt channel used to have a wording of its own ("An update is waiting
+    # but was REFUSED: <raw reason>") and, with it, rules of its own — which is
+    # how `busy` became a verdict on the bytes here and nowhere else. It now
+    # goes through the same record and the same sentence as the state file's,
+    # so the two surfaces cannot describe one fact differently.
+    assert line.startswith("Update refused"), line
+    assert "1 constitutional file differs" in line, line
+    assert "needs the Captain" in line, line
     assert "tap Apply" not in line
+    assert run_briefing._update_refusal_line(root, NEW) == line
 
 
 def test_a_bundle_that_already_rolled_back_says_so_while_it_waits(tmp_path, monkeypatch):
@@ -606,7 +617,14 @@ def _classify_kind(line: str) -> str:
         return "ready"
     if line.startswith("Updated to "):
         return "applied"
-    if line.startswith("An update was rolled back"):
+    # TWO rollback sentences reach this classifier: the state file's ("An
+    # update was rolled back: …") and the receipt channel's ("An update to
+    # <sha> was rolled back … and is still in the inbox"). Round 4 noted the
+    # second classifying as `unclassified` — inert only because every sweep row
+    # ran on an empty ledger, and a sensor that cannot name what it sees is not
+    # a sensor. The `receipt` axis makes it reachable, so it is named.
+    if line.startswith("An update was rolled back") or (
+            line.startswith("An update to ") and "was rolled back" in line):
         return "rolled_back"
     return "unclassified"
 
@@ -669,16 +687,19 @@ def test_the_briefing_says_what_the_card_says_on_every_shared_state(tmp_path,
 # ---------------------------------------------------------------------------
 # THE EXHAUSTIVE SWEEP — every state, not the ones somebody thought of.
 #
-# Three review rounds each found one more adjacent state in these same two
+# Four review rounds each found one more adjacent state in these same two
 # readers, and every arm written for each of them was aimed at the state that
 # already worked: round 1's two arms pinned `phase: applied`, round 2's pinned
-# a state with no waiting bundle, round 3's both pinned `phase: refused`. That
-# is not three unlucky arms, it is the shape of hand-written arms — the defect
-# is always in the state nobody thought to write one for.
+# a state with no waiting bundle, round 3's both pinned `phase: refused`,
+# round 4's all ran on an EMPTY LEDGER. That is not four unlucky arms, it is
+# the shape of hand-written arms — the defect is always in the state nobody
+# thought to write one for, and in round 4 it was in the input nobody thought
+# to vary.
 #
-# `update_surface_oracle.json` is the whole product of the five axes the two
-# readers actually branch on (240 rows), with the expected headline kind for
-# EACH surface and whether the refusal sub-surface speaks. It is derived from
+# `update_surface_oracle.json` is the whole product of the six axes the two
+# readers actually branch on (1440 rows), with the expected headline kind for
+# EACH surface, whether the refusal sub-surface speaks, and what the two
+# channels must resolve to. It is derived from
 # the contract (A5.13/A5.15/A5.16), not from either implementation: a row where
 # the code disagrees is a defect in the code. The card's half of the same table
 # is `cabinet/dashboard/src/lib/updates.test.ts` ("the whole state space"),
@@ -688,56 +709,91 @@ def test_the_briefing_says_what_the_card_says_on_every_shared_state(tmp_path,
 ORACLE_FIXTURES = Path(__file__).parent / "update_surface_oracle.json"
 
 
+ORACLE_ROWS = 1440
+
+
+def _oracle_id(axes) -> str:
+    return "%s/%s/%s/%s/%s/%s" % (
+        axes["phase"], axes["waiting"], axes["refusal"],
+        "fault" if axes["ledger_error"] else "noledger",
+        "held" if axes["event_fallback"] else "nohold", axes["receipt"])
+
+
 def test_the_oracle_covers_the_whole_product_of_the_axes_it_declares():
     """A table that quietly shrank would take both suites with it, silently.
 
     Derived from the declared axes rather than compared to a number, so it
     detects a REMOVED row as well as a changed one — a completeness claim that
     cannot see removal from the set it checks is the sensor this program has
-    found broken most often."""
+    found broken most often. Round 4 found the other half of the same defect:
+    the table WAS the whole product of the axes it declared, and one input the
+    readers branch on — the ledger — was not among them, so the claim was true
+    and the coverage was not. The ledger is the sixth axis."""
     import itertools
 
     doc = json.loads(ORACLE_FIXTURES.read_text(encoding="utf-8"))
     axes = doc["axes"]
     expected = set()
-    for phase, waiting, refusal, ledger, fallback in itertools.product(
+    for phase, waiting, refusal, ledger, fallback, receipt in itertools.product(
             axes["phase"], axes["waiting"], axes["refusal"],
-            axes["ledger_error"], axes["event_fallback"]):
-        expected.add("%s/%s/%s/%s/%s" % (
-            phase, waiting, refusal,
-            "fault" if ledger else "noledger", "held" if fallback else "nohold"))
+            axes["ledger_error"], axes["event_fallback"], axes["receipt"]):
+        expected.add(_oracle_id({"phase": phase, "waiting": waiting,
+                                 "refusal": refusal, "ledger_error": ledger,
+                                 "event_fallback": fallback, "receipt": receipt}))
     ids = [row["id"] for row in doc["rows"]]
-    assert len(expected) == 240, len(expected)
+    assert len(expected) == ORACLE_ROWS, len(expected)
     assert sorted(ids) == sorted(expected), (
         set(expected) - set(ids), set(ids) - set(expected))
     assert len(ids) == len(set(ids)), "duplicate row id"
     # Every row's id must describe the row's own axes, or the table is indexed
     # by a label that has come loose from what it labels.
     for row in doc["rows"]:
-        a = row["axes"]
-        assert row["id"] == "%s/%s/%s/%s/%s" % (
-            a["phase"], a["waiting"], a["refusal"],
-            "fault" if a["ledger_error"] else "noledger",
-            "held" if a["event_fallback"] else "nohold"), row["id"]
+        assert row["id"] == _oracle_id(row["axes"]), row["id"]
+    # And every declared receipt axis value must have seeds to be driven from:
+    # an axis with nothing behind it is an axis held constant under a name.
+    assert sorted(doc["receipt_seeds"]) == sorted(axes["receipt"])
+    for name, seeds in doc["receipt_seeds"].items():
+        assert (name == "none") == (not seeds), name
+        for seed in seeds:
+            assert seed["event_type"] in _UPDATE_RECEIPT_TYPES_SEEN, seed
+
+
+#: The event types the seeds are allowed to use — the update path's three.
+_UPDATE_RECEIPT_TYPES_SEEN = ("cabinet_update_applied", "cabinet_update_refused",
+                              "cabinet_update_rolled_back")
+
+
+def _drive_oracle_row(tmp_path, monkeypatch, doc, row, index):
+    """One row on disk: its state file AND its ledger, both real, both fresh."""
+    monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(tmp_path / ("ledger%04d" % index)))
+    (tmp_path / ("ledger%04d" % index)).mkdir(parents=True, exist_ok=True)
+    for seed in doc["receipt_seeds"][row["axes"]["receipt"]]:
+        _emit(seed["event_type"], seed["payload"])
+    root = _install(tmp_path / ("row%04d" % index), source_commit=row["installed"])
+    if row["waiting"]:
+        _waiting(root, sha=row["waiting"]["sha"],
+                 files=row["waiting"]["file_count"],
+                 built_at=row["waiting"]["built_at"])
+    if row["state"] is not None:
+        _state(root, row["state"])
+    return root
+
+
+def _without_ts(record):
+    """`ts` is stamped by whichever channel wrote the record and no reader
+    branches on it, so the table declares it null on a receipt-sourced one."""
+    return {k: v for k, v in (record or {}).items() if k != "ts"} or None
 
 
 def test_the_briefing_answers_every_state_the_way_the_oracle_says(tmp_path,
                                                                   monkeypatch):
-    """This half of the sweep. The card's half asserts the same 240 rows."""
-    _ledger(monkeypatch, tmp_path)
+    """This half of the sweep. The card's half asserts the same 1440 rows."""
     doc = json.loads(ORACLE_FIXTURES.read_text(encoding="utf-8"))
     rows = doc["rows"]
-    assert len(rows) == 240, len(rows)
+    assert len(rows) == ORACLE_ROWS, len(rows)
     wrong = []
     for index, row in enumerate(rows):
-        root = _install(tmp_path / ("row%03d" % index),
-                        source_commit=row["installed"])
-        if row["waiting"]:
-            _waiting(root, sha=row["waiting"]["sha"],
-                     files=row["waiting"]["file_count"],
-                     built_at=row["waiting"]["built_at"])
-        if row["state"] is not None:
-            _state(root, row["state"])
+        root = _drive_oracle_row(tmp_path, monkeypatch, doc, row, index)
         line = run_briefing._update_notice(str(root))
         kind = _classify_kind(line)
         waiting_sha = (row["waiting"] or {}).get("sha", "")
@@ -749,3 +805,156 @@ def test_the_briefing_answers_every_state_the_way_the_oracle_says(tmp_path,
                             expect["refusal_speaks"], line))
     assert not wrong, "%d of %d states are not what the contract says:\n%s" % (
         len(wrong), len(rows), "\n".join(wrong[:20]))
+
+
+def test_the_briefing_resolves_the_refusal_the_table_says_it_must(tmp_path,
+                                                                  monkeypatch):
+    """THE TWO RESOLVERS MEET THE SAME DECLARATION.
+
+    `resolved` is what `cabinet-update.sh status --json` must produce — it is
+    the card's whole input, and the card's half of this sweep is driven from
+    it. This arm holds the BRIEFING's own resolver to the same statement, so
+    the deliberate twin (`update_bundle.resolve_last_refusal` for the card,
+    `_update_resolved_refusal` here) cannot drift apart without a row going
+    red on one side or the other. Without it the two halves would be driven
+    from two different resolutions and would agree by construction."""
+    doc = json.loads(ORACLE_FIXTURES.read_text(encoding="utf-8"))
+    rows = doc["rows"]
+    wrong = []
+    for index, row in enumerate(rows):
+        root = _drive_oracle_row(tmp_path, monkeypatch, doc, row, index)
+        record, source = run_briefing._update_resolved_refusal(root)
+        want = row["resolved"]
+        if (_without_ts(record) != _without_ts(want["last_refusal"])
+                or source != want["source"]):
+            wrong.append("%s: resolved %r from %r (want %r from %r)"
+                         % (row["id"], _without_ts(record), source,
+                            _without_ts(want["last_refusal"]), want["source"]))
+    assert not wrong, "%d of %d resolutions are not what the contract says:\n%s" % (
+        len(wrong), len(rows), "\n".join(wrong[:20]))
+
+
+# ---------------------------------------------------------------------------
+# THE SECOND CHANNEL — a refusal that reached the LEDGER and not the state file.
+#
+# Round 4 found the four rules enforced on ONE of the briefing's two refusal
+# channels. `_update_notice` asked the state file (four rules) and then, when
+# that was silent and something was waiting, asked the ledger and spoke its
+# verdict unfiltered — so `busy`, which rule 4 exists to stop being a verdict
+# on the bytes, turned an applicable bundle into a refused one on the briefing
+# while the card offered Apply for it; and a locked-path refusal that reached
+# only the ledger (`state.json` absent or unreadable) put "REFUSED: it changes
+# locked constitutional paths" on the briefing while the card rendered Apply —
+# the button that fails identically every tap, which is A5.15's own rationale.
+#
+# THE SHAPE OF THE FIX. There is now ONE resolved refusal, resolved the same
+# way on both sides: the state file's `last_refusal` if it has one, else the
+# ledger's current refusal receipt, and nothing else. The four rules are
+# applied ONCE, to that one record, by `_refusal_speaks`. The briefing keeps
+# the receipt channel for `applied` and `rolled_back` receipts — those are not
+# refusals and cannot contradict a live Apply button — and a REFUSAL reaches
+# the briefing only through the resolved record.
+# ---------------------------------------------------------------------------
+
+def test_a_busy_receipt_does_not_turn_the_waiting_bundle_into_a_refusal(
+        tmp_path, monkeypatch):
+    """Rule 4, on the channel it was never applied to.
+
+    `refuse_busy` fires on every lock contention — the race the whole durable
+    refusal exists for — and writes the ledger as well as the state file. With
+    no state file the ledger was the only channel, and it said the bundle
+    sitting in the inbox had been REFUSED, over a bundle nothing had judged."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _waiting(root, files=7)
+    _emit("cabinet_update_refused", {"to_sha": NEW, "reason": "busy",
+                                     "locked_paths": [], "door": "web"})
+    line = run_briefing._update_notice(str(root))
+    assert line.startswith("An update is ready to take"), line
+    assert run_briefing._update_refusal_line(root, NEW) == "", line
+
+
+def test_a_ledger_only_refusal_speaks_through_the_same_helper_as_the_state_file(
+        tmp_path, monkeypatch):
+    """The briefing's two halves must not disagree with EACH OTHER either.
+
+    `_update_refusal_line` is the twin of the card's `refusalToShow`: it is
+    what names the files and what the card's Apply button is withdrawn by. When
+    the refusal arrived by receipt it was the NOTICE that spoke and this helper
+    that stayed silent, so the one property the parity fixture asserts — the
+    sub-surface agrees on every state — was true only of the channel it looked
+    at."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _waiting(root, files=7)
+    _emit("cabinet_update_refused", {
+        "to_sha": NEW, "reason": "bundle changes locked constitutional paths",
+        "locked_paths": ["cabinet/scripts/germline-lock.sh"], "door": "terminal"})
+    line = run_briefing._update_notice(str(root))
+    assert line.startswith("Update refused"), line
+    assert "1 constitutional file" in line, line
+    assert run_briefing._update_refusal_line(root, NEW) == line
+
+
+def test_a_refusal_receipt_an_apply_receipt_has_overtaken_is_not_the_news(
+        tmp_path, monkeypatch):
+    """CURRENCY on the receipt channel, which is rule 3's own idea.
+
+    `phase: refused` is how the state file says "this is still the last thing
+    that happened". The receipt channel says it by being the newest receipt
+    about that bundle — a later apply or rollback of the same bundle has
+    overtaken it exactly as a later phase does."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _waiting(root, files=7)
+    _emit("cabinet_update_refused", {
+        "to_sha": NEW, "reason": "bundle changes locked constitutional paths",
+        "locked_paths": ["cabinet/scripts/germline-lock.sh"], "door": "terminal"})
+    _emit("cabinet_update_applied", {"from_sha": OLD, "to_sha": NEW,
+                                     "changed": 2, "deleted": 0, "door": "web"})
+    line = run_briefing._update_notice(str(root))
+    assert line.startswith("An update is ready to take"), line
+    assert run_briefing._update_refusal_line(root, NEW) == "", line
+
+
+def test_the_state_file_outranks_the_ledger_when_both_carry_a_refusal(
+        tmp_path, monkeypatch):
+    """One resolved record, and the state file is the one that is resolved.
+
+    Both channels are written by the same call in the same order, so they
+    normally agree; when they do not, the state file is the record this box
+    wrote about ITSELF and the ledger may carry an older row the sidecar
+    replayed late."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _waiting(root, files=7)
+    _emit("cabinet_update_refused", {"to_sha": NEW, "reason": "busy",
+                                     "locked_paths": [], "door": "web"})
+    _state(root, {"phase": "refused", "bundle": NEW,
+                  "reason": "failed per-file digest verification", "paths": [],
+                  "ts": "2026-09-09T10:00:00Z", "door": "web",
+                  "last_refusal": {"bundle": NEW,
+                                   "reason": "failed per-file digest verification",
+                                   "paths": [], "ts": "2026-09-09T10:00:00Z",
+                                   "door": "web"}})
+    line = run_briefing._update_notice(str(root))
+    assert line == "Update refused — failed per-file digest verification (%s)" % NEW[:8]
+
+
+def test_a_rolled_back_receipt_is_still_classified_as_a_rollback(tmp_path,
+                                                                 monkeypatch):
+    """The classifier's own blind spot (round-4 note N1).
+
+    The briefing's rollback-receipt sentence starts `An update to <sha> was
+    rolled back`, and the shared classifier tested only `An update was rolled
+    back` — so the one sentence the receipt channel still produces classified
+    as `unclassified`. Inert while the sweep ran on an empty ledger; a sensor
+    that cannot name what it sees is not a sensor."""
+    _ledger(monkeypatch, tmp_path)
+    root = _install(tmp_path)
+    _waiting(root, files=7)
+    _emit("cabinet_update_rolled_back", {"from_sha": NEW, "to_sha": NEW,
+                                         "reason": "the health gate was red",
+                                         "door": "web"})
+    line = run_briefing._update_notice(str(root))
+    assert _classify_kind(line) == "rolled_back", line

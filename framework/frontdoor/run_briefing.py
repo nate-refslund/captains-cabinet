@@ -194,24 +194,33 @@ _UPDATE_RECEIPT_TYPES = (
 )
 
 
+def _update_receipts(days: int = 30) -> list:
+    """Every update receipt in the recent window, oldest first."""
+    import datetime as _dt
+
+    from framework.events.emitter import replay
+
+    since = (_dt.datetime.now(_dt.timezone.utc)
+             - _dt.timedelta(days=days)).isoformat()
+    return replay(since=since, event_types=list(_UPDATE_RECEIPT_TYPES))
+
+
 def _update_receipt_for(sha: str, days: int = 30) -> "dict | None":
     """The newest of the three update receipts ABOUT ``sha``, or None.
 
     Selected on the BUNDLE, never on recency alone: an earlier refusal of some
     other commit must not turn a good bundle into a refusal. Bounded to a
     recent window, and fail-open like everything else on this path — a ledger
-    this cannot read is silence, never a guess."""
+    this cannot read is silence, never a guess.
+
+    Read for the APPLIED and ROLLED-BACK receipts only. A refusal receipt
+    reaches this module through `_update_resolved_refusal`, never here: those
+    two are not refusals and cannot contradict a live Apply button, and a
+    refusal can."""
     if not sha:
         return None
     try:
-        import datetime as _dt
-
-        from framework.events.emitter import replay
-
-        since = (_dt.datetime.now(_dt.timezone.utc)
-                 - _dt.timedelta(days=days)).isoformat()
-        rows = replay(since=since, event_types=list(_UPDATE_RECEIPT_TYPES))
-        for row in reversed(rows):
+        for row in reversed(_update_receipts(days)):
             if (row.get("payload") or {}).get("to_sha") == sha:
                 return row
     except Exception:  # noqa: BLE001
@@ -219,16 +228,69 @@ def _update_receipt_for(sha: str, days: int = 30) -> "dict | None":
     return None
 
 
-# A5.15 — THE REFUSAL THE STATE FILE NOW CARRIES.
+# THE SECOND CHANNEL, and why a resolution step exists at all. A refusal is
+# written down twice by one call — `state.json` and the ledger receipt — and
+# either half can be the only one that survives: the state write can fail, the
+# file can be truncated or removed (`_update_state` answers {} for all of it),
+# and an install whose emitter predates the update path refuses the event kind
+# outright (A5.16). Round 4 found the four rules enforced on the FIRST channel
+# and the second speaking underneath them unfiltered, so `busy` — the one
+# reason rule 4 exists to keep off the bytes — turned an applicable bundle into
+# a refused one here while the card offered Apply for it, and a locked-path
+# refusal that had reached only the ledger put "needs the Captain" here over a
+# card rendering Apply. Two surfaces, one fact, opposite answers, with the
+# sweep unable to see it because every one of its rows ran on an empty ledger.
+#
+# So there is ONE resolved refusal and both surfaces consume only that. The
+# card gets it from `cabinet-update.sh status --json`, which resolves both
+# channels and tags the answer `last_refusal_source`; this side resolves it
+# here, because a briefing may never hang on a subprocess and `framework/` does
+# not import from `cabinet/`. The twin is `update_bundle.resolve_last_refusal`
+# and the two are pinned against each other by the oracle both sides drive.
+#
+# CURRENCY on the receipt channel is the receipt spelling of `phase: refused`:
+# a refusal is the news until something else happens TO THAT BUNDLE. A receipt
+# naming no bundle cannot be scoped to one and is not resolvable — `refuse_busy`
+# with no sha writes one, and both readers reject such a record anyway.
+def _update_receipt_refusal() -> dict:
+    """The ledger's current refusal as a `last_refusal` record, or {}."""
+    try:
+        rows = _update_receipts()
+    except Exception:  # noqa: BLE001
+        return {}
+    newest = -1
+    for index, row in enumerate(rows):
+        if row.get("event_type") == "cabinet_update_refused":
+            newest = index
+    if newest < 0:
+        return {}
+    payload = rows[newest].get("payload") or {}
+    bundle = str(payload.get("to_sha") or "")
+    if not bundle:
+        return {}
+    for row in rows[newest + 1:]:
+        if str((row.get("payload") or {}).get("to_sha") or "") == bundle:
+            return {}
+    return {"bundle": bundle, "reason": str(payload.get("reason") or ""),
+            "paths": [str(entry) for entry in (payload.get("locked_paths") or [])],
+            "ts": str(rows[newest].get("created_at") or ""),
+            "door": str(payload.get("door") or "")}
+
+
+# A5.15 — THE REFUSAL, ON WHICHEVER CHANNEL IT SURVIVED ON.
 #
 # Until 2026-09-08 an update refusal wrote nothing down, so the only way this
-# line could learn about one was the ledger (`_update_receipt_for`, below) —
-# and the ledger is exactly what an install cut before the update path existed
-# refuses to write, because it does not know the event kind yet (A5.16). Both
-# channels were silent on the same event on the first real apply, and the
-# sentence the Captain would have read was "an update is ready to take — tap
-# Apply", over a bundle that had already been turned down. So the state file is
-# asked first and the ledger stays as the second channel.
+# line could learn about one was the ledger — and the ledger is exactly what an
+# install cut before the update path existed refuses to write, because it does
+# not know the event kind yet (A5.16). Both channels were silent on the same
+# event on the first real apply, and the sentence the Captain would have read
+# was "an update is ready to take — tap Apply", over a bundle that had already
+# been turned down. So the state file became the first channel and the ledger
+# stayed as the second — and round 4 found the rules below applied to the first
+# alone while the second spoke underneath them unfiltered. Both channels are
+# now RESOLVED INTO ONE RECORD (`_update_resolved_refusal`) before any rule is
+# applied, on this surface and on the card, which resolves them in
+# `cabinet-update.sh status --json`.
 #
 # SCOPED TO ONE BUNDLE AND TO ONE MOMENT. The four rules: (1) no refusal on
 # record, nothing to say. (2) An apply IN FLIGHT outranks it and neither
@@ -239,22 +301,22 @@ def _update_receipt_for(sha: str, days: int = 30) -> "dict | None":
 # (4) Something waiting: it speaks only if it is a verdict ON THOSE BYTES — the
 # same sha, and a reason about the bundle rather than about timing (`busy`
 # means another updater held the lock, which says nothing about what is in the
-# inbox). Each of the four was written after a round of review found the state
-# it was missing: round 1 let `busy` through for the whole window after any
-# refusal, so this line announced a refusal of a bundle nothing had judged;
-# round 2 wrote rule 2 on the card only; round 3 found rule 3 missing on both,
-# so one refusal silenced the applied and rolled-back sentences for the life of
-# the install. These are the four rules of `lib/updates.refusalToShow` in
-# Python: two surfaces reading one state file must not be able to disagree
-# about it, and a card offering Apply under a briefing line that says the
-# bundle was refused is exactly that. The claim is not a claim: the states both
-# surfaces must agree on are checked-in fixtures driven through BOTH readers —
-# `tests/update_surface_parity.json` (the argued cases, with the exact wording)
-# and `tests/update_surface_oracle.json` (the WHOLE product of the five axes
-# these readers branch on, 240 rows), here and in
-# `cabinet/dashboard/src/lib/updates.test.ts`. Three rounds of hand-written
-# arms each aimed at the state that already worked; a product does not have to
-# be thought of.
+# inbox). Each was written after a round of review found the state it was
+# missing: round 1 let `busy` through for the whole window after any refusal,
+# so this line announced a refusal of a bundle nothing had judged; round 2
+# wrote rule 2 on the card only; round 3 found rule 3 missing on both, so one
+# refusal silenced the applied and rolled-back sentences for the life of the
+# install; round 4 found all four applied to one channel of two. They are
+# `lib/updates.refusalToShow` in Python: two surfaces reading one record must
+# not be able to disagree about it, and a card offering Apply under a briefing
+# line that says the bundle was refused is exactly that. The claim is not a
+# claim: the states both surfaces must agree on are checked-in fixtures driven
+# through BOTH readers — `tests/update_surface_parity.json` (the argued cases,
+# with the exact wording) and `tests/update_surface_oracle.json` (the WHOLE
+# product of the SIX axes these readers branch on, the ledger among them),
+# here and in `cabinet/dashboard/src/lib/updates.test.ts`. Four rounds of
+# hand-written arms each aimed at the state that already worked; a product does
+# not have to be thought of.
 # Counts only, never the path text on a card surface — the files themselves are
 # named on the home card, which is where the decision is made. Fail-open like
 # everything else on this path: any error is silence.
@@ -267,45 +329,90 @@ def _update_state(base) -> dict:
         return {}
 
 
+#: The refusal record's own fields, and the whole of what either reader uses.
+_REFUSAL_FIELDS = ("bundle", "reason", "paths", "ts", "door")
+
+
+def _state_refusal(state: dict) -> dict:
+    """The state file's refusal record, whichever way that document holds it.
+
+    `record_refusal` writes `last_refusal` AND the top-level copy in one
+    indivisible step, so the two are the same record; a document carrying only
+    the second (truncated, hand-edited, or written by something else) used to
+    make this surface speak while the card, which reads `last_refusal` alone,
+    stayed silent — round-4 note N2. Reading both here and handing ONE record
+    on deletes that divergence at the resolution step instead of in either
+    reader."""
+    record = state.get("last_refusal")
+    if isinstance(record, dict) and record.get("bundle"):
+        return record
+    if state.get("phase") == "refused" and state.get("bundle"):
+        return {field: state.get(field) for field in _REFUSAL_FIELDS}
+    return {}
+
+
+def _update_resolved_refusal(base) -> "tuple[dict, str]":
+    """The ONE refusal record this module reads, and the channel it came from.
+
+    The state file's own record wins whenever it has one: it is this box's
+    account of ITSELF, and the ledger may carry a row the sidecar replayed
+    late."""
+    record = _state_refusal(_update_state(base))
+    if record:
+        return record, "state"
+    record = _update_receipt_refusal()
+    return (record, "receipt") if record else ({}, "")
+
+
+# THE FOUR RULES, WRITTEN ONCE AND APPLIED TO THE ONE RESOLVED RECORD. Each was
+# written after a round of review found the state it was missing, and round 4
+# found them applied to one of the two channels a refusal arrives on — so the
+# resolution above happens first and this runs on its result, whichever channel
+# answered. The twin is `lib/updates.refusalToShow`.
+#
+# RULE 2 — AN APPLY IN FLIGHT OUTRANKS A REFUSAL. The card deliberately KEEPS
+# Apply for a digest-mismatch, unreadable or busy refusal, because a retry is a
+# reasonable thing to do about all three — so tap it and `phase` goes to
+# `applying` with that same sha still in `last_refusal` and the bundle still in
+# the inbox (the entry is not removed until the apply lands). For the whole of
+# every designed retry the card said "Taking an update" while this line said
+# "Update refused", and with a locked-path refusal on record it said "needs the
+# Captain" over an apply that was running. `applying` is durable by design — a
+# killed apply leaves it on disk with its snapshot, which is how the restore
+# finds its way back — so the wrong sentence was durable with it.
+#
+# RULE 3 — CURRENCY. Nothing is waiting, so there is no other bundle to be
+# wrong about — but there may be a later EVENT. `last_refusal` is carried onto
+# every later state document on purpose and nothing ever clears it, so without
+# this the applied and rolled-back sentences are unreachable for the life of
+# any install that has ever refused anything: the busy race the `applying`
+# guard exists for ends at {phase: applied, last_refusal: busy} with nothing
+# waiting, and this line said "Update refused — busy (bbbbbbbb)" over a Cabinet
+# running exactly those bytes, durably. A refusal is still TRUE after the next
+# thing happens; it stops being the NEWS.
+#
+# RULE 4 — SCOPED TO THE BYTES IN FRONT OF HIM. It speaks only if it is a
+# verdict on THOSE bytes: the same sha, and a reason about the bundle rather
+# than about timing (`busy` means another updater held the lock, which says
+# nothing about what is in the inbox).
+def _refusal_speaks(record: dict, phase: str, waiting_sha: str) -> bool:
+    """Does the resolved refusal speak in this state? A5.15's four rules."""
+    if not str((record or {}).get("bundle") or ""):
+        return False
+    if phase == "applying":
+        return False
+    if not waiting_sha:
+        return phase == "refused"
+    return (str(record.get("bundle")) == waiting_sha
+            and record.get("reason") != "busy")
+
+
 def _update_refusal_line(base, waiting_sha: str = "") -> str:
-    state = _update_state(base)
-    # RULE 3 — AN APPLY IN FLIGHT OUTRANKS A REFUSAL. Written on the card since
-    # round 2 and not here until 2026-09-09, which made the "same three rules
-    # written twice" claim above false on the third one. The card deliberately
-    # KEEPS Apply for a digest-mismatch, unreadable or busy refusal, because a
-    # retry is a reasonable thing to do about all three — so tap it and `phase`
-    # goes to `applying` with that same sha still in `last_refusal` and the
-    # bundle still in the inbox (the inbox entry is not removed until the apply
-    # lands). For the whole of every designed retry the card said "Taking an
-    # update" while this line said "Update refused", and with a locked-path
-    # refusal on record it said "needs the Captain" over an apply that was
-    # running. `applying` is durable by design — a killed apply leaves it on
-    # disk with its snapshot, which is how the restore finds its way back — so
-    # the wrong sentence was durable with it.
-    if state.get("phase") == "applying":
+    record, _source = _update_resolved_refusal(base)
+    phase = str(_update_state(base).get("phase") or "")
+    if not _refusal_speaks(record, phase, waiting_sha):
         return ""
-    record = state if state.get("phase") == "refused" else (state.get("last_refusal") or {})
     bundle = str(record.get("bundle") or "")
-    if not bundle:
-        return ""
-    if waiting_sha:
-        # RULE 4 — SCOPED TO THE BYTES IN FRONT OF HIM. It speaks only if it is
-        # a verdict on THOSE bytes: the same sha, and a reason about the bundle
-        # rather than about timing.
-        if bundle != waiting_sha or record.get("reason") == "busy":
-            return ""
-    elif state.get("phase") != "refused":
-        # RULE 3 — CURRENCY. Nothing is waiting, so there is no other bundle to
-        # be wrong about — but there may be a later EVENT. `last_refusal` is
-        # carried onto every later state document on purpose and nothing ever
-        # clears it, so without this the applied and rolled-back sentences are
-        # unreachable for the life of any install that has ever refused
-        # anything: the busy race the guard above exists for ends at
-        # {phase: applied, last_refusal: busy} with nothing waiting, and this
-        # line said "Update refused — busy (bbbbbbbb)" over a Cabinet running
-        # exactly those bytes, durably. A refusal is still TRUE after the next
-        # thing happens; it stops being the NEWS.
-        return ""
     paths = [str(entry) for entry in (record.get("paths") or [])]
     if paths:
         return ("Update refused — %d constitutional file%s; needs the Captain (%s)"
@@ -381,12 +488,13 @@ def _update_notice(root: "str | None" = None) -> str:
             return "An update is being taken right now"
         if waiting:
             _, sha, count = max(waiting)
+            # A REFUSAL receipt is not read here: it is resolved into the one
+            # `last_refusal` above and judged by the four rules like any other,
+            # because a refusal is the one receipt that can contradict the
+            # card's Apply button. What is left are the two that cannot.
             receipt = _update_receipt_for(sha) or {}
             kind = receipt.get("event_type") or ""
             reason = str((receipt.get("payload") or {}).get("reason") or "")
-            if kind == "cabinet_update_refused":
-                return ("An update is waiting but was REFUSED: %s (%s)"
-                        % (reason or "the updater would not take it", sha[:8]))
             if kind == "cabinet_update_rolled_back":
                 return ("An update to %s was rolled back (%s) and is still in the inbox"
                         % (sha[:8], reason or "it did not come up healthy"))

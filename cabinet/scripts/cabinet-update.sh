@@ -197,6 +197,17 @@ emit_event() {
 # carries the reason (`why`); this line only says what it was told, so the
 # classification cannot drift between the surfaces that read it.
 report_held() { # <kind> <recorder-json>
+  # The OTHER half that can fail. `ledger_error` has named a ledger that would
+  # not take the record since A5.16; nothing named a STATE FILE that would not
+  # take it, and that is the failure that leaves a refusal in the ledger alone
+  # — which is precisely the state `status --json` now has to resolve. It is
+  # not fatal (the receipt is written first and survives), so it is said out
+  # loud here rather than raised.
+  case "$2" in
+    *'"state_error"'*)
+      log "STATE WRITE FAILED: $1 was recorded, but $UPD/state.json could not be written — the durable half of this record is missing and surfaces will resolve it from the ledger receipt instead"
+      ;;
+  esac
   case "$2" in
     *'"fallback"'*) : ;;
     *) return 0 ;;
@@ -502,7 +513,7 @@ cmd_status() {
       *) fail_usage "unknown status option '$1'" ;;
     esac
   done
-  "$PY" - "$ROOT" "$as_json" <<'PYSTATUS'
+  "$PY" - "$ROOT" "$as_json" "$LIB_DIR" <<'PYSTATUS'
 import json, os, pwd, sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -562,6 +573,31 @@ if (upd / "state.json").is_file():
     except Exception:
         state = {}
 
+# THE ONE REFUSAL EVERY SURFACE READS, resolved from BOTH channels here.
+#
+# A refusal is written down twice by one call — `state.json` and the ledger
+# receipt — and either half can be the only one that survives: the state write
+# can fail, the file can be truncated or removed, and an install whose emitter
+# predates the update path refuses the event kind (A5.16). This report is the
+# home card's ONLY input, and until 2026-09-09 it read the first channel alone,
+# so a locked-path refusal that reached only the ledger left the card offering
+# Apply on a bundle this box had already turned down — the button that fails
+# identically every tap, which is A5.15's own rationale. `last_refusal_source`
+# says which channel answered, so a state file that has gone missing is a fact
+# on the report rather than a silence. Fail-open: if the resolver cannot be
+# imported at all, the state file's own record still stands.
+refusal = state.get("last_refusal")
+refusal_source = "state" if refusal else ""
+try:
+    lib_dir = sys.argv[3] if len(sys.argv) > 3 else ""
+    if lib_dir and lib_dir not in sys.path:
+        sys.path.insert(0, lib_dir)
+    import update_bundle
+
+    refusal, refusal_source = update_bundle.resolve_last_refusal(root, state)
+except Exception:
+    pass
+
 snapshots = []
 if (upd / "snapshots").is_dir():
     snapshots = sorted(p.name for p in (upd / "snapshots").iterdir() if p.is_dir())
@@ -581,7 +617,8 @@ report = {
     # install's emitter does not know the event kind yet. `ledger_error` is the
     # discriminator: non-empty means the ledger did not merely decline the type,
     # it FAILED, and no update files that.
-    "last_refusal": state.get("last_refusal"),
+    "last_refusal": refusal,
+    "last_refusal_source": refusal_source,
     "event_fallback": bool(state.get("event_fallback")),
     "ledger_error": state.get("ledger_error") or "",
 }
@@ -600,8 +637,10 @@ else:
             print("            - %s" % line)
     refusal = report["last_refusal"]
     if refusal:
-        print("refused   : %s  %s" % ((refusal.get("bundle") or "")[:8],
-                                      refusal.get("reason") or ""))
+        print("refused   : %s  %s%s" % (
+            (refusal.get("bundle") or "")[:8], refusal.get("reason") or "",
+            "  (from the ledger receipt; the state file carries no refusal)"
+            if report["last_refusal_source"] == "receipt" else ""))
         for path in refusal.get("paths") or []:
             print("            %s" % path)
     if report["ledger_error"]:

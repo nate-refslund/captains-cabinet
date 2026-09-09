@@ -93,8 +93,23 @@ export interface UpdateStatus {
   available: AvailableBundle[]
   latest: AvailableBundle | null
   snapshots: string[]
-  /** The last refusal the updater recorded, or null. Outlives the phase. */
+  /** The last refusal the updater recorded, or null. Outlives the phase.
+   *
+   *  RESOLVED BY `status --json` FROM BOTH CHANNELS. A refusal is written down
+   *  twice by one call — `.updates/state.json` and a ledger receipt — and
+   *  either half can be the only one that survives (a failed state write, a
+   *  truncated or removed file, an emitter one version behind that refuses the
+   *  event kind). Round 4 measured the consequence: a locked-path refusal that
+   *  had reached only the ledger left this card rendering Apply on a bundle
+   *  the box had already turned down. The updater now resolves the two into
+   *  ONE record here, so this reader and the briefing cannot be looking at
+   *  different facts. */
   last_refusal?: UpdateRefusal | null
+  /** Which channel `last_refusal` came from: `state`, `receipt`, or empty when
+   *  there is none. Diagnostic — no rendering branches on it — but a state
+   *  file that has gone missing is then a fact on the report rather than a
+   *  silence, and `cabinet-update.sh status` says so in words. */
+  last_refusal_source?: string
   /** A record is held outside the ledger because this install's emitter
    *  does not know the event kind yet (A5.16). */
   event_fallback?: boolean
@@ -118,6 +133,12 @@ function refusalIsAboutTheBundle(refusal: UpdateRefusal): boolean {
 
 /**
  * The refusal this screen should be speaking about, or null.
+ *
+ * Reads the ONE resolved `last_refusal` and nothing else — `status --json`
+ * resolves the state file and the ledger receipt into it (round 4: the
+ * briefing had a second refusal channel this card did not have, so the two
+ * disagreed on every state where the state file had lost the record and the
+ * ledger had not).
  *
  * Shared by the headline and the card so the two cannot disagree — a card
  * naming files under a headline that says "Update ready" is worse than either
@@ -144,10 +165,17 @@ function refusalIsAboutTheBundle(refusal: UpdateRefusal): boolean {
  * disagree. That is not a claim any more, and it is no longer proved by the
  * states somebody thought of either: `update_surface_parity.json` carries the
  * argued cases with their exact wording, and `update_surface_oracle.json`
- * carries the WHOLE product of the five axes these readers branch on (240
- * rows), both under `framework/frontdoor/tests/` and both driven through this
- * module here and through the briefing in `test_card_update_notice.py`.
- * Change one side's ranking and the other side's suite is what goes red.
+ * carries the WHOLE product of the six axes these readers branch on (1440
+ * rows, the ledger among them since round 4), both under
+ * `framework/frontdoor/tests/` and both driven through this module here and
+ * through the briefing in `test_card_update_notice.py`. Change one side's
+ * ranking and the other side's suite is what goes red.
+ *
+ * Round 4: the four rules were enforced on ONE of the briefing's two refusal
+ * channels, and this card could not see the other one at all. The resolution
+ * moved upstream into `cabinet-update.sh status --json`, which reads both and
+ * hands each surface the same `last_refusal`; this function is unchanged by
+ * that, which is the point of putting it there.
  */
 export function refusalToShow(status: UpdateStatus | null): UpdateRefusal | null {
   if (!status || status.phase === 'applying') return null
