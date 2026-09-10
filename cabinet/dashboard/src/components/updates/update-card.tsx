@@ -30,7 +30,7 @@
 
 import { useState, useTransition } from 'react'
 import { applyUpdate, rollbackUpdate } from '@/actions/updates'
-import { applyTarget, refusalToShow, type UpdateStatus } from '@/lib/updates'
+import { applyTarget, refusalToShow, type UpdateStatus } from '@/lib/updates-view'
 
 export default function UpdateCard({
   status,

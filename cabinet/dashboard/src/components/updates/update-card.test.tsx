@@ -9,11 +9,12 @@
  * travels the whole way and is never rendered is the same as a field that was
  * never collected, and nothing else in the suite could see the difference.
  */
+import { readFileSync } from 'fs'
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 import UpdateCard from './update-card'
-import { updateHeadline, type UpdateStatus } from '@/lib/updates'
+import { updateHeadline, type UpdateStatus } from '@/lib/updates-view'
 
 const WAITING: UpdateStatus = {
   installed_sha: 'a'.repeat(40),
@@ -217,5 +218,32 @@ describe('UpdateCard on a refusal', () => {
     expect(html).toContain('ledger fault')
     expect(html).toContain('No space left on device')
     expect(html).not.toContain('does not know the update events yet')
+  })
+
+  // A5.18, and it is a BUILD property this suite can hold in milliseconds.
+  //
+  // Measured 2026-09-10, on the first staged build anything ever ran: `next
+  // build` failed outright —
+  //
+  //     ./src/lib/updates.ts:25:1
+  //     Module not found: Can't resolve 'child_process'
+  //     #4 [Client Component Browser]: ./src/lib/updates.ts
+  //                                    ./src/components/updates/update-card.tsx
+  //
+  // — because this card is a client component and importing ONE symbol from a
+  // module pulls the WHOLE module into the browser graph, exec seam and all.
+  // The dashboard had not been buildable since the update path landed, and
+  // nothing noticed because no gate anywhere ran a build. The drill's P7 runs
+  // one now; this arm is the cheap half, so the next person to reach for the
+  // exec seam from a client component learns it in a test rather than in a
+  // three-minute build.
+  it('pulls nothing into the browser graph that a browser cannot have', () => {
+    const card = readFileSync(new URL('./update-card.tsx', import.meta.url), 'utf-8')
+    expect(card).not.toMatch(/from '@\/lib\/updates'/)
+    expect(card).toMatch(/from '@\/lib\/updates-view'/)
+    const view = readFileSync(new URL('../../lib/updates-view.ts', import.meta.url), 'utf-8')
+    for (const builtin of ['child_process', 'fs', 'path', 'os', 'net', 'util']) {
+      expect(view).not.toMatch(new RegExp(`from '(node:)?${builtin}'`))
+    }
   })
 })
