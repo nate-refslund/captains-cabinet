@@ -153,6 +153,38 @@ def test_the_drill_and_the_updater_name_the_same_restart_seam():
             "test seam (A5.14)")
 
 
+def test_the_drill_checks_for_work_before_it_grades_the_health_gate():
+    """An apply can exit 0 having never reached the gate, and P7 grades exits.
+
+    `cabinet-update.sh apply` returns 0 on two paths that run NO health gate:
+    an install already stamped with the bundle sha, and a plan whose changed
+    and deleted sets are both empty. Neither prints on stdout — both go to the
+    updater log — so a leg that reads only the exit code scores a never-gated
+    apply as an identity probe that passed. Measured 2026-09-10: that is how
+    P7 went red on the CI runner while passing on the reference box, with an
+    empty captured output and nothing to read.
+
+    So the drill asserts the bundle and the install genuinely differ at the one
+    mutated path BEFORE it grades anything, and it does so by the same
+    comparison the plan makes (manifest digest vs the installed file). This arm
+    welds the two facts together: the updater still has the silent exit-0 path,
+    and the drill still checks for work first — mechanically, so neither side
+    can drift without a red here."""
+    updater = _UPDATER.read_text(encoding="utf-8")
+    assert "changes nothing outside the preserve set" in updater, (
+        "the updater no longer has the empty-plan exit-0 path this guard is "
+        "about — if it really is gone, retire the guard deliberately")
+    drill = _DRILL.read_text(encoding="utf-8")
+    assert "BUNDLE_DELTA" in drill, (
+        "P7 no longer checks that the bundle differs from the install, so an "
+        "empty-plan apply would be graded as a green health gate")
+    check_at = drill.index("BUNDLE_DELTA")
+    grade_at = drill.index("RED_RC")
+    assert check_at < grade_at, (
+        "P7 checks for work AFTER it grades the apply exit code; the check has "
+        "to come first or the grade is already wrong")
+
+
 # ---------------------------------------------------------------------------
 # is it alive?
 # ---------------------------------------------------------------------------

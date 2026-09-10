@@ -1434,6 +1434,40 @@ print((d.get("latest") or {}).get("sha") or "")
   [ -n "$BUNDLE_SHA" ] || fail 50 P7 "the inbox reports no latest bundle after publish"
   printf '%s\n' "$BUNDLE_SHA" > "$STAMP_FILE"
 
+  # THE APPLY MUST HAVE SOMETHING TO DO, and that is asserted rather than
+  # assumed. `cabinet-update.sh apply` returns 0 WITHOUT EVER REACHING the
+  # health gate on two paths: an install already stamped with the bundle sha,
+  # and a plan whose changed and deleted sets are both empty ("changes nothing
+  # outside the preserve set — recording it and stopping"). Both print to the
+  # updater log, not to stdout, so leg (a) below saw exit 0 with no output and
+  # reported it as "an identity-only probe passed an old process" — a
+  # never-gated apply scored as a green health gate. Measured 2026-09-10: that
+  # is exactly how this stage went red on the CI runner while passing on the
+  # reference box. So the seam is checked FIRST: this bundle must carry the one
+  # mutated path AND carry it with a digest the install does not already have.
+  BUNDLE_DELTA="$("$PY" - "$INSTALL/.updates/inbox/$BUNDLE_SHA.manifest.json" "$INSTALL" "$MUTATED_REL" <<'PYDELTA'
+import hashlib, json, sys
+manifest_path, install, rel = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    files = json.load(open(manifest_path))["files"]
+except Exception as exc:
+    print("unreadable-manifest:%s" % exc)
+    raise SystemExit(0)
+want = files.get(rel)
+if want is None:
+    print("absent-from-bundle")
+    raise SystemExit(0)
+try:
+    with open(install + "/" + rel, "rb") as handle:
+        have = hashlib.sha256(handle.read()).hexdigest()
+except OSError:
+    print("absent-from-install")
+    raise SystemExit(0)
+print("same" if have == want else "differs")
+PYDELTA
+)"
+  [ "$BUNDLE_DELTA" = "differs" ] || fail 50 P7 "the bundle and the install do not differ at $MUTATED_REL ($BUNDLE_DELTA), so this apply has an EMPTY plan and returns 0 without ever reaching the health gate — the rollback arm below would be measuring nothing. Bundle $BUNDLE_SHA, install $(cat "$INSTALL/egg-manifest.json" 2>/dev/null | tr -d '\n' | cut -c1-200)"
+
   # THE SEAM MUST BE REAL BEFORE THE LEG THAT DRIVES IT RUNS (A5.14). Leg (a)
   # makes the health gate go red by handing the apply a restart command that
   # does nothing. Measured 2026-09-07 against origin/feat/p1-update-path: that
@@ -1475,9 +1509,9 @@ print((d.get("latest") or {}).get("sha") or "")
   # command as a red health gate. "Not measured" and "measured red" are
   # different facts, and an exit code is the cheapest place to keep them apart.
   if [ "$RED_RC" -ne 1 ]; then
-    fail 50 P7 "an apply whose dashboard never restarted exited $RED_RC; 1 is the exit of an apply that rolled itself back, 0 would mean an identity-only probe passed an old process that survived a failed restart, and anything else means the apply never reached its health gate: $(tr '\n' ' ' < "$SCRATCH/p7-gate-red.out" | cut -c1-400)"
+    fail 50 P7 "an apply whose dashboard never restarted exited $RED_RC; 1 is the exit of an apply that rolled itself back, and anything else means it never reached its health gate (the empty-plan and already-at-this-sha paths both exit 0 and say so in the updater log, never on stdout — hence the log below): out=$(tr '\n' ' ' < "$SCRATCH/p7-gate-red.out" | cut -c1-200) log=$(tail -c 600 "$INSTALL/.updates/update.log" 2>/dev/null | tr '\n' ' ')"
   fi
-  [ "$ROLLED_DELTA" -eq 1 ] || fail 50 P7 "the failed health gate emitted $ROLLED_DELTA cabinet_update_rolled_back event(s) of its own (the ledger holds $ROLLED_AFTER in all); exactly one is what a rollback that happened looks like"
+  [ "$ROLLED_DELTA" -eq 1 ] || fail 50 P7 "the failed health gate emitted $ROLLED_DELTA cabinet_update_rolled_back event(s) of its own (the ledger holds $ROLLED_AFTER in all); exactly one is what a rollback that happened looks like. log=$(tail -c 600 "$INSTALL/.updates/update.log" 2>/dev/null | tr '\n' ' ')"
   if grep -q 'the one changed line this bundle ships' "$INSTALL/$MUTATED_REL" 2>/dev/null; then
     fail 50 P7 "the rolled-back install still carries the bundle's change"
   fi
