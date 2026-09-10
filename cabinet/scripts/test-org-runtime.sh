@@ -10,6 +10,20 @@ DB="$TMP_DIR/org-runtime.sqlite3"
 DIGEST_DIR="$TMP_DIR/digests"
 export ORG_RUNTIME_DB="$DB"
 export ORG_RUNTIME_PRODUCT="captains-cabinet"
+# THE ROOT A RATIFICATION NEEDS. `outcomes ratify` delegates to the single
+# writer (framework/outcomes/ratify.py), which refuses a git worktree — a
+# checkout's instance/config/outcomes.yml is TRACKED, so a tap there would
+# commit mission state into source control — and refuses an id with no proposed
+# card behind it. `outcomes propose` writes only the store, so this eval used to
+# ask that writer to ratify a card that did not exist, at a root it is right to
+# refuse; both refusals are the guard working and the setup was what was wrong.
+# A scratch deployment root plus a card written through genesis's own writer is
+# what a ratification actually takes, and it makes this leg exercise the real
+# writer end to end rather than a SQLite row. The event ledger is scratch for
+# the same reason the database is: this eval calls itself hermetic.
+export CABINET_ROOT="$TMP_DIR/deployment"
+export CABINET_EVENT_LOG_DIR="$TMP_DIR/events"
+CARD_FIXTURE="$REPO_ROOT/cabinet/scripts/lib/proposed_card_fixture.py"
 
 cleanup() {
   rm -rf "$TMP_DIR"
@@ -96,8 +110,12 @@ OUTCOME_JSON="$(python3 "$ORG" outcomes propose \
 OUTCOME_ID="$(printf '%s' "$OUTCOME_JSON" | json_value '.outcome_id')"
 [ -n "$OUTCOME_ID" ] && pass "outcome proposed" || fail "outcome proposal produced no id"
 
+python3 "$CARD_FIXTURE" --root "$CABINET_ROOT" --id "$OUTCOME_ID" >/dev/null \
+  || fail "could not seed the proposed card the ratification needs"
 python3 "$ORG" outcomes ratify "$OUTCOME_ID" --ratified-by captain --note "Branch fixture ratification" >/dev/null
-pass "outcome ratified"
+[ -f "$CABINET_ROOT/instance/config/outcomes.yml" ] \
+  && pass "outcome ratified onto the live mission file" \
+  || fail "ratify reported success and wrote no live mission file"
 
 MISSION_JSON="$(python3 "$ORG" missions compile "$OUTCOME_ID" \
   --title "Outcome-to-OVI vertical slice" \
