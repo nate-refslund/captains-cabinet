@@ -1138,9 +1138,19 @@ jobs:
   #
   # --skip-update is NOT passed: P7 is the leg that proves the result reaches
   # an installed Cabinet, and a drill that skipped it would be answering a
-  # smaller question than the one phase 1 asks. The rebuild step inside P7 is
-  # the one part this runner cannot do (no built dashboard to swap), and the
-  # drill records that as THIN in its own report rather than as a pass.
+  # smaller question than the one phase 1 asks.
+  #
+  # AND THE REBUILD INSIDE P7 IS REAL HERE (A5.18, 2026-09-10). It used to be
+  # the one part this job could not do, and the drill recorded it as THIN. That
+  # exemption is what let the staged build ship untested and fail on the
+  # Captain's own box the first time anyone ran it for real: the stage reused
+  # the install's dependencies through a symlink out of the staged project and
+  # the bundler refused it. So this job now installs node and the dashboard's
+  # dependencies, the drill hardlinks that tree into its scratch install, and
+  # P7 runs a genuine `next build` through the real updater. The report's
+  # `p7_rebuild` field says REAL or THIN and the assertion below REQUIRES REAL
+  # — a runner that quietly went back to THIN would be this gate switching
+  # itself off.
   responsibility-drill:
     needs: [tree-dedupe]
     # Skipped only on a master push whose tree a PR run already took to
@@ -1148,13 +1158,19 @@ jobs:
     if: ${{ !cancelled() && (github.event_name != 'push' || needs.tree-dedupe.outputs.skip != 'true') }}
     runs-on: ubuntu-latest
     # Measured on the reference box: the drill itself is ~30 s and the two
-    # suites are ~2 m. 20 is a runaway guard with room for a slow runner, not
-    # a performance claim.
-    timeout-minutes: 20
+    # suites are ~2 m, plus two real dashboard builds inside P7 (the gate-red
+    # leg and the gate-green one) at ~1 m each on this hardware. 30 is a
+    # runaway guard with room for a slow runner, not a performance claim.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
         with:
           persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: cabinet/dashboard/package-lock.json
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: "3.12"
@@ -1162,6 +1178,11 @@ jobs:
           cache-dependency-path: .github/workflows/cabinet-ci.yml
       - name: Install test dependencies
         run: pip install pytest pyyaml
+      # BEFORE THE DRILL, and the drill reads this directory to decide whether
+      # its rebuild is real. Without it P7 goes THIN and the step below reds.
+      - name: Install dashboard deps
+        run: npm ci --no-audit --no-fund
+        working-directory: cabinet/dashboard
       - name: "The claim path under contention"
         run: python3.12 -m pytest framework/missions/tests/test_claims.py framework/missions/tests/test_claim_env_isolation.py -q
       - name: "The update path"
@@ -1194,6 +1215,16 @@ jobs:
                   "the drill did not carry one responsibility end to end: "
                   "exit=%d verdict=%r stages-never-reached=%s stages-failed=%s"
                   % (rc, report.get("verdict"), missing, failed))
+          # A5.18: and it ran the REAL staged build. THIN is a legitimate
+          # answer on a box with no toolchain and a lie on this one, where the
+          # step above installed the dependencies the drill looks for.
+          if report.get("p7_rebuild") != "REAL":
+              raise SystemExit(
+                  "P7 reported the rebuild as %r, and this runner installs the "
+                  "dashboard's dependencies precisely so it is REAL. A THIN run "
+                  "here means the staged build — the leg that failed on the "
+                  "Captain's own box — was skipped again."
+                  % (report.get("p7_rebuild"),))
           PY
 
   # THE 3.9 FLOOR (2026-09-07, phase-1 claim). The prompt hook that pulls work

@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 723f18d1d276a630c61924202d2d0e93d1bd89a6352d384ed5fca5d8aba73be3
+Reviewed-Scope-Digest: e2511f5334c65734a72648820117d3d3e1319b6cefc8ec90f57b277fcbe35c55
 
 (RE-BIND, 2026-08-25, `feat/app-is-a-launcher`. Two bound paths moved and
 neither is COG-4 behavior: `cabinet/services.yml` (the com.cabinet.dashboard
@@ -2455,3 +2455,175 @@ No `framework/projection`, `framework/scheduler`, `framework/organs`,
 touched by this branch, whose diff is otherwise `framework/onboarding/`, its
 suite, the dashboard onboarding surfaces, one onboarding design doc and one
 FW-019 review artifact.)
+
+## Re-bind 2026-09-10 (`fix/ci-green-again` — the first run after the CI outage)
+
+(RE-BOUND 2026-09-10 on `fix/ci-green-again`, previous value
+`723f18d1d276a630c61924202d2d0e93d1bd89a6352d384ed5fca5d8aba73be3`. A
+MECHANICAL-DELTA re-bind per the cp3 precedent, never a restamp: FOUR bound
+paths moved and not one of them is a COG-4 surface.
+
+WHY FOUR AT ONCE, WHICH IS UNUSUAL FOR THIS ARTIFACT. GitHub Actions stopped
+executing for this repository on 2026-08-25 and resumed on 2026-09-09. The
+digest above was last correct at `1d1aec53` (2026-08-25, PR #362) — the last
+commit before the outage — so the `cognitive-phase4` job never ran over
+anything that landed in between, and the re-bind-at-landing procedure this
+artifact prescribes had no gate to enforce it. The drift is therefore the sum
+of a fortnight of landings rather than one, and it is discharged here in one
+measured act rather than back-dated into commits that have already merged.
+
+MEASURED, not asserted: the resolved scope was expanded with `git ls-tree -r`
+at `1d1aec53` and at `ae687861` (master's tip) and the two sets diffed — 85
+scope entries resolving to 114 blobs on BOTH sides, none added, none removed,
+exactly FOUR with a different blob.
+
+1. `cabinet/config/cognitive-architecture-contract.yml` — budget maxima and
+   expansion-registry rows only. `central_event_types` 91 -> 96 and
+   `framework_production_modules` 208 -> 213 (the update path's and the claim
+   path's own receipts and modules, each raised VISIBLY with its members named
+   in the expansion registry rather than bought into the baseline, which is the
+   channel `baseline-set-ratchet.py` exists to refuse), and
+   `framework_production_noncomment_lines` 64741 -> 66839 with its dated
+   measurement notes. No budget removed, no pin removed, no baseline changed.
+2. `cabinet/scripts/egg-export-manifest.txt` — export rules for the update path
+   and one CG-36 delete/expect-absent pair: the generated preserve set
+   (`transform preserve-set` + its `expect-present` sensor), the updater and its
+   helper riding the egg, and the phase-1 germline-bundle test archiving out
+   with the subject it reads.
+3. `cabinet/scripts/tests/test_egg_export.py` — the arms for exactly those
+   manifest rules.
+4. `cabinet/services.yml` — one `disabled_reason` STRING on the parked
+   mission-supervisor row, rewritten to say it stays parked on DIRECTION now
+   that the claim primitive it named as missing exists. The row is still
+   `disabled: true`; no service was enabled, added or removed.
+
+No `framework/projection`, `framework/scheduler`, `framework/organs`,
+`framework/cortex`, `framework/evolution`, `cognitive-trajectory.v2.schema.json`,
+`cog4-*` script, COG-4 fixture, boundary row or phase-twin byte is touched. The
+branch carrying this re-bind touches no bound path at all — its diff is two
+org-runtime evals and their new fixture, one separation-of-duties suite, one
+3.9 pull-path suite, the one-responsibility drill and its wiring suite — so
+nothing here was re-reviewed, because no reviewed COG-4 byte moved.
+`verify-cognitive-phase4.sh` re-run green after this re-bind.)
+
+---
+
+## Re-bind 2026-09-10, second (`fix/ci-green-again` MERGE COMMIT `7bfb8f29` — member-by-member attestation by the fresh-context reviewer)
+
+Reviewer: fresh-context review agent, **Opus 5 (`claude-opus-5[1m]`)**, zero session priors,
+clean throwaway clone of the canonical remote (scratch dir, never the live checkout), PR #383 head `7bfb8f29`.
+This section exists because the re-bind above was computed at `ae687861` and the
+merge of PR #382 (`e7849c17`) landed AFTER it, moving a bound path again: the
+`cognitive-phase4` job reds at the merged head with
+`recorded 2871e43d… / recomputed e2511f53…`. A digest that is stale at the head
+CI actually runs is the same defect as an un-re-bound one, so the binding is
+recomputed over the MERGE TREE (the 2026-08-16 merge-commit precedent), and this
+time with the review the re-bind claims, done member by member rather than
+asserted.
+
+**Scope resolution, measured not asserted.** `resolve_scope()` returns **85**
+entries; `git ls-tree -r` expands them to **114 committed blobs** at every one of
+`1d1aec53` (the commit that recorded `723f18d1…`), `ae687861` (master's tip) and
+`7bfb8f29` (this merge). Digests recomputed, not typed:
+
+| rev | blobs | digest |
+|---|---|---|
+| `1d1aec53` | 114 | `723f18d1d276a630c61924202d2d0e93d1bd89a6352d384ed5fca5d8aba73be3` |
+| `ae687861` | 114 | `2871e43d3f24cd01d22ef40233abd9f88db2769039e88ea3c5a7d9d46be6e585` |
+| `7bfb8f29` | 114 | `e2511f5334c65734a72648820117d3d3e1319b6cefc8ec90f57b277fcbe35c55` |
+
+Across the WHOLE range `1d1aec53 → 7bfb8f29`: **0 blobs added, 0 removed, 4
+changed.** Not one of the 4 is a COG-4 implementation surface — no
+`framework/projection`, `framework/scheduler`, `framework/organs`,
+`framework/cortex`, `framework/evolution`, `cognitive-trajectory.v2.schema.json`,
+`cog2-import-gate.py`, `framework/watchdog/registry.py`, no `cog4-*` CLI, no
+`test_cog4_*`/`lib_cog4_*` corpus file, no `fixtures/cog4` blob, no boundary row,
+no phase twin, no rollback manifest, and none of the four sibling scheduling
+locks (`test_charter_shadow.py`, `test_judge_calibration_scheduling.py`,
+`test_preference_pairs.py`, `test_prediction_scorer.py`) moved.
+
+**ATTESTATION, per changed member.** Every hunk of every changed member was read
+against the four properties this artifact freezes — composable organs (the
+registry/descriptor seam and the `organ_manifests` ceiling), the deterministic
+shadow scheduler inside fixed wakes (N1/N2, the four scheduling locks), the §12
+FILE-SEEDED sims (no DSN, no clock, no network), and the retirement conditions
+discharged at the W6 landing.
+
+1. **`cabinet/config/cognitive-architecture-contract.yml`** — leg (a),
+   `1d1aec53 → ae687861`. **PRESERVES.** Parsed with `yaml.safe_load` on both
+   sides and flattened to leaves: **zero leaves removed**; 3 budget maxima raised
+   (`central_event_types` 91→96, `framework_production_modules` 208→213,
+   `framework_production_noncomment_lines` 64741→66839); `temporary_allowances`
+   49→50 rows (the `update-path` +88 briefing row); `expansions` 4→14 rows (the
+   remaining 33 "changed" leaves are pure list-index shift from rows inserted at
+   the head, not edits). Bound-property checks, each a recomputed value:
+   `baseline_sha` `8f9c555d…` unchanged; `organ_manifests.maximum` **5**
+   unchanged — this is COG-4's own composable-organ ceiling; the two COG-4
+   `temporary_allowances` rows (`framework_production_modules` +10,
+   `framework_production_noncomment_lines` +1536) are byte-identical (row digest
+   `3777c9cbd48221c2` on both sides); the `declared_invariants` and
+   `enduring_architecture_gates` blocks are byte-identical (digests
+   `16e383fc37c0a83a` / `cc2e1e7078a76875` on both sides), which is where the
+   cross-phase spine lives. HONEST CAVEAT, recorded rather than smoothed: three
+   SHARED framework budgets did move upward, and a raised shared ceiling is a
+   real loosening of a shared gate — but it is loosening through the channel the
+   contract builds for it (raised visibly, each new member named in the expansion
+   registry, `baseline-set-ratchet.py` unbypassed), the members bought are
+   `framework/missions/{claims,receipts}.py`, `framework/outcomes/*`,
+   `framework/frontdoor/*` and three `cabinet_update_*` event types — none in the
+   COG-4 scope set — and no COG-4 property is stated in terms of a shared
+   maximum. Nothing re-reviewed downstream, because no reviewed COG-4 byte moved.
+2. **`cabinet/scripts/egg-export-manifest.txt`** — leg (a). **PRESERVES.** The
+   diff is **additions only, zero deleted lines**: a `delete` +
+   `expect-absent` pair for `cabinet/scripts/tests/test_germline_bundle.py`
+   (CG-36, the sensor whose subject archives out), the `transform preserve-set`
+   row + its `expect-present` sensor, and `expect-present` rows for
+   `cabinet-update.sh` and `lib/update_bundle.py`. The COG-4 twin rows are
+   untouched: the 37 lines in this file matching
+   `cog4|cog-4|projection|scheduler|organs` hash identically
+   (`013c6ec24a546999`) at all three revs. P5's recorded nit (no `expect-present`
+   for `cog4-snapshot.py` / `cog4-schedule.py`) is unchanged, still optional.
+3. **`cabinet/scripts/tests/test_egg_export.py`** — leg (a). **PRESERVES.** Four
+   new arms for exactly the manifest rows above (`preserve_set_is_exported…`,
+   `preserve_set_transform_is_not_a_no_op` — a degenerate-end refusal arm, rc 3
+   on an unreadable authoring source — `bundle_manifest_locked_set`,
+   `bundle_and_out_are_alternatives`), one `import sys`, and one prose comment
+   rewritten (rm -f → rm -rf now permits a package DIRECTORY). **No COG-4 arm was
+   deleted, renamed, skipped or xfailed**: the 4 COG-4-matching lines hash
+   identically (`fbc8736ffd16268e`) at all three revs, and the file's collected
+   count only grows.
+4. **`cabinet/services.yml`** — leg (a). **PRESERVES.** One hunk, one field: the
+   `disabled_reason` STRING on `com.cabinet.mission-supervisor`. The row is still
+   `disabled: true`; `services_enabled` (50) and `services_total` (54) ceilings
+   are unchanged; no service was added, removed or enabled. The W6-e2 compose
+   rows this artifact binds — the organ services and their fixed wakes — are
+   untouched: the 36 matching lines hash identically (`d8b924db1e19eabb`) at all
+   three revs. The shadow scheduler's wake cadence is therefore bit-for-bit what
+   was reviewed.
+5. **`cabinet/config/cognitive-architecture-contract.yml`** — leg (b),
+   `ae687861 → 7bfb8f29`, i.e. what PR #382's merge did to a bound path.
+   **PRESERVES, and it is comment-only.** Two independent proofs rather than a
+   reading: (i) the flattened-leaf diff over the merge is **0 changed, 0 added,
+   0 removed** — the parsed contract is identical; (ii) `diff` of both blobs with
+   `#`-comment and blank lines stripped prints **nothing**. The delta is a `+0`
+   explanatory note under `framework_production_noncomment_lines` (66839 → 66839)
+   recording U5c's amendments A5.18/A5.19 and the dashboard build defect they
+   uncovered. No maximum, pin, allowance, invariant or gate moved. The blob hash
+   moved, which is the whole reason the digest moved — and that is the binding
+   working as designed, not drift.
+
+**VERDICT on the re-bind: the four (five, counting the same file twice) member
+changes PRESERVE every COG-4 property this artifact freezes. Nothing is
+re-reviewed downstream because no reviewed COG-4 byte moved.** The digest below
+is what `cognitive-phase4-review-scope.py --print` recomputes over THIS merge
+tree; the review artifact is excluded from its own scope, so this section does
+not move it.
+
+Recorded digest (live, also replacing the single `Reviewed-Scope-Digest:` line at
+the top of this file):
+`e2511f5334c65734a72648820117d3d3e1319b6cefc8ec90f57b277fcbe35c55`
+Previous: `2871e43d3f24cd01d22ef40233abd9f88db2769039e88ea3c5a7d9d46be6e585`
+(itself preceded by `723f18d1d276a630c61924202d2d0e93d1bd89a6352d384ed5fca5d8aba73be3`).
+
+Every note above survives verbatim; none is another's restamp — a re-freeze that
+hides what moved asserts a review that never happened.

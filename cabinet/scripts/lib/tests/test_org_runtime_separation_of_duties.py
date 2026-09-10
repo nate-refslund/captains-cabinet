@@ -28,13 +28,25 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _ORG = _REPO_ROOT / "cabinet" / "scripts" / "org-runtime.py"
 
+sys.path.insert(0, str(_REPO_ROOT / "cabinet" / "scripts" / "lib"))
+from proposed_card_fixture import seed as seed_proposed_card  # noqa: E402
+
 
 @pytest.fixture
 def org(tmp_path):
     """Return a runner bound to a hermetic org-runtime DB."""
+    # THE ROOT A RATIFICATION NEEDS. `outcomes ratify` delegates to the single
+    # writer (framework/outcomes/ratify.py), which refuses a git worktree — a
+    # checkout's instance/config/outcomes.yml is TRACKED — and refuses an id
+    # with no proposed card behind it. Left unset, CABINET_ROOT resolved to
+    # _REPO_ROOT and every fixture here died on the first refusal, taking four
+    # separation-of-duties arms down with it. Both refusals are the guard
+    # working; the setup was what was wrong.
     env_extra = {
         "ORG_RUNTIME_DB": str(tmp_path / "org.sqlite3"),
         "ORG_RUNTIME_PRODUCT": "captains-cabinet",
+        "CABINET_ROOT": str(tmp_path / "deployment"),
+        "CABINET_EVENT_LOG_DIR": str(tmp_path / "events"),
         "PYTHONDONTWRITEBYTECODE": "1",
     }
 
@@ -59,17 +71,39 @@ def _role(org, slug):
     return slug
 
 
-@pytest.fixture
-def node(org):
-    """A ratified outcome with one node owned by `cos`, verified by `auditor`."""
-    _role(org, "cos")
-    _role(org, "auditor")
+def _ratified_outcome(org, tmp_path) -> str:
+    """Propose one outcome and ratify it, the way a ratification actually works.
+
+    THE STEP THAT WAS MISSING. `outcomes ratify` delegates to the single writer
+    (framework/outcomes/ratify.py), which reads a PROPOSED CARD off the
+    deployment root; `outcomes propose` writes only the org-runtime store. So
+    the card is seeded through genesis's own merge writer — never hand-rolled
+    YAML, which would keep passing after the writer's shape moved.
+
+    AND THE RETURN CODE IS ASSERTED. Three call sites here used to spell this
+    `org("outcomes", "ratify", ...)` with the result discarded, so a ratify that
+    refused every time was invisible: one of them still went green, on the
+    WRONG error (compile refusing for a missing --verifier-role instead of the
+    self-verification it names). A fixture step whose failure is not asserted is
+    not a fixture, it is a coin toss.
+    """
     r = org("outcomes", "propose", "--title", "t", "--metric-name", "m",
             "--target-value", "12", "--unit", "points", "--actor", "cos")
     assert r.returncode == 0, r.stderr
     outcome_id = json.loads(r.stdout)["outcome_id"]
-    assert org("outcomes", "ratify", outcome_id, "--ratified-by", "captain",
-               "--note", "n").returncode == 0
+    seed_proposed_card(tmp_path / "deployment", outcome_id)
+    ratified = org("outcomes", "ratify", outcome_id, "--ratified-by", "captain",
+                   "--note", "n")
+    assert ratified.returncode == 0, ratified.stderr
+    return outcome_id
+
+
+@pytest.fixture
+def node(org, tmp_path):
+    """A ratified outcome with one node owned by `cos`, verified by `auditor`."""
+    _role(org, "cos")
+    _role(org, "auditor")
+    outcome_id = _ratified_outcome(org, tmp_path)
 
     def make():
         c = org("missions", "compile", outcome_id, "--title", "T",
@@ -148,10 +182,7 @@ def test_legacy_node_without_verifier_role_is_still_completable(org, tmp_path):
     """
     _role(org, "cos")
     _role(org, "auditor")
-    r = org("outcomes", "propose", "--title", "t", "--metric-name", "m",
-            "--target-value", "12", "--unit", "points", "--actor", "cos")
-    outcome_id = json.loads(r.stdout)["outcome_id"]
-    org("outcomes", "ratify", outcome_id, "--ratified-by", "captain", "--note", "n")
+    outcome_id = _ratified_outcome(org, tmp_path)
 
     # Simulate the pre-change compile: a node row with verifier_role = ''.
     c = org("missions", "compile", outcome_id, "--title", "T", "--node-title", "N",
@@ -175,14 +206,11 @@ def test_near_miss_case_of_the_owner_is_refused(org, node):
     assert r.returncode != 0, f"case-variant self-verification accepted.\nstdout={r.stdout}"
 
 
-def test_compile_requires_a_verifier_role(org):
+def test_compile_requires_a_verifier_role(org, tmp_path):
     """`missions compile` used to INSERT nodes with no verifier_role at all,
     which is what made every node self-verifiable at completion."""
     _role(org, "cos")
-    r = org("outcomes", "propose", "--title", "t", "--metric-name", "m",
-            "--target-value", "12", "--unit", "points", "--actor", "cos")
-    outcome_id = json.loads(r.stdout)["outcome_id"]
-    org("outcomes", "ratify", outcome_id, "--ratified-by", "captain", "--note", "n")
+    outcome_id = _ratified_outcome(org, tmp_path)
 
     r = org("missions", "compile", outcome_id, "--title", "T",
             "--node-title", "N", "--owner-role", "cos", "--actor", "cos")
@@ -190,13 +218,10 @@ def test_compile_requires_a_verifier_role(org):
     assert "--verifier-role" in (r.stderr + r.stdout)
 
 
-def test_compile_refuses_owner_as_its_own_verifier(org):
+def test_compile_refuses_owner_as_its_own_verifier(org, tmp_path):
     """Naming the owner as verifier is the same hole wearing a name."""
     _role(org, "cos")
-    r = org("outcomes", "propose", "--title", "t", "--metric-name", "m",
-            "--target-value", "12", "--unit", "points", "--actor", "cos")
-    outcome_id = json.loads(r.stdout)["outcome_id"]
-    org("outcomes", "ratify", outcome_id, "--ratified-by", "captain", "--note", "n")
+    outcome_id = _ratified_outcome(org, tmp_path)
 
     r = org("missions", "compile", outcome_id, "--title", "T",
             "--node-title", "N", "--owner-role", "cos",

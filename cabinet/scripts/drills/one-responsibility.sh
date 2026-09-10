@@ -71,9 +71,30 @@
 #   CABINET_DRILL_DASH_PORT
 #       pin the stub server's port instead of picking a free one.
 #
+# P7'S REBUILD IS REAL WHENEVER IT CAN BE (A5.18, 2026-09-10). This drill used
+# to pass --skip-rebuild on every apply, so the staged build — the step that
+# reuses the install's dependencies and swaps a fresh build into place — was
+# the one leg of the update path nothing ever walked. The first real apply on
+# the Captain's installed Cabinet died there ("Symlink [project]/node_modules
+# is invalid, it points out of the filesystem root"), rolled back correctly,
+# and was found by an operator rather than by this file. So: when a node
+# toolchain is on PATH and this clone carries an installed dependency tree,
+# P7 hardlinks that tree into the scratch install THROUGH THE SHIPPED FUNCTION
+# the updater itself uses, drops --skip-rebuild, and the health gate's build
+# stamp is read off the artifact the build produced. When it cannot, the run
+# says THIN in the stage line and in `p7_rebuild` in the JSON report, and
+# --with-rebuild turns that into a red instead. The bundle P7 cuts therefore
+# changes a DASHBOARD file as well as a framework one — the rebuild is
+# conditional on the plan touching one, so a framework-only bundle would have
+# skipped the build no matter what flag was passed.
+#
 # Usage:
 #   bash cabinet/scripts/drills/one-responsibility.sh [--root DIR] [--tree DIR]
 #        [--skip-update] [--with-rebuild] [--keep-scratch] [--json]
+#
+#   --with-rebuild now DEMANDS the real staged build and reds when the box
+#   cannot run one; without it the drill takes the real build anyway whenever
+#   the toolchain and the dependency tree are both there.
 #
 # STAGE VERDICTS ARE FAIL-CLOSED (lib/verdict.sh). Every stage's assertions
 # run as a python block that prints one json {code, problems} verdict and then
@@ -271,6 +292,7 @@ on_exit() {
   if [ "$JSON_OUT" = "1" ] && [ -n "$STAGES_FILE" ] && [ -f "$STAGES_FILE" ]; then
     EXITCODE="$DRILL_EXIT" STAGE="$DRILL_STAGE" REASON="$DRILL_REASON" \
     SFILE="$STAGES_FILE" ROOTDIR="${ROOT:-}" SLUGV="${SLUG:-}" TREESRC="${TREE_SOURCE:-}" \
+    P7REBUILD="${REBUILD_MODE:-}" \
     "$PY" - <<'PY'
 import json, os
 stages = []
@@ -289,6 +311,10 @@ print(json.dumps({
     "root": os.environ["ROOTDIR"] or None,
     "slug": os.environ["SLUGV"] or None,
     "tree_source": os.environ["TREESRC"] or None,
+    # A5.18: REAL means P7 ran the staged `next build` through the real
+    # updater; THIN means it did not and nothing about the rebuild is proved;
+    # null means P7 never ran at all (--skip-update, or a red before it).
+    "p7_rebuild": os.environ.get("P7REBUILD") or None,
     "stages": stages,
 }, indent=2, sort_keys=True))
 PY
@@ -1307,14 +1333,62 @@ else
   UPDATER="$ROOT/cabinet/scripts/cabinet-update.sh"
   [ -f "$UPDATER" ] || fail 50 P7 "no update path at cabinet/scripts/cabinet-update.sh — the result cannot reach an installed Cabinet"
 
-  # A4.7 wants the FULL apply — stage build, restart, health gate. A scratch
-  # install carries no node toolchain and no installed dependencies, so the
-  # build step is skippable and the run that skips it says so (THIN) instead of
-  # quietly reporting a leg it never walked. --with-rebuild is the full variant;
-  # it is what an operator runs on a box that has the toolchain, and it is the
-  # only way the staged-build-and-swap (A5.6) is exercised end to end.
+  # A4.7 wants the FULL apply — stage build, restart, health gate — and until
+  # A5.18 this drill always passed --skip-rebuild. That is why the first real
+  # apply on the Captain's installed Cabinet failed at a step this drill had
+  # never walked: the staged build symlinked the install's dependencies into
+  # the stage and the bundler refused a link out of the project root. A leg
+  # nobody walks proves nothing about the leg.
+  #
+  # So the rebuild is REAL whenever it CAN be: a node toolchain on PATH and an
+  # installed dependency tree in this drill's own clone, which is exactly what
+  # a box that can build the dashboard looks like. Otherwise THIN, said out
+  # loud in the stage line and in the JSON report — never a silent pass.
+  # --with-rebuild is now a DEMAND rather than a variant: ask for the real
+  # build on a box that cannot do it and the drill reds instead of quietly
+  # giving you the smaller run.
+  DRILL_NODE_MODULES="$REPO_ROOT/cabinet/dashboard/node_modules"
+  REBUILD_MODE="THIN"
   REBUILD_ARG="--skip-rebuild"
-  [ "$WITH_REBUILD" = "1" ] && REBUILD_ARG=""
+  if command -v npm >/dev/null 2>&1 && [ -d "$DRILL_NODE_MODULES" ]; then
+    REBUILD_MODE="REAL"
+    REBUILD_ARG=""
+  elif [ "$WITH_REBUILD" = "1" ]; then
+    fail 50 P7 "--with-rebuild asks for the real staged build, and this box cannot run one: npm on PATH is $(command -v npm >/dev/null 2>&1 && echo yes || echo no), an installed dependency tree at $DRILL_NODE_MODULES is $([ -d "$DRILL_NODE_MODULES" ] && echo yes || echo no). Run npm ci in cabinet/dashboard first, or drop --with-rebuild and accept the THIN line"
+  fi
+  say "P7 rebuild: $REBUILD_MODE"
+
+  # THE BUILD'S OWN SCRATCH, so a real build cannot break hermeticity. npm and
+  # the bundler both keep caches and telemetry under HOME, and this drill's
+  # HOME is a throwaway whose file list is compared before and after: a build
+  # that wrote one line of telemetry there would red the hermeticity stage for
+  # a reason that has nothing to do with what the drill proves. Pointed at the
+  # run's own scratch rather than suppressed, so the writes still happen and
+  # still land somewhere this run owns.
+  #
+  # A SECOND THROWAWAY HOME FOR THE UPDATE LEGS, and it is not a loophole.
+  # Measured 2026-09-10: with the telemetry variable set and every XDG path
+  # redirected, a real build still creates a config directory under HOME —
+  # `~/Library/Preferences/<tool>-nodejs` on this box, because the library that
+  # resolves it ignores XDG on macOS. Three paths, every one of them the
+  # bundler's, and the hermeticity stage red. The claim that stage makes is
+  # "nothing was written outside this run's root", and $SCRATCH IS this run's
+  # root, so the update legs get a HOME inside it. The operator's own HOME is
+  # exactly as far away as it was, and $HOME_DIR stays under the same strict
+  # before/after comparison for everything else the run does.
+  BUILD_HOME="$HOME"
+  if [ "$REBUILD_MODE" = "REAL" ]; then
+    export NEXT_TELEMETRY_DISABLED=1
+    export npm_config_cache="$SCRATCH/npm-cache"
+    export npm_config_update_notifier=false
+    export XDG_CACHE_HOME="$SCRATCH/xdg-cache"
+    export XDG_CONFIG_HOME="$SCRATCH/xdg-config"
+    export XDG_DATA_HOME="$SCRATCH/xdg-data"
+    export XDG_STATE_HOME="$SCRATCH/xdg-state"
+    BUILD_HOME="$SCRATCH/build-home"
+    mkdir -p "$npm_config_cache" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" \
+             "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$BUILD_HOME"
+  fi
 
   INSTALL="$SCRATCH/install"
   MUT="$SCRATCH/mutated"
@@ -1331,6 +1405,18 @@ else
     || fail 50 P7 "could not stage the locked-path tree"
   MUTATED_REL="framework/missions/session_bridge.py"
   printf '\n# the one changed line this bundle ships\n' >> "$MUT/$MUTATED_REL"
+  # AND ONE DASHBOARD FILE (A5.18). The rebuild is conditional on the PLAN
+  # touching cabinet/dashboard/ — deliberately, since a full build on every
+  # framework-only update would cost minutes for nothing. A bundle that changes
+  # only a framework file therefore never reaches stage_build at all, so
+  # dropping --skip-rebuild from a framework-only bundle would have changed
+  # nothing and the drill would have gone on reporting a build it never ran.
+  # A trailing comment on the build config is the smallest change that is
+  # unambiguously a dashboard change.
+  DASH_MUTATED_REL="cabinet/dashboard/next.config.ts"
+  [ -f "$MUT/$DASH_MUTATED_REL" ] \
+    || fail 50 P7 "the shipped tree has no $DASH_MUTATED_REL, so this bundle cannot make the plan touch the dashboard and the staged rebuild would never run"
+  printf '\n// the one changed dashboard line this bundle ships\n' >> "$MUT/$DASH_MUTATED_REL"
   printf '\n# a change under the locked hooks directory\n' >> "$LOCKMUT/cabinet/scripts/hooks/session-task-inject.sh"
 
   # A BUNDLE IS A CUT OF A CHECKOUT. `publish` runs the exporter, and the
@@ -1387,6 +1473,27 @@ else
   [ -f "$INSTALL/cabinet/scripts/cabinet-update.sh" ] \
     || fail 50 P7 "the exported install ships no updater, so the result could not reach it"
 
+  # THE INSTALL'S OWN DEPENDENCY TREE (A5.18). An export ships no node_modules
+  # — it is not shipped content — so an installed Cabinet gets one from its
+  # hatch, and the staged build reuses it. The drill gives the scratch install
+  # the same thing, from its own clone, THROUGH THE SHIPPED FUNCTION the
+  # updater itself calls: a drill with a private copy of the mechanism proves
+  # the copy works, which is not the claim. Hardlinks, so this costs the box
+  # nothing and the clone's tree is untouched when the scratch is removed.
+  if [ "$REBUILD_MODE" = "REAL" ]; then
+    [ -f "$ROOT/cabinet/scripts/lib/dashboard.sh" ] \
+      || fail 50 P7 "the staged tree ships no cabinet/scripts/lib/dashboard.sh, so the dependency tree cannot be materialised through the function the updater uses"
+    # shellcheck source=cabinet/scripts/lib/dashboard.sh
+    . "$ROOT/cabinet/scripts/lib/dashboard.sh"
+    command -v cabinet_dash_link_modules >/dev/null 2>&1 \
+      || fail 50 P7 "the staged tree's dashboard library declares no cabinet_dash_link_modules, so the staged rebuild would be linking dependencies by some mechanism this drill invented rather than the one that ships (A5.18)"
+    cabinet_dash_link_modules "$DRILL_NODE_MODULES" \
+      "$INSTALL/cabinet/dashboard/node_modules" >> "$SCRATCH/p7-link.log" 2>&1 \
+      || fail 50 P7 "the install's dependency tree could not be materialised: $(tr '\n' ' ' < "$SCRATCH/p7-link.log" | tail -c 400)"
+    [ -d "$INSTALL/cabinet/dashboard/node_modules" ] && [ ! -L "$INSTALL/cabinet/dashboard/node_modules" ] \
+      || fail 50 P7 "the install's node_modules is not a real directory, so the staged build would inherit the very symlink A5.18 removed"
+  fi
+
   # A preserved path with something in it: an update that quietly emptied this
   # would be the worst possible pass. The canary is a member of the same
   # shipped-empty preserve class as the Captain's standing switches, chosen
@@ -1408,11 +1515,23 @@ else
   STUB_STATE="$SCRATCH/stub-dash.json"
   STAMP_FILE="$SCRATCH/stub-stamp.txt"
   printf 'installed\n' > "$STAMP_FILE"
+  # WHERE THE BUILD STAMP COMES FROM, and it is not this drill. The health
+  # gate's build leg asks the running process for `build_commit`, which the
+  # real dashboard answers from a value `next build` INLINED into its output.
+  # A stub that answered it from a file the drill wrote would be a sensor
+  # reading the drill's own hand — green whether or not a build ever ran. So
+  # the stub reads it out of the built artifact sitting in the install
+  # (`.next/required-server-files.json`, where the bundler records the values
+  # it inlined), which is there only if the staged build ran, produced output,
+  # and was swapped into place. In THIN mode there is no artifact, the stub
+  # answers with no build stamp at all, and the gate's build leg is THIN too —
+  # which is the honest pair.
+  BUILD_STAMP_FROM="$INSTALL/cabinet/dashboard"
   "$PY" "$LIB_DIR/stub_dashboard.py" restart --port "$PORT" --stamp-file "$STAMP_FILE" \
-    --state-file "$STUB_STATE" --service "$SERVICE" \
+    --state-file "$STUB_STATE" --service "$SERVICE" --build-stamp-from "$BUILD_STAMP_FROM" \
     || fail 50 P7 "the stub health server would not start on $PORT"
   export CABINET_DASHBOARD_PORT="$PORT"
-  export CABINET_UPDATE_TEST_RESTART_CMD="$PY $LIB_DIR/stub_dashboard.py restart --port $PORT --stamp-file $STAMP_FILE --state-file $STUB_STATE --service $SERVICE"
+  export CABINET_UPDATE_TEST_RESTART_CMD="$PY $LIB_DIR/stub_dashboard.py restart --port $PORT --stamp-file $STAMP_FILE --state-file $STUB_STATE --service $SERVICE --build-stamp-from $BUILD_STAMP_FROM"
 
   ( cd "$ROOT" && bash "$UPDATER" publish --from "$MUT" --to "$INSTALL" ) \
     > "$SCRATCH/p7-publish.out" 2>&1
@@ -1433,6 +1552,40 @@ print((d.get("latest") or {}).get("sha") or "")
 ')"
   [ -n "$BUNDLE_SHA" ] || fail 50 P7 "the inbox reports no latest bundle after publish"
   printf '%s\n' "$BUNDLE_SHA" > "$STAMP_FILE"
+
+  # THE APPLY MUST HAVE SOMETHING TO DO, and that is asserted rather than
+  # assumed. `cabinet-update.sh apply` returns 0 WITHOUT EVER REACHING the
+  # health gate on two paths: an install already stamped with the bundle sha,
+  # and a plan whose changed and deleted sets are both empty ("changes nothing
+  # outside the preserve set — recording it and stopping"). Both print to the
+  # updater log, not to stdout, so leg (a) below saw exit 0 with no output and
+  # reported it as "an identity-only probe passed an old process" — a
+  # never-gated apply scored as a green health gate. Measured 2026-09-10: that
+  # is exactly how this stage went red on the CI runner while passing on the
+  # reference box. So the seam is checked FIRST: this bundle must carry the one
+  # mutated path AND carry it with a digest the install does not already have.
+  BUNDLE_DELTA="$("$PY" - "$INSTALL/.updates/inbox/$BUNDLE_SHA.manifest.json" "$INSTALL" "$MUTATED_REL" <<'PYDELTA'
+import hashlib, json, sys
+manifest_path, install, rel = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    files = json.load(open(manifest_path))["files"]
+except Exception as exc:
+    print("unreadable-manifest:%s" % exc)
+    raise SystemExit(0)
+want = files.get(rel)
+if want is None:
+    print("absent-from-bundle")
+    raise SystemExit(0)
+try:
+    with open(install + "/" + rel, "rb") as handle:
+        have = hashlib.sha256(handle.read()).hexdigest()
+except OSError:
+    print("absent-from-install")
+    raise SystemExit(0)
+print("same" if have == want else "differs")
+PYDELTA
+)"
+  [ "$BUNDLE_DELTA" = "differs" ] || fail 50 P7 "the bundle and the install do not differ at $MUTATED_REL ($BUNDLE_DELTA), so this apply has an EMPTY plan and returns 0 without ever reaching the health gate — the rollback arm below would be measuring nothing. Bundle $BUNDLE_SHA, install $(cat "$INSTALL/egg-manifest.json" 2>/dev/null | tr -d '\n' | cut -c1-200)"
 
   # THE SEAM MUST BE REAL BEFORE THE LEG THAT DRIVES IT RUNS (A5.14). Leg (a)
   # makes the health gate go red by handing the apply a restart command that
@@ -1459,7 +1612,7 @@ print((d.get("latest") or {}).get("sha") or "")
   # back, and only a delta says that.
   event_count P7 50 cabinet_update_rolled_back
   ROLLED_BEFORE="$EV_COUNT"
-  ( cd "$INSTALL" && CABINET_ROOT="$INSTALL" CABINET_UPDATE_TEST_RESTART_CMD="/usr/bin/true" \
+  ( cd "$INSTALL" && HOME="$BUILD_HOME" CABINET_ROOT="$INSTALL" CABINET_UPDATE_TEST_RESTART_CMD="/usr/bin/true" \
       bash "$UPDATER" apply --bundle "$BUNDLE_SHA" --from terminal $REBUILD_ARG ) \
     > "$SCRATCH/p7-gate-red.out" 2>&1
   RED_RC=$?
@@ -1475,9 +1628,9 @@ print((d.get("latest") or {}).get("sha") or "")
   # command as a red health gate. "Not measured" and "measured red" are
   # different facts, and an exit code is the cheapest place to keep them apart.
   if [ "$RED_RC" -ne 1 ]; then
-    fail 50 P7 "an apply whose dashboard never restarted exited $RED_RC; 1 is the exit of an apply that rolled itself back, 0 would mean an identity-only probe passed an old process that survived a failed restart, and anything else means the apply never reached its health gate: $(tr '\n' ' ' < "$SCRATCH/p7-gate-red.out" | cut -c1-400)"
+    fail 50 P7 "an apply whose dashboard never restarted exited $RED_RC; 1 is the exit of an apply that rolled itself back, and anything else means it never reached its health gate (the empty-plan and already-at-this-sha paths both exit 0 and say so in the updater log, never on stdout — hence the log below): out=$(tr '\n' ' ' < "$SCRATCH/p7-gate-red.out" | cut -c1-200) log=$(tail -c 600 "$INSTALL/.updates/update.log" 2>/dev/null | tr '\n' ' ')"
   fi
-  [ "$ROLLED_DELTA" -eq 1 ] || fail 50 P7 "the failed health gate emitted $ROLLED_DELTA cabinet_update_rolled_back event(s) of its own (the ledger holds $ROLLED_AFTER in all); exactly one is what a rollback that happened looks like"
+  [ "$ROLLED_DELTA" -eq 1 ] || fail 50 P7 "the failed health gate emitted $ROLLED_DELTA cabinet_update_rolled_back event(s) of its own (the ledger holds $ROLLED_AFTER in all); exactly one is what a rollback that happened looks like. log=$(tail -c 600 "$INSTALL/.updates/update.log" 2>/dev/null | tr '\n' ' ')"
   if grep -q 'the one changed line this bundle ships' "$INSTALL/$MUTATED_REL" 2>/dev/null; then
     fail 50 P7 "the rolled-back install still carries the bundle's change"
   fi
@@ -1489,12 +1642,33 @@ print((d.get("latest") or {}).get("sha") or "")
   APPLIED_BEFORE="$EV_COUNT"
   dir_count P7 50 "$INSTALL/.updates/snapshots"
   SNAPS_BEFORE="$DIR_COUNT"
-  ( cd "$INSTALL" && CABINET_ROOT="$INSTALL" bash "$UPDATER" apply --bundle "$BUNDLE_SHA" --from terminal $REBUILD_ARG ) \
+  ( cd "$INSTALL" && HOME="$BUILD_HOME" CABINET_ROOT="$INSTALL" bash "$UPDATER" apply --bundle "$BUNDLE_SHA" --from terminal $REBUILD_ARG ) \
     > "$SCRATCH/p7-apply.out" 2>&1
   APPLY_RC=$?
   [ "$APPLY_RC" -eq 0 ] || fail 50 P7 "apply exited $APPLY_RC: $(tr '\n' ' ' < "$SCRATCH/p7-apply.out" | cut -c1-400)"
   grep -q 'the one changed line this bundle ships' "$INSTALL/$MUTATED_REL" \
     || fail 50 P7 "apply reported success but the shipped change is not in the install"
+  grep -q 'the one changed dashboard line this bundle ships' "$INSTALL/$DASH_MUTATED_REL" \
+    || fail 50 P7 "apply reported success but the shipped DASHBOARD change is not in the install, so the plan never touched the dashboard and no rebuild was even conditional on it"
+  # A5.18 — THE BUILD, READ OFF THE THING THE BUILD MADE. The health gate has
+  # already demanded this through the running process; this is the same fact
+  # taken straight from the artifact, because the gate's copy travels through a
+  # stub and a stub is a thing this drill controls.
+  if [ "$REBUILD_MODE" = "REAL" ]; then
+    BUILT_STAMP="$(BUILT_DIR="$INSTALL/cabinet/dashboard" "$PY" - <<'PYSTAMP'
+import json, os
+from pathlib import Path
+path = Path(os.environ["BUILT_DIR"]) / ".next" / "required-server-files.json"
+try:
+    print(((json.loads(path.read_text(encoding="utf-8")).get("config") or {})
+           .get("env") or {}).get("CABINET_BUILD_SOURCE_COMMIT") or "")
+except Exception as exc:
+    print("unreadable: %s" % exc)
+PYSTAMP
+)"
+    [ "$BUILT_STAMP" = "$BUNDLE_SHA" ] \
+      || fail 50 P7 "the build serving in the install is stamped '$BUILT_STAMP', and the bundle that was applied is $BUNDLE_SHA — the staged build was not the one that was swapped in"
+  fi
   sha256_of P7 50 "$INSTALL/$PRESERVED_REL"
   PRESERVED_AFTER="$SHA_OUT"
   [ "$PRESERVED_BEFORE" = "$PRESERVED_AFTER" ] || fail 50 P7 "apply overwrote a preserved path"
@@ -1528,7 +1702,7 @@ print((d.get("latest") or {}).get("sha") or "")
   [ -n "$LOCK_SHA" ] || fail 50 P7 "the inbox reports no bundle after the locked-path publish; an apply with an empty bundle id would be refused for the wrong reason and the drill would call it a locked-path refusal"
   event_count P7 50 cabinet_update_refused
   REFUSED_BEFORE="$EV_COUNT"
-  ( cd "$INSTALL" && CABINET_ROOT="$INSTALL" bash "$UPDATER" apply --bundle "$LOCK_SHA" --from terminal $REBUILD_ARG ) \
+  ( cd "$INSTALL" && HOME="$BUILD_HOME" CABINET_ROOT="$INSTALL" bash "$UPDATER" apply --bundle "$LOCK_SHA" --from terminal $REBUILD_ARG ) \
     > "$SCRATCH/p7-locked.out" 2>&1
   LOCK_RC=$?
   [ "$LOCK_RC" -eq 3 ] || fail 50 P7 "a bundle changing a locked path exited $LOCK_RC, expected 3"
@@ -1588,10 +1762,10 @@ PYREFUSAL
 
   "$PY" "$LIB_DIR/stub_dashboard.py" stop --state-file "$STUB_STATE" >/dev/null 2>&1 || true
   STUB_STATE=""
-  if [ "$WITH_REBUILD" = "1" ]; then
-    pass_stage P7 "the build step ran (--with-rebuild): the staged build was swapped in and the health gate read the stamp it baked"
+  if [ "$REBUILD_MODE" = "REAL" ]; then
+    pass_stage P7 "P7 rebuild: REAL — the staged build ran through the real updater against a hardlinked dependency tree, was swapped into the install, and both the health gate and this drill read $BUNDLE_SHA back off the artifact it produced"
   else
-    thin_stage P7 "rebuild step skipped (--skip-rebuild): a scratch install carries no node toolchain, so the built stamp came from the stub server rather than from npm run build"
+    thin_stage P7 "P7 rebuild: THIN — no node toolchain or no installed dependency tree in this clone, so the staged build was skipped (--skip-rebuild) and NOTHING about the rebuild, the dependency link or the build stamp is proved by this run"
   fi
   pass_stage P7 "gate red rolled back, gate green applied, preserved path intact, locked bundle refused whole"
 fi
