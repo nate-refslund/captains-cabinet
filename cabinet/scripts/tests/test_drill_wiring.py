@@ -293,3 +293,110 @@ def test_the_drill_passes_on_the_committed_tree(tmp_path):
         "this arm runs with --skip-update, so P7 must record itself as THIN "
         "rather than silently absent: %r" % (stages.get("P7"),))
     assert not [row for row in report["stages"] if row["verdict"] == "fail"], report
+
+
+# ---------------------------------------------------------------------------
+# the staged rebuild is the leg nothing walked (A5.18)
+# ---------------------------------------------------------------------------
+
+def test_the_drill_does_not_hardcode_a_skipped_rebuild():
+    """The one line that let the update path ship a build nobody ran.
+
+    Until 2026-09-10 P7 set `REBUILD_ARG="--skip-rebuild"` and only cleared it
+    under an opt-in flag no gate passed, so the staged build — dependencies,
+    `next build`, the rename-last swap — was never executed by any sensor in
+    this repository. The first person to run it for real was the Captain, on
+    his own installed Cabinet, and it failed. The rebuild may still be skipped
+    on a box that cannot do it; what it may not be is skipped by default."""
+    text = _DRILL.read_text(encoding="utf-8")
+    assert 'REBUILD_MODE="REAL"' in text, (
+        "the drill has no real-rebuild path at all — P7 cannot walk the staged "
+        "build, which is the leg that failed on the Captain's box (A5.18)")
+    # The decision is made from the BOX, not from a flag: npm on PATH and an
+    # installed dependency tree in this clone.
+    assert re.search(r'command -v npm[^\n]*\n[^\n]*REBUILD_MODE="REAL"', text) or \
+        ("command -v npm" in text and "DRILL_NODE_MODULES" in text), (
+        "the drill's rebuild decision does not read the box (npm on PATH, an "
+        "installed dependency tree), so it cannot be REAL where it can be")
+    assert "p7_rebuild" in text, (
+        "the drill's JSON report does not carry the rebuild mode, so a run that "
+        "went THIN is indistinguishable from one that built for real")
+
+
+def test_the_drill_job_installs_the_dependencies_its_real_rebuild_needs():
+    """A5.18(2): the CI job runs the drill on the REAL path, or it proves less.
+
+    The drill decides REAL vs THIN by looking for an installed dependency tree
+    in its own clone. A job that never installs one gets THIN for ever, which
+    is exactly the state that let the staged build reach an operator untested —
+    so the install step and the REAL assertion are both pinned here."""
+    job = _jobs()[_JOB]
+    body = _run_bodies(job)
+    uses = " ".join(str(step.get("uses", "")) for step in job["steps"])
+    assert "actions/setup-node" in uses, (
+        f"the {_JOB} job installs no node, so P7's rebuild can only be THIN")
+    assert "npm ci" in body, (
+        f"the {_JOB} job never installs the dashboard's dependencies, so the drill "
+        "will report THIN and the staged build stays unexercised")
+    assert "p7_rebuild" in body, (
+        f"the {_JOB} job does not read the drill's rebuild mode, so a run that "
+        "silently fell back to THIN would still be green")
+    assert '"REAL"' in body, (
+        f"the {_JOB} job does not REQUIRE the real rebuild; on this runner THIN "
+        "is a gate switching itself off")
+
+
+def test_the_drill_links_dependencies_through_the_shipped_mechanism():
+    """The drill and the updater must share one mechanism, or the drill proves
+    a copy of it.
+
+    `cabinet_dash_link_modules` lives in the dashboard library that ships with
+    every export; both callers source that file. A drill with a private `cp -R`
+    would pass while the updater's own mechanism was broken — which is the
+    shape of the defect that got here."""
+    drill = _DRILL.read_text(encoding="utf-8")
+    updater = _UPDATER.read_text(encoding="utf-8")
+    lib = (_REPO / "cabinet" / "scripts" / "lib" / "dashboard.sh").read_text(encoding="utf-8")
+    assert "cabinet_dash_link_modules() {" in lib, "the mechanism is not in the shipped library"
+    for who, text in (("the drill", drill), ("the updater", updater)):
+        assert "cabinet_dash_link_modules" in text, f"{who} does not call the shipped mechanism"
+        assert not re.search(r"ln -s [^\n]*node_modules", text), (
+            f"{who} still symlinks a node_modules — the exact line the Captain's "
+            "first real apply died on")
+
+
+def test_the_stub_reads_its_build_stamp_off_the_build(tmp_path):
+    """The drill's health stub must not be able to invent a build stamp.
+
+    The gate's build leg asks the running process for `build_commit` and
+    compares it with the bundle. If the stub answered that from a file the
+    drill wrote, the leg would be green whether or not a build had ever run —
+    the disabled-sensor shape this whole unit exists to remove. So the stub
+    reads it out of the artifact `next build` leaves behind, and this arm walks
+    both ends: no artifact, no stamp; an artifact, the stamp that is in it."""
+    import json
+    stub = _REPO / "cabinet" / "scripts" / "drills" / "lib" / "stub_dashboard.py"
+    src = stub.read_text(encoding="utf-8")
+    assert "--build-stamp-from" in src and "required-server-files.json" in src, (
+        "the stub does not read the build stamp off the built artifact")
+
+    dash = tmp_path / "dashboard"
+    (dash / ".next").mkdir(parents=True)
+    out = subprocess.run(
+        ["python3.12", "-c",
+         "import sys; sys.path.insert(0, %r); import stub_dashboard as s;"
+         "print(repr(s._built_stamp(%r)))" % (str(stub.parent), str(dash))],
+        capture_output=True, text=True, timeout=_ARM_TIMEOUT)
+    assert out.returncode == 0, (out.stdout, out.stderr)
+    assert out.stdout.strip() == "''", (
+        "with no build output the stub still produced a build stamp: %r" % out.stdout)
+
+    (dash / ".next" / "required-server-files.json").write_text(
+        json.dumps({"config": {"env": {"CABINET_BUILD_SOURCE_COMMIT": "c0ffee1234"}}}),
+        encoding="utf-8")
+    out = subprocess.run(
+        ["python3.12", "-c",
+         "import sys; sys.path.insert(0, %r); import stub_dashboard as s;"
+         "print(s._built_stamp(%r))" % (str(stub.parent), str(dash))],
+        capture_output=True, text=True, timeout=_ARM_TIMEOUT)
+    assert out.stdout.strip() == "c0ffee1234", (out.stdout, out.stderr)

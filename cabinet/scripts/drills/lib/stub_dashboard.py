@@ -13,6 +13,7 @@ and building one would be measuring npm rather than the update path.  This is
 the smallest thing that answers the same contract:
 
   GET /api/health -> {"ok": true, "service": <marker>, "source_commit": <baked>,
+                      "build_commit": <read off the built artifact>,
                       "started_at": <iso>, "ts": <iso>}
 
 ``source_commit`` is read from --stamp-file ONCE, at start — baked, exactly as
@@ -22,8 +23,20 @@ honest: the drill runs an apply whose restart command is a no-op, the old
 process keeps answering with the old stamp and the old start time, the gate
 must go red, and the rollback must put the tree back.
 
+``build_commit`` is DIFFERENT, and the difference is the whole of A5.18.  The
+gate demands it whenever an apply actually rebuilt, and it must be the stamp
+the real build inlined — not something this stub was handed.  So it is read,
+also once at start, out of the BUILT ARTIFACT named by --build-stamp-from: the
+dashboard directory of the install, where ``.next/required-server-files.json``
+records the values the bundler inlined.  No artifact, no ``build_commit`` in
+the body, and the gate says so.  A stub that answered this from a file the
+drill wrote would be green whether or not a build had ever run, which is the
+disabled sensor this whole leg exists to be the opposite of.
+
   serve    --port N --stamp-file F --state-file S [--service NAME]
+           [--build-stamp-from DIR]
   restart  --port N --stamp-file F --state-file S [--service NAME]
+           [--build-stamp-from DIR]
   stop     --state-file S
 
 Foreground-free by construction: ``serve`` is the child, ``restart``/``stop``
@@ -78,6 +91,26 @@ def _make_handler(body: dict):
     return Handler
 
 
+def _built_stamp(dashboard_dir: str | None) -> str:
+    """The commit `next build` inlined, read off the build's own output.
+
+    `.next/required-server-files.json` carries the resolved config, and the
+    build stamp rides in its `env` map — the same map the bundler substitutes
+    into the served code.  Absent, unreadable or without the key all mean the
+    same thing here and are all answered the same way: an empty string, which
+    the health gate reads as "this answer carries no build stamp".
+    """
+    if not dashboard_dir:
+        return ""
+    path = Path(dashboard_dir) / ".next" / "required-server-files.json"
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    env = (doc.get("config") or {}).get("env") or {}
+    return str(env.get("CABINET_BUILD_SOURCE_COMMIT") or "")
+
+
 def cmd_serve(args) -> int:
     stamp = ""
     stamp_file = Path(args.stamp_file)
@@ -85,6 +118,9 @@ def cmd_serve(args) -> int:
         stamp = stamp_file.read_text(encoding="utf-8").strip()
     body = {"ok": True, "service": args.service, "source_commit": stamp,
             "started_at": _iso(time.time())}
+    built = _built_stamp(getattr(args, "build_stamp_from", None))
+    if built:
+        body["build_commit"] = built
     server = HTTPServer(("127.0.0.1", args.port), _make_handler(body))
     if args.state_file:
         Path(args.state_file).write_text(
@@ -145,11 +181,12 @@ def cmd_restart(args) -> int:
         want = stamp_file.read_text(encoding="utf-8").strip()
     log = state.with_suffix(".log")
     with open(log, "ab") as fh:
-        subprocess.Popen(
-            [sys.executable, os.path.abspath(__file__), "serve",
-             "--port", str(args.port), "--stamp-file", args.stamp_file,
-             "--state-file", args.state_file, "--service", args.service],
-            stdout=fh, stderr=fh, start_new_session=True)
+        argv = [sys.executable, os.path.abspath(__file__), "serve",
+                "--port", str(args.port), "--stamp-file", args.stamp_file,
+                "--state-file", args.state_file, "--service", args.service]
+        if getattr(args, "build_stamp_from", None):
+            argv += ["--build-stamp-from", args.build_stamp_from]
+        subprocess.Popen(argv, stdout=fh, stderr=fh, start_new_session=True)
     deadline = time.time() + 20
     last = ""
     while time.time() < deadline:
@@ -178,6 +215,10 @@ def build_parser() -> argparse.ArgumentParser:
         s.add_argument("--state-file", required=True)
         s.add_argument("--service", required=True,
                        help="the identity marker the health body must carry")
+        s.add_argument("--build-stamp-from", default=None,
+                       help="the dashboard directory whose .next output the "
+                            "build stamp is read from (A5.18); omitted means "
+                            "the body carries no build_commit at all")
     s = sub.add_parser("stop")
     s.add_argument("--state-file", required=True)
     return p
