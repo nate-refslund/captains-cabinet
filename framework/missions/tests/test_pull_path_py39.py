@@ -224,20 +224,108 @@ def _python39():
     return None
 
 
+#: The CI job that pays the execution claim where no local 3.9 exists, and the
+#: three properties that make it a carrier rather than a name in a file. It is
+#: one of the PINNED gate jobs (cabinet/scripts/tests/test_ci_dedupe_cannot_
+#: skip_a_pr.py::test_every_gate_job_is_present pins the set EXACTLY, in both
+#: directions), which is what stops it from being quietly deleted.
+_CARRIER_JOB = "pull-path-python39"
+_WORKFLOW = _ROOT / ".github/workflows/cabinet-ci.yml"
+
+
+def _carrier_gap() -> str:
+    """"" when the carrier job really carries the claim, else why it does not.
+
+    Reads the SAME workflow the gate-job pin reads, and asks for the three
+    properties a carrier needs: it exists; it cannot be skipped on a pull
+    request (the `!cancelled()` guard every gate job here carries); it sets up a
+    real 3.9; and it executes the pull path's own entry point rather than
+    merely mentioning it.
+    """
+    import yaml
+
+    try:
+        workflow = yaml.safe_load(_WORKFLOW.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 — an unreadable workflow IS a gap
+        return "%s could not be read (%s)" % (_WORKFLOW, exc)
+    job = (workflow.get("jobs") or {}).get(_CARRIER_JOB)
+    if not isinstance(job, dict):
+        return "no %r job in %s" % (_CARRIER_JOB, _WORKFLOW.name)
+    condition = str(job.get("if") or "")
+    if condition and "cancelled()" not in condition:
+        return ("%r carries the guard %r, which can skip it on a pull request"
+                % (_CARRIER_JOB, condition))
+    steps = job.get("steps") or []
+    sets_up_39 = any(
+        "setup-python" in str(step.get("uses") or "")
+        and str((step.get("with") or {}).get("python-version") or "").strip("'\" ") == "3.9"
+        for step in steps if isinstance(step, dict)
+    )
+    if not sets_up_39:
+        return "%r no longer sets up a 3.9 interpreter" % _CARRIER_JOB
+    runs_the_pull_path = any(
+        "framework.missions.session_bridge" in str(step.get("run") or "")
+        for step in steps if isinstance(step, dict)
+    )
+    if not runs_the_pull_path:
+        return ("%r no longer runs the pull path's own entry point, so it "
+                "proves nothing about it" % _CARRIER_JOB)
+    return ""
+
+
+def test_the_python_39_claim_has_a_carrier_job():
+    """THE SENSOR THAT NEVER SKIPS, wherever this suite runs.
+
+    The execution arm below can only run where a 3.9 exists. This arm runs
+    everywhere and asks the question that actually matters when it cannot: is
+    ANYONE paying the claim? Deleting the carrier job, dropping its 3.9 setup,
+    defanging its guard, or pointing it at something other than the pull path
+    reds HERE — on every runner and every laptop — which is what makes the skip
+    below a routing decision rather than a disabled sensor.
+    """
+    gap = _carrier_gap()
+    assert gap == "", (
+        "nothing carries the 3.9 execution claim: %s. Either restore the job or "
+        "make this suite run the arm itself." % gap
+    )
+
+
 def test_the_hook_command_runs_under_a_real_python_39(tmp_path):
     """The hook's own import-and-call, on a 3.9 interpreter.
 
-    This is the arm the grammar checks cannot replace. On a host with no 3.9 it
-    reports the gap in the test name's own terms rather than skipping: the CI
-    step that sets up 3.9 is where the claim is actually paid, and a silent
-    skip everywhere else would leave nobody carrying it.
+    This is the arm the grammar checks cannot replace, and it RUNS wherever a
+    3.9 exists — including the reference box, whose /usr/bin/python3 is the very
+    interpreter the locked hook uses.
+
+    WHERE NO 3.9 EXISTS it used to `pytest.fail`, which is why this suite was
+    red on the 3.12-only `framework-tests` runner while the claim was being paid
+    in full, one job away, by `pull-path-python39`. Failing there does not buy
+    coverage: it makes a green job impossible on any host without a second
+    interpreter, and a check that is red for a reason nobody can act on gets
+    ignored, which is how a real red gets missed.
+
+    So the branch is a ROUTING decision, taken against evidence rather than
+    assumed: `_carrier_gap()` re-derives, from the workflow itself, that the
+    pinned `pull-path-python39` gate job exists, cannot be skipped on a pull
+    request, sets up a real 3.9 and executes this same entry point. If it does
+    NOT, this arm fails exactly as before — an unmeasured claim, named. If it
+    does, the skip says who is measuring it instead, and
+    `test_the_python_39_claim_has_a_carrier_job` above keeps that answer honest
+    on every runner, without skipping.
     """
     binary = _python39()
     if binary is None:
-        pytest.fail(
-            "no python3.9 on this host, so the execution arm did not run. The "
-            "claim is carried by the setup-python 3.9 step in "
-            ".github/workflows/cabinet-ci.yml; install a 3.9 to run it locally."
+        gap = _carrier_gap()
+        if gap:
+            pytest.fail(
+                "no python3.9 on this host AND nothing carries the claim: %s. "
+                "The execution arm did not run and nobody else ran it." % gap
+            )
+        pytest.skip(
+            "no python3.9 on this host; the execution arm is carried by the "
+            "%s gate job in %s, which is pinned into the gate-job set and "
+            "verified by test_the_python_39_claim_has_a_carrier_job. Install a "
+            "3.9 to run it locally." % (_CARRIER_JOB, _WORKFLOW.name)
         )
 
     # The outcomes path comes from the live resolver rather than being spelled
