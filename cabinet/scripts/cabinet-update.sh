@@ -76,6 +76,23 @@
 # gated: a single-worker install is DEAD on fleet services it was never meant
 # to run, and a doctor gate would roll back every good update.
 #
+# THE STAGED REBUILD IS REAL, AND IT IS PORTABLE (A5.18). The dashboard is
+# rebuilt in the STAGE tree, and the stage reuses the install's dependencies
+# rather than paying a fresh `npm ci` per update. Until 2026-09-10 it reused
+# them through a SYMLINK out of the stage, and the first real apply on the
+# Captain's box died on it — "Symlink [project]/node_modules is invalid, it
+# points out of the filesystem root" — because a staged project whose
+# dependencies live outside it is not a project. They are now materialised
+# INSIDE the stage as a hardlink tree (cabinet_dash_link_modules): same inodes,
+# no second copy on the disk, and dropping the stage leaves the install's tree
+# untouched. The drill's P7 runs this for real; before that amendment it always
+# passed --skip-rebuild, which is why nothing saw the defect.
+#
+# AN UPDATE RESTORES THE PROCESS STATE IT FOUND (A5.19). The door is probed
+# BEFORE the first write. A rollback restarts the dashboard only if one of this
+# cabinet's own was answering then; a successful apply always restarts, because
+# the health gate exists to read the new build back off a running process.
+#
 # FOUR TEST SEAMS, every one env-gated and every one carrying TEST in its name
 # so a reader never mistakes one for production behaviour — two of them
 # (RECEIPTS_CMD, PREFLIGHT_CMD) can turn two of the health gate's three legs
@@ -151,6 +168,13 @@ DASH_LIB="$LIB_DIR/dashboard.sh"
 
 KEEP="${CABINET_UPDATE_KEEP:-3}"
 DOOR="terminal"
+
+# A5.19 — WHAT WAS ON THE DOOR BEFORE THIS RUN TOUCHED ANYTHING.
+# mine | other | down | unknown. Read once, before the first write, and read
+# again by nothing: the question is what this box looked like when the operator
+# was not being helped, and every later reading is of a box this script has
+# already changed.
+DASH_BEFORE="unknown"
 
 # Progress goes to STDERR, always. Stdout belongs to `status`, whose --json a
 # machine parses; a progress line on stdout is how a captured verdict becomes
@@ -862,6 +886,50 @@ PYHEALTH
   return 0
 }
 
+# AN UPDATE RESTORES THE PROCESS STATE IT FOUND (A5.19). Measured on the
+# Captain's installed Cabinet, 2026-09-10: an apply failed at the staged build,
+# rolled the tree back exactly as designed — and, on the way out, started an
+# UNSUPERVISED dashboard on a door where nothing had been listening before the
+# apply began. The operator asked for an update, did not get one, and was left
+# running a process he had not been running. A rollback that leaves a box
+# different from how it found it is not a rollback.
+#
+# So: read the door BEFORE the first write, and let the answer decide the
+# restart on the way out. Three states, not two, because they need different
+# answers — `cabinet_dash_state` separates "my dashboard", "somebody else's
+# program", and "nothing". `unknown` is the fourth, and it means the question
+# could not be asked (no dashboard library on this box); it is treated as
+# "nothing was running", because inventing a process is the failure this exists
+# to stop and declining to start one is recoverable by the operator in a tap.
+probe_door() {
+  local url
+  [ -f "$DASH_LIB" ] || { printf 'unknown\n'; return 0; }
+  # shellcheck disable=SC1090
+  . "$DASH_LIB"
+  url="$(cabinet_dash_url "$ROOT")"
+  cabinet_dash_state "$url" 2>/dev/null || true
+}
+
+# restart_after_rollback — the A5.19 rule, in one place, because the automatic
+# rollback inside an apply and the operator's own `rollback` command must not
+# be able to disagree about it.
+restart_after_rollback() { # <skip_restart>
+  if [ "${1:-0}" = "1" ]; then
+    log "restart after rollback: SKIPPED by request"
+    return 0
+  fi
+  case "$DASH_BEFORE" in
+    mine)
+      log "restart after rollback: a dashboard of this cabinet was answering before this run, so it is put back"
+      restart_dashboard || log "the restart after rollback did not complete"
+      ;;
+    *)
+      log "restart after rollback: NOT started — nothing of this cabinet was answering on the door before this run (door was '$DASH_BEFORE'), and an update that failed must not leave a process behind that the box did not have (A5.19)"
+      ;;
+  esac
+  return 0
+}
+
 restart_dashboard() {
   # THE RESTART SEAM (A5.14 naming, phase-1 contract §4 P7). The acceptance
   # drill proves "gate red -> roll back -> gate green" by giving one apply a
@@ -963,8 +1031,11 @@ cmd_rollback() {
   { [ -n "$snap_name" ] && [ -d "$SNAPSHOTS/$snap_name" ]; } || {
     echo "cabinet-update: no snapshot to roll back to" >&2; exit 1; }
   before="$(installed_sha)"
+  # A5.19: before the first write, never after.
+  DASH_BEFORE="$(probe_door)"
+  log "door before this rollback: $DASH_BEFORE"
   restore_snapshot "$SNAPSHOTS/$snap_name" || { echo "cabinet-update: restore failed — see $LOG" >&2; exit 1; }
-  [ "$skip_restart" = "1" ] || restart_dashboard || log "restart after rollback did not complete"
+  restart_after_rollback "$skip_restart"
   after="$(installed_sha)"
   write_state "{\"phase\":\"rolled_back\",\"from_sha\":$(json_escape "$before"),\"to_sha\":$(json_escape "$after"),\"snapshot\":$(json_escape "$snap_name"),\"reason\":\"requested\",\"finished_at\":$(json_escape "$(now_utc)"),\"door\":$(json_escape "$DOOR")}"
   emit_event cabinet_update_rolled_back "$(door_actor "$DOOR")" \
@@ -997,6 +1068,37 @@ print(json.dumps(value) if not isinstance(value, str) else value)
 ' "$1" "$2"
 }
 
+# THE STAGE'S DEPENDENCIES (A5.18). Reuse what the install already has rather
+# than paying a fresh install per update — but INSIDE the stage, as a hardlink
+# tree, never as a symlink pointing out of it. The reasoning and the three
+# mechanisms are in cabinet_dash_link_modules; what belongs here is WHEN.
+#
+# It runs BEFORE the build-command branch below, and deliberately so: the seam
+# is called BUILD_CMD and it stands in for the BUILD. A test that replaces the
+# build must still get a stage that looks like the one a real build sees, or
+# the one property this function exists for is the one property no arm can
+# reach — which is how the symlink survived to meet an operator.
+#
+# rc 0 = the stage carries the install's dependencies · 1 = it could not be
+# done and the build must not go on · 2 = there was nothing to reuse (no
+# installed tree, or a different lockfile), which is not a failure: the real
+# build installs its own below and a seam does not care.
+stage_dependencies() { # <stage-dash> <live-dash>
+  local stage_dash="$1" live_dash="$2"
+  [ -d "$live_dash/node_modules" ] || return 2
+  [ -f "$live_dash/package-lock.json" ] || return 2
+  [ -f "$stage_dash/package-lock.json" ] || return 2
+  cmp -s "$live_dash/package-lock.json" "$stage_dash/package-lock.json" || return 2
+  if [ ! -f "$DASH_LIB" ]; then
+    log "build: no dashboard library at $DASH_LIB, so the installed dependencies cannot be reused"
+    return 2
+  fi
+  # shellcheck disable=SC1090
+  . "$DASH_LIB"
+  cabinet_dash_link_modules "$live_dash/node_modules" "$stage_dash/node_modules" >>"$LOG" 2>&1 || return 1
+  return 0
+}
+
 # The build runs in the STAGE tree, never in the install: a failed build must
 # not be able to leave the served directory half-written. The previous build is
 # moved beside the snapshot (a local artifact the export manifest deletes, not
@@ -1005,29 +1107,26 @@ print(json.dumps(value) if not isinstance(value, str) else value)
 # build (a bundle that deletes dashboard files ships none). 2 is NOT a build:
 # the caller must not then demand the new build stamp at the gate.
 stage_build() { # <stage-tree> <snapshot-dir> <to_sha>
-  local stage_tree="$1" snap="$2" to_sha="$3"
-  local stage_dash="$stage_tree/cabinet/dashboard"
-  local live_dash="$ROOT/cabinet/dashboard"
+  local stage_dash live_dash build_cmd dep_rc
+  stage_dash="$1/cabinet/dashboard"
+  live_dash="$ROOT/cabinet/dashboard"
+  local snap="$2" to_sha="$3"
   [ -d "$stage_dash" ] || { log "build: the bundle carries no dashboard"; return 2; }
+
+  stage_dependencies "$stage_dash" "$live_dash"; dep_rc=$?
+  [ "$dep_rc" -eq 1 ] && { log "build: the installed dependencies could not be materialised in the stage"; return 1; }
 
   # THE BUILD SEAM. A fixture install has no node toolchain, and the property
   # under test in the suite is the gate's reading of the build stamp and the
   # rename-last swap — not npm. Named `CABINET_UPDATE_TEST_` so it can never be
   # mistaken for a production knob; the default below is the behaviour, and
   # test_health_gate_defaults_are_the_contract_legs pins it.
-  local build_cmd
   build_cmd="${CABINET_UPDATE_TEST_BUILD_CMD:-}"
   if [ -n "$build_cmd" ]; then
     ( cd "$stage_dash" && CABINET_BUILD_SOURCE_COMMIT="$to_sha" eval "$build_cmd" ) >>"$LOG" 2>&1 || return 1
   else
     command -v npm >/dev/null 2>&1 || { log "build: no node toolchain on this box"; return 1; }
-    if [ -d "$live_dash/node_modules" ] && [ -f "$live_dash/package-lock.json" ] \
-       && [ -f "$stage_dash/package-lock.json" ] \
-       && cmp -s "$live_dash/package-lock.json" "$stage_dash/package-lock.json"; then
-      # Same lockfile, same dependencies: reuse what is installed rather than
-      # paying a fresh install on every update.
-      ln -s "$live_dash/node_modules" "$stage_dash/node_modules"
-    else
+    if [ "$dep_rc" -ne 0 ]; then
       ( cd "$stage_dash" && npm ci --include=dev --no-audit --no-fund ) >>"$LOG" 2>&1 || return 1
     fi
     ( cd "$stage_dash" && CABINET_BUILD_SOURCE_COMMIT="$to_sha" npm run build ) >>"$LOG" 2>&1 || return 1
@@ -1087,7 +1186,7 @@ roll_back_after() { # <snapshot-dir> <to_sha> <from_sha> <reason> <skip_restart>
   local snap="$1" to_sha="$2" from_sha="$3" reason="$4" skip_restart="$5"
   log "$reason — rolling back automatically"
   restore_snapshot "$snap" || log "the automatic rollback did not complete cleanly — see $LOG"
-  [ "$skip_restart" = "1" ] || restart_dashboard || true
+  restart_after_rollback "$skip_restart"
   # A5.14: the staged tree does not outlive the apply that unpacked it, on the
   # way out either. Rollback is the exit most likely to be repeated with a
   # different bundle, so leaving one here is one whole unpacked export per
@@ -1120,6 +1219,11 @@ cmd_apply() {
   take_lock || refuse_busy "$sha"
 
   mkdir -p "$INBOX" "$APPLIED" "$SNAPSHOTS" "$STAGE"
+
+  # A5.19: the door, read before this run has written anything that could
+  # change it. The resume-restore below is a write, so this line is above it.
+  DASH_BEFORE="$(probe_door)"
+  log "door before this apply: $DASH_BEFORE"
 
   # RESUME FIRST. A killed apply leaves state.json at `applying` with its
   # snapshot on disk, and the tree is then neither version. Nothing else may
@@ -1269,7 +1373,17 @@ sys.exit(0 if any(p.startswith("cabinet/dashboard/") for p in touched) else 1)
     log "rebuild SKIPPED by request — the running build is now older than the code it serves (THIN)"
   fi
 
-  [ "$skip_restart" = "1" ] || restart_dashboard || log "the restart did not complete — the gate will say so"
+  # A5.19 DOES NOT REACH HERE, and the asymmetry is the point. A rollback must
+  # restore the process state it found; a SUCCESSFUL apply must put the new
+  # bytes on the door, because the health gate's whole job is to read them back
+  # from a process that is serving them. An update that landed and served
+  # nothing is an update nobody can check.
+  if [ "$skip_restart" = "1" ]; then
+    log "restart: SKIPPED by request"
+  else
+    log "restart after a successful write: always (the door was '$DASH_BEFORE' before this apply; the gate must read the new build back off it)"
+    restart_dashboard || log "the restart did not complete — the gate will say so"
+  fi
 
   health_gate "$sha" "$started" "$skip_restart" "$rebuilt" \
     || roll_back_after "$snap" "$sha" "$here" "the health gate was red" "$skip_restart"

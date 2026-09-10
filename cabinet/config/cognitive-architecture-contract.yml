@@ -1491,6 +1491,39 @@ budgets:
     # helper and one sentence, in cabinet/, outside this budget; the oracle and
     # every arm are test files, outside it by construction. RAISED VISIBLY,
     # same reason as every row above. observed == maximum, zero headroom.
+    #
+    # 66839 -> 66839 (+0, 2026-09-10): U5c, contract amendments A5.18 and A5.19,
+    # ruled after the FIRST real apply on the Captain's installed Cabinet. The
+    # staged rebuild reused the install's dependencies through a SYMLINK out of
+    # the staged project and the bundler refused it ("Symlink
+    # [project]/node_modules is invalid, it points out of the filesystem root");
+    # the updater rolled back correctly and then started an unsupervised
+    # dashboard on a door where nothing had been listening. A5.18 makes the
+    # stage's dependencies a HARDLINK TREE inside the stage
+    # (cabinet_dash_link_modules, one mechanism the updater and the acceptance
+    # drill both call) and makes the drill's P7 run the REAL `next build`
+    # instead of always passing --skip-rebuild — which is why nothing in this
+    # repository had ever walked that leg. A5.19 probes the door before the
+    # first write and restarts after a ROLLBACK only if one of this cabinet's
+    # own dashboards was answering then; a successful apply still always
+    # restarts, because the health gate reads the new build back off a running
+    # process. NOTHING under framework/ changes: the whole unit is
+    # cabinet/scripts (the updater, the dashboard library, the drill and its
+    # stub), cabinet/dashboard (the client/server split below) and their tests.
+    # Recorded as +0 rather than left out, because a paragraph that only appears
+    # when the number moves makes an unchanged number look unexamined.
+    #
+    # AND THE DEFECT UNDERNEATH IT, found the moment a build was run at all: the
+    # dashboard had not been BUILDABLE since the update path landed. The home
+    # card is a client component and imported `@/lib/updates`, which top-level
+    # imports `child_process`; one symbol pulls the whole module into the
+    # browser graph, so `next build` failed with "Module not found: Can't
+    # resolve 'child_process'". No gate in this tree ran a build, so the whole
+    # web door had been unshippable for three days without a single red. The
+    # pure half now lives in `cabinet/dashboard/src/lib/updates-view.ts` and
+    # `updates.ts` re-exports it; both files are under cabinet/ and outside this
+    # budget. The sensor is the drill's real P7 build in CI, plus a
+    # millisecond-scale arm in the card's own suite.
     maximum: 66839
   named_compiler_modules:
     path: framework

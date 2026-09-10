@@ -210,3 +210,89 @@ cabinet_dash_restart() {
   printf 'cabinet_dash_restart: started an unsupervised dashboard on %s (%s)\n' "$port" "$why" >&2
   return 0
 }
+
+# cabinet_dash_link_modules <src-node_modules> <dst-node_modules> — materialise
+# an installed dependency tree at <dst> as a HARDLINK TREE of <src>.
+#
+# WHY THIS IS NOT A SYMLINK, which is what it was until 2026-09-10. The staged
+# rebuild builds the dashboard in a tree under `<root>/.updates/stage/`, and
+# reusing the install's dependencies is the difference between a two-minute
+# update and a five-minute one. The obvious way to reuse them is
+# `ln -s <install>/node_modules <stage>/node_modules`, and it was the way until
+# the FIRST real apply on the Captain's installed Cabinet, where the build died
+# on its own dependency directory:
+#
+#     Symlink [project]/node_modules is invalid, it points out of the
+#     filesystem root
+#
+# The bundler treats the project directory as the root of the world and refuses
+# a link that leaves it. That is a reasonable thing for a bundler to do, and
+# nothing about it is specific to this one: a staged build whose dependencies
+# live OUTSIDE the staged project is asking every tool that walks the tree to
+# follow a rope over the wall. So the dependencies come INSIDE the stage —
+# without paying for a copy — as hardlinks. Same inodes, same bytes, no second
+# gigabyte on the operator's disk, and every path inside the project.
+#
+# THE REMOVAL PROPERTY, which is the whole reason hardlinks and not a copy is
+# safe: dropping the stage unlinks the stage's NAMES. The install's names still
+# hold the same inodes, so the live dependency tree is untouched by a staged
+# build that failed, was rolled back, or was pruned.
+#
+# THREE MECHANISMS, in order, because this ships to boxes this org does not
+# own: `pax -rwl` (POSIX, present on macOS and on every Linux this targets),
+# `rsync -a --link-dest` (present nearly everywhere else), and a real `cp -R`
+# copy as the last resort — which is LOUD, because it costs the disk what the
+# hardlinks were there to save.
+#
+# Internal symlinks (`node_modules/.bin/*` is a directory of them) are copied
+# as symlinks by all three: they are relative and point INSIDE the tree, so
+# they resolve in the stage exactly as they resolve in the install.
+#
+# rc 0 = the tree is there. 2 = there was no source to link from (the caller
+# decides whether that is fatal). 1 = it could not be made.
+cabinet_dash_link_modules() {
+  local src="$1" dst="$2" src_dev dst_dev py
+  py="${CABINET_PYTHON:-python3.12}"
+  [ -d "$src" ] || {
+    printf 'cabinet_dash_link_modules: no dependency tree at %s\n' "$src" >&2
+    return 2
+  }
+  rm -rf "$dst" || return 1
+  mkdir -p "$dst" || return 1
+
+  # SAME FILESYSTEM OR HARDLINKS ARE IMPOSSIBLE. It is the same one by
+  # construction — the stage lives under the install — so this is not a
+  # decision, it is a line in the log for the day that stops being true (a
+  # bind-mounted stage, a separate volume for `.updates`). Asked through
+  # python's own stat rather than stat(1): GNU `stat -f` SUCCEEDS printing a
+  # mount point where BSD `stat -f` takes a format string, so a shell probe
+  # written either way is wrong on the other box.
+  if command -v "$py" >/dev/null 2>&1; then
+    src_dev="$("$py" -c 'import os,sys; print(os.stat(sys.argv[1]).st_dev)' "$src" 2>/dev/null || true)"
+    dst_dev="$("$py" -c 'import os,sys; print(os.stat(sys.argv[1]).st_dev)' "$dst" 2>/dev/null || true)"
+    if [ -n "$src_dev" ] && [ -n "$dst_dev" ] && [ "$src_dev" != "$dst_dev" ]; then
+      printf 'cabinet_dash_link_modules: %s and %s are on DIFFERENT filesystems — hardlinks are impossible and this will fall through to a copy\n' \
+        "$src" "$dst" >&2
+    fi
+  fi
+
+  if command -v pax >/dev/null 2>&1 \
+     && ( cd "$src" && pax -rwl . "$dst" ) >/dev/null 2>&1 \
+     && [ -n "$(ls -A "$dst" 2>/dev/null)" ]; then
+    printf 'cabinet_dash_link_modules: hardlinked the dependency tree into %s (pax)\n' "$dst" >&2
+    return 0
+  fi
+  if command -v rsync >/dev/null 2>&1 \
+     && rsync -a --link-dest="$src/" "$src/" "$dst/" >/dev/null 2>&1 \
+     && [ -n "$(ls -A "$dst" 2>/dev/null)" ]; then
+    printf 'cabinet_dash_link_modules: hardlinked the dependency tree into %s (rsync)\n' "$dst" >&2
+    return 0
+  fi
+  printf 'cabinet_dash_link_modules: NEITHER pax NOR rsync could hardlink %s — COPYING it instead, which costs this box a second copy of the whole dependency tree\n' \
+    "$src" >&2
+  rm -rf "$dst" || return 1
+  mkdir -p "$dst" || return 1
+  cp -R "$src/." "$dst/" || return 1
+  [ -n "$(ls -A "$dst" 2>/dev/null)" ] || return 1
+  return 0
+}

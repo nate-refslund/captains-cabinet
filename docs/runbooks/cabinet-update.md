@@ -60,6 +60,10 @@ dashboard, but only if the bundle changed a file under
 last → restart the dashboard → run the health gate → prune old snapshots and
 staged trees. A red gate rolls the whole thing back automatically and records
 why; the staged tree is dropped on the way out of every exit, green or not.
+The staged build reuses the install's dependencies as a **hardlink tree inside
+the stage** — see below for why that is not a symlink — and the restart on the
+way out of a *rollback* only happens if a dashboard of this cabinet's was
+answering before the apply began.
 
 ### The health gate, and why the rebuild condition is part of it
 
@@ -86,6 +90,67 @@ Read the two together: **the rebuild is conditional, so the build-stamp leg is
 conditional.** If a later change makes the rebuild unconditional, the leg
 becomes unconditional with it; if the leg is ever armed for an apply that did
 not rebuild, every framework-only update rolls back again.
+
+### How the staged build gets its dependencies — and why not a symlink
+
+The build runs in `<root>/.updates/stage/<sha>/tree/cabinet/dashboard`, not in
+the install. It reuses the dependencies the install already has rather than
+paying a fresh install per update, and **it reuses them as a hardlink tree
+inside the stage** — never as a symlink pointing back at the install.
+
+That is not a preference. On 2026-09-10, on the first real apply anyone ever
+ran on an installed Cabinet, the symlink version died before it compiled a
+line:
+
+```
+Symlink [project]/node_modules is invalid, it points out of the filesystem root
+```
+
+The bundler treats the project directory as the root of the world and refuses a
+link that leaves it, which is a reasonable thing for a bundler to do and is not
+specific to one of them: a staged project whose dependencies live outside it is
+asking every tool that walks the tree to follow a rope over the wall. So the
+dependencies come inside — without paying for a copy.
+
+* the mechanism is `cabinet_dash_link_modules` in
+  `cabinet/scripts/lib/dashboard.sh`, and it is the **only** one: the updater
+  calls it, and so does the acceptance drill, so the drill cannot pass on a
+  private copy of a mechanism that is broken in the shipped one;
+* three implementations, tried in order, because this ships to boxes this org
+  does not own — `pax -rwl`, `rsync -a --link-dest`, and a real `cp -R` copy as
+  the last resort, which says so **loudly** in the log because it costs the
+  operator a second copy of the whole tree;
+* internal symlinks (`node_modules/.bin/*`) stay symlinks: they are relative
+  and point inside the tree, so they resolve in the stage as they do in the
+  install;
+* **dropping the stage is safe by construction.** `rm -rf` on the stage unlinks
+  the stage's *names*; the install's names still hold the same inodes. A
+  refused, rolled-back or pruned stage leaves the install's dependency tree
+  exactly as it was.
+
+If the install has no `node_modules`, or its lockfile differs from the
+bundle's, there is nothing to reuse and the staged build runs its own `npm ci`
+— unchanged.
+
+### What an update does to the process on the door
+
+An apply reads the door **before its first write** and records what was there:
+this cabinet's own dashboard, somebody else's program, or nothing.
+
+| Outcome | What happens to the dashboard |
+|---|---|
+| the apply succeeded | **always restarted** — the health gate's whole job is to read the new build back off a running process |
+| the apply rolled back | restarted **only if one of this cabinet's own was answering before the update began** |
+| `--skip-restart` | nothing is restarted, and the gate's dashboard leg is thin |
+
+The second row is the one that had to be written down. Measured on the same
+2026-09-10 apply: the build failed, the rollback was correct — and on the way
+out it started an unsupervised dashboard on a door where nothing had been
+listening. The operator asked for an update, did not get one, and was left
+running a process he had not been running. **A rollback that leaves the box
+different from how it found it is not a rollback.** The decision is in
+`.updates/update.log` either way ("restart after rollback: ... put back" or
+"... NOT started").
 
 ## The refusals, and what each one means
 
