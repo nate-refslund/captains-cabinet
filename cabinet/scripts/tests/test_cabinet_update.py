@@ -60,6 +60,9 @@ _EXPORT_MANIFEST = _SCRIPTS_DIR / "egg-export-manifest.txt"
 
 _PY = "python3.12"
 _RUN_TIMEOUT = 180
+#: The updater's own vocabulary (cabinet-update.sh header): 0 ok / 1 the update
+#: ran and did not survive its gate / 2 usage / 3 refused / 4 busy.
+_EXIT_REFUSED = 3
 
 sys.path.insert(0, str(_SCRIPTS_DIR / "lib"))
 import update_bundle  # noqa: E402  (path set immediately above)
@@ -1002,15 +1005,30 @@ def test_without_the_re_exec_the_group_kill_takes_the_updater_with_it(tmp_path):
     """The INVERTED arm: strip the new session and the property is gone.
 
     Without this, the arm above passes on any updater that merely finishes
-    fast, and "survives its parent" would be an untested claim."""
+    fast, and "survives its parent" would be an untested claim.
+
+    RE-AIMED 2026-09-10, and the re-aiming is the arm doing its job. It used to
+    neuter two sites — a `command -v setsid` branch and the interpreter's
+    `os.setsid()` — because the re-exec had two paths. The setsid(1) branch is
+    gone (it forked, and its parent exited 0, so every Linux install reported
+    success for a refusal), leaving one site; this arm REFUSED to run against
+    bytes it could no longer aim at rather than silently mutating nothing and
+    scoring the result as a red."""
     root = make_install(tmp_path)
     make_bundle(tmp_path, root, NEW_SHA, extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
 
     text = _UPDATER.read_text()
-    marker = '  if command -v setsid >/dev/null 2>&1; then'
+    # THE CODE LINE, not the name. Aiming at the bare `os.setsid()` hits the
+    # COMMENT above the call first and mutates prose — measured on the first
+    # cut of this re-aiming, and caught by the guard below rather than by a
+    # confusing red.
+    marker = "try:\n    os.setsid()\nexcept OSError:"
     assert marker in text, "the re-exec moved; this inverted arm must be re-aimed"
-    mutated_text = text.replace(marker, '  if false; then', 1).replace(
-        "os.setsid()", "pass  # session change removed for the inverted arm", 1)
+    mutated_text = text.replace(
+        marker, "try:\n    pass  # session change removed for the inverted arm\nexcept OSError:", 1)
+    assert mutated_text != text and marker not in mutated_text, (
+        "the inverted arm mutated nothing, so it would be measuring the real "
+        "updater and calling the result a red")
     mutated = root / "cabinet" / "scripts" / "no-setsid-update.sh"
     mutated.write_text(mutated_text, encoding="utf-8")
 
@@ -3664,3 +3682,63 @@ def test_the_dependency_mechanism_is_the_shipped_one(tmp_path):
         assert not re.search(r"ln -s [^\n]*node_modules", text), (
             "%s still symlinks a node_modules, which is the exact line the Captain's "
             "first real apply died on" % who)
+
+
+def test_the_re_exec_hands_back_the_updaters_own_exit_code(tmp_path):
+    """A5.7's exit codes are the whole vocabulary this path speaks in, and on
+    Linux they were all 0.
+
+    The updater re-execs itself into `.updates/run/` under a NEW SESSION before
+    its first write, so that killing the caller — closing the window, or
+    restarting the dashboard that spawned it — cannot kill the update. Until
+    2026-09-10 that was `exec setsid bash ...` when setsid(1) was on PATH.
+    setsid(1) FORKS when its caller is already a process group leader and the
+    parent exits 0 immediately, so every Linux install reported SUCCESS for a
+    refusal, a rollback and a busy lock alike. macOS has no setsid(1), took the
+    interpreter branch, and told the truth — which is why every arm in this file
+    was green while the CI job running the acceptance drill red with "an apply
+    whose dashboard never restarted exited 0".
+
+    THE ARM IS PORTABLE ON PURPOSE. It plants a forking setsid FIRST on PATH,
+    so a box with no setsid(1) measures the same thing a box with one does:
+    if the updater hands its exit status to that program, the refusal below
+    comes back as 0."""
+    root = make_install(tmp_path)
+    # A refusal is the cheapest non-zero: no bundle in the inbox at all.
+    fake_bin = tmp_path / "fakebin"
+    fake_bin.mkdir()
+    setsid = fake_bin / "setsid"
+    setsid.write_text(
+        "#!/bin/sh\n"
+        "# util-linux setsid in miniature: fork, let the parent exit 0 at once.\n"
+        '"$@" &\n'
+        "exit 0\n",
+        encoding="utf-8")
+    setsid.chmod(0o755)
+
+    result = run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
+                         "--skip-restart",
+                         env_extra={"PATH": "%s:%s" % (fake_bin, os.environ["PATH"])})
+    assert result.returncode == _EXIT_REFUSED, (
+        "a bundle that is not in the inbox came back as %d. Exit %d is this path's "
+        "word for 'refused' and every surface that reads an exit code — the drill's "
+        "P7, a landing script, an operator — was being told the update worked "
+        "(result: %r / %r)"
+        % (result.returncode, _EXIT_REFUSED, result.stdout, result.stderr))
+
+
+def test_the_re_exec_does_not_hand_its_exit_code_to_a_program_that_may_fork():
+    """Structural twin of the arm above, and it is the one that stays cheap.
+
+    The behavioural arm plants a forking setsid; this one says the updater must
+    not be reaching for setsid(1) at all. Both directions matter: the first
+    proves the exit code survives, the second proves the branch that lost it is
+    gone rather than merely unreached on this box."""
+    text = (_SCRIPTS_DIR / "cabinet-update.sh").read_text(encoding="utf-8")
+    assert not re.search(r"^\s*exec setsid\b", text, re.M), (
+        "the updater execs setsid(1), which forks when its caller is a process "
+        "group leader and exits 0 from the parent — every refusal and every "
+        "rollback then reports success on Linux")
+    assert "try:\n    os.setsid()\nexcept OSError:" in text, (
+        "the updater no longer puts itself in a new session at all, so a restarted "
+        "dashboard would take the update with it")

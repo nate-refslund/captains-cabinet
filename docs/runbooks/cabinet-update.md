@@ -162,6 +162,17 @@ different from how it found it is not a rollback.** The decision is in
 | 3 | refused before the first write — nothing was touched |
 | 4 | another update is running |
 
+These are the updater's **own** codes on every platform. The apply re-execs
+itself into a new session before its first write so that killing the caller
+cannot kill the update, and until 2026-09-10 it did that through `setsid(1)` —
+which forks where its caller is a process group leader and exits 0 from the
+parent. Every Linux install therefore answered **0** for a refusal, a rollback
+and a busy lock alike; macOS, which has no `setsid(1)`, took the interpreter
+branch and told the truth. Found by the acceptance drill's own CI job, whose
+gate-red leg read 0 where the contract says 1. If you are reading an exit code
+from this script on an install older than that date, it is not telling you
+anything.
+
 Exit 4 is a refusal like any other and leaves a `cabinet_update_refused`
 receipt with `reason: busy` — from `rollback` as well as from `apply`. **One
 updater at a time, and the lock is the first thing either command takes**,

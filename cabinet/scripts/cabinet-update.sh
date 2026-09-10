@@ -110,6 +110,11 @@
 #
 # Exit codes: 0 ok / 1 operational failure (gate red, rolled back) / 2 usage
 # / 3 refusal (locked path, digest mismatch, unreadable bundle) / 4 busy.
+# THEY ARE THE UPDATER'S OWN, on every platform. The re-exec below hands the
+# process to `os.setsid()` + `os.execvp` rather than to setsid(1), which forks
+# where its caller is a process group leader and exits 0 from the parent — so
+# until 2026-09-10 every Linux install answered 0 for a refusal, a rollback and
+# a busy lock alike, and only macOS, which has no setsid(1), told the truth.
 set -uo pipefail
 
 SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -436,12 +441,25 @@ reexec_detached() {
   export CABINET_UPDATE_REEXEC=1
   export CABINET_ROOT="$ROOT"
   export CABINET_UPDATE_LIB="$RUN_DIR/lib"
-  if command -v setsid >/dev/null 2>&1; then
-    exec setsid bash "$RUN_DIR/cabinet-update.sh" "$@"
-  fi
-  # No setsid(1) on this platform. The interpreter already pinned here has the
-  # same call. A process that is already a session leader raises EPERM — which
-  # is already the property wanted, so it is not an error.
+  # ONE PATH, BOTH PLATFORMS, and the branch that used to sit here is the
+  # reason. It was `command -v setsid && exec setsid bash ...`, which looks
+  # like the same thing and is not: setsid(1) FORKS when its caller is already
+  # a process group leader, and the parent then exits 0 IMMEDIATELY without
+  # waiting for the child. So on every Linux box this script returned 0 to its
+  # caller whatever happened — a refusal (3), a rollback (1), a busy lock (4)
+  # all reported success — while macOS, which has no setsid(1) and took the
+  # branch below, returned the truth. Measured 2026-09-10 in the CI job that
+  # runs the acceptance drill: P7's gate-red leg, whose whole point is that a
+  # failed health gate exits 1, read 0 and the drill red with "an apply whose
+  # dashboard never restarted exited 0". Every leg of that stage had been
+  # unverified on Linux since it was written.
+  #
+  # The interpreter this script already requires has the same call and does NOT
+  # fork: `os.setsid()` then `os.execvp` keeps ONE process, so the exit status
+  # is the updater's own and the open file description holding the lock rides
+  # through the exec exactly as before. A process that is already a session
+  # leader raises EPERM — which is already the property wanted, so it is not an
+  # error.
   exec "$PY" -c '
 import os, sys
 try:
