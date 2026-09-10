@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 723f18d1d276a630c61924202d2d0e93d1bd89a6352d384ed5fca5d8aba73be3
+Reviewed-Scope-Digest: 2871e43d3f24cd01d22ef40233abd9f88db2769039e88ea3c5a7d9d46be6e585
 
 (RE-BIND, 2026-08-25, `feat/app-is-a-launcher`. Two bound paths moved and
 neither is COG-4 behavior: `cabinet/services.yml` (the com.cabinet.dashboard
@@ -2455,3 +2455,53 @@ No `framework/projection`, `framework/scheduler`, `framework/organs`,
 touched by this branch, whose diff is otherwise `framework/onboarding/`, its
 suite, the dashboard onboarding surfaces, one onboarding design doc and one
 FW-019 review artifact.)
+
+## Re-bind 2026-09-10 (`fix/ci-green-again` — the first run after the CI outage)
+
+(RE-BOUND 2026-09-10 on `fix/ci-green-again`, previous value
+`723f18d1d276a630c61924202d2d0e93d1bd89a6352d384ed5fca5d8aba73be3`. A
+MECHANICAL-DELTA re-bind per the cp3 precedent, never a restamp: FOUR bound
+paths moved and not one of them is a COG-4 surface.
+
+WHY FOUR AT ONCE, WHICH IS UNUSUAL FOR THIS ARTIFACT. GitHub Actions stopped
+executing for this repository on 2026-08-25 and resumed on 2026-09-09. The
+digest above was last correct at `1d1aec53` (2026-08-25, PR #362) — the last
+commit before the outage — so the `cognitive-phase4` job never ran over
+anything that landed in between, and the re-bind-at-landing procedure this
+artifact prescribes had no gate to enforce it. The drift is therefore the sum
+of a fortnight of landings rather than one, and it is discharged here in one
+measured act rather than back-dated into commits that have already merged.
+
+MEASURED, not asserted: the resolved scope was expanded with `git ls-tree -r`
+at `1d1aec53` and at `ae687861` (master's tip) and the two sets diffed — 85
+scope entries resolving to 114 blobs on BOTH sides, none added, none removed,
+exactly FOUR with a different blob.
+
+1. `cabinet/config/cognitive-architecture-contract.yml` — budget maxima and
+   expansion-registry rows only. `central_event_types` 91 -> 96 and
+   `framework_production_modules` 208 -> 213 (the update path's and the claim
+   path's own receipts and modules, each raised VISIBLY with its members named
+   in the expansion registry rather than bought into the baseline, which is the
+   channel `baseline-set-ratchet.py` exists to refuse), and
+   `framework_production_noncomment_lines` 64741 -> 66839 with its dated
+   measurement notes. No budget removed, no pin removed, no baseline changed.
+2. `cabinet/scripts/egg-export-manifest.txt` — export rules for the update path
+   and one CG-36 delete/expect-absent pair: the generated preserve set
+   (`transform preserve-set` + its `expect-present` sensor), the updater and its
+   helper riding the egg, and the phase-1 germline-bundle test archiving out
+   with the subject it reads.
+3. `cabinet/scripts/tests/test_egg_export.py` — the arms for exactly those
+   manifest rules.
+4. `cabinet/services.yml` — one `disabled_reason` STRING on the parked
+   mission-supervisor row, rewritten to say it stays parked on DIRECTION now
+   that the claim primitive it named as missing exists. The row is still
+   `disabled: true`; no service was enabled, added or removed.
+
+No `framework/projection`, `framework/scheduler`, `framework/organs`,
+`framework/cortex`, `framework/evolution`, `cognitive-trajectory.v2.schema.json`,
+`cog4-*` script, COG-4 fixture, boundary row or phase-twin byte is touched. The
+branch carrying this re-bind touches no bound path at all — its diff is two
+org-runtime evals and their new fixture, one separation-of-duties suite, one
+3.9 pull-path suite, the one-responsibility drill and its wiring suite — so
+nothing here was re-reviewed, because no reviewed COG-4 byte moved.
+`verify-cognitive-phase4.sh` re-run green after this re-bind.)
