@@ -1179,3 +1179,64 @@ def test_a_rolled_back_receipt_is_still_classified_as_a_rollback(tmp_path,
                                          "door": "web"})
     line = run_briefing._update_notice(str(root))
     assert _classify_kind(line) == "rolled_back", line
+
+
+# ---------------------------------------------------------------------------
+# The door: the home page is not being served (2026-09-21)
+# ---------------------------------------------------------------------------
+
+def test_a_door_nothing_supervises_is_said_on_the_door_he_reads(tmp_path):
+    """MEASURED. The 2026-09-10 apply on the Captain's installed Cabinet could
+    not put the dashboard under supervision, so it started a detached one. That
+    orphan was dead by 2026-09-21 — eleven days in which the web door, his only
+    no-terminal door, was gone and nothing said so anywhere. The updater now
+    records the verdict; this is the sentence it produces."""
+    root = _install(tmp_path)
+    _state(root, {"phase": "applied", "to_sha": NEW, "changed": 4,
+                  "door_supervised": False,
+                  "door_reason": "Bootstrap failed: 5: Input/output error"})
+    line = run_briefing._update_notice(str(root))
+    assert line.startswith("Your home page is not being served"), line
+    # Jargon is diagnosis and belongs in the log, never in his one-line notice.
+    for word in ("launchd", "bootstrap", "plist", "gui/", "supervis"):
+        assert word not in line, f"jargon in the Captain's notice: {word} ({line})"
+
+
+def test_a_down_door_outranks_a_waiting_bundle(tmp_path):
+    """"Open the home page and tap Apply" over a home page nothing is serving
+    is an instruction he cannot follow."""
+    root = _install(tmp_path)
+    _waiting(root)
+    _state(root, {"phase": "applied", "to_sha": OLD, "door_supervised": False})
+    assert run_briefing._update_notice(str(root)).startswith(
+        "Your home page is not being served")
+
+
+def test_an_apply_in_flight_still_outranks_the_door(tmp_path):
+    """The live state wins: the restart that is about to happen is the one
+    that decides whether the door ends up supervised."""
+    root = _install(tmp_path)
+    _state(root, {"phase": "applying", "to_sha": NEW, "door_supervised": False})
+    assert run_briefing._update_notice(str(root)) == "An update is being taken right now"
+
+
+def test_a_supervised_door_says_nothing_about_itself(tmp_path):
+    """The inverse arm. Without it, an unconditional sentence would pass every
+    assertion above — and a briefing that reports the door every day when the
+    door is fine is noise the Captain learns to skip."""
+    root = _install(tmp_path)
+    _state(root, {"phase": "applied", "to_sha": NEW, "changed": 4,
+                  "door_supervised": True, "door_reason": ""})
+    assert run_briefing._update_notice(str(root)) == "Updated to %s: 4 changes" % NEW[:8]
+
+
+def test_a_state_that_never_heard_of_the_door_is_not_a_down_door(tmp_path):
+    """The degenerate end, and the one that would have been a false alarm on
+    every install that predates this field: absent is not False."""
+    root = _install(tmp_path)
+    _state(root, {"phase": "applied", "to_sha": NEW, "changed": 4})
+    assert run_briefing._update_notice(str(root)) == "Updated to %s: 4 changes" % NEW[:8]
+    root2 = _install(tmp_path / "two")
+    _state(root2, {"phase": "applied", "to_sha": NEW, "changed": 4,
+                   "door_supervised": None})
+    assert run_briefing._update_notice(str(root2)) == "Updated to %s: 4 changes" % NEW[:8]

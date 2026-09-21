@@ -162,6 +162,11 @@ SNAPSHOTS="$UPD/snapshots"
 STAGE="$UPD/stage"
 RUN_DIR="$UPD/run"
 STATE="$UPD/state.json"
+# What the last restart in THIS run achieved for the door: "true", "false", or
+# empty for "no restart happened, so nothing is known". `restart_dashboard`
+# sets them; the state writes carry them.
+DOOR_SUPERVISED=""
+DOOR_REASON=""
 LOCK="$UPD/.lock"
 LOG="$UPD/update.log"
 
@@ -570,13 +575,28 @@ cmd_status() {
       *) fail_usage "unknown status option '$1'" ;;
     esac
   done
-  "$PY" - "$ROOT" "$as_json" "$LIB_DIR" <<'PYSTATUS'
+  # THE DOOR, READ AT READ TIME. An unsupervised dashboard is an orphan: it
+  # dies with its terminal and it does not come back after a restart, and until
+  # this line nothing on the box would ever mention it again. The 2026-09-10
+  # apply left one; it was dead by 2026-09-21 and `status` said nothing across
+  # eleven days of being asked. Read-only — `launchctl print` changes nothing,
+  # and a report that changes what it reports is not a report (A5.17.6).
+  local door_label="" door_launchd="unknown"
+  if [ -f "$DASH_LIB" ]; then
+    # shellcheck disable=SC1090
+    . "$DASH_LIB"
+    door_label="$CABINET_DASH_LABEL"
+    door_launchd="$(cabinet_launchd_state "$CABINET_DASH_LABEL" 2>/dev/null || echo unknown)"
+  fi
+  "$PY" - "$ROOT" "$as_json" "$LIB_DIR" "$door_label" "$door_launchd" <<'PYSTATUS'
 import json, os, pwd, sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 root = Path(sys.argv[1])
 as_json = sys.argv[2] == "1"
+door_label = sys.argv[4] if len(sys.argv) > 4 else ""
+door_launchd = sys.argv[5] if len(sys.argv) > 5 else "unknown"
 upd = root / ".updates"
 
 
@@ -672,6 +692,20 @@ snapshots = []
 if (upd / "snapshots").is_dir():
     snapshots = sorted(p.name for p in (upd / "snapshots").iterdir() if p.is_dir())
 
+# TWO DIFFERENT FACTS, and collapsing them is how the orphan stayed invisible.
+# `door_supervised` is LIVE: is a launchd job answering for the door right now.
+# `door_reason` is RECORDED: why the last restart could not put it under
+# supervision. A box with no launchctl to ask (every Linux runner this tree
+# also runs on) cannot answer the first one, and saying "not supervised" there
+# would be a confident wrong negative — it falls back to what the last restart
+# wrote down, and to None when nothing ever did.
+if door_launchd == "unknown":
+    recorded = state.get("door_supervised")
+    door_supervised = recorded if isinstance(recorded, bool) else None
+else:
+    door_supervised = door_launchd in ("running", "loaded")
+door_reason = str(state.get("door_reason") or "")
+
 report = {
     "installed_sha": here,
     "installed_short": here[:8],
@@ -700,6 +734,13 @@ report = {
     "state_error": state_error,
     "event_fallback": bool(state.get("event_fallback")),
     "ledger_error": state.get("ledger_error") or "",
+    # The door the Captain actually uses. `door_launchd` is one of running,
+    # loaded, not-loaded, unknown; `door_supervised` is the same fact as a
+    # tri-state (None = could not be asked here).
+    "door_label": door_label,
+    "door_launchd": door_launchd,
+    "door_supervised": door_supervised,
+    "door_reason": door_reason,
 }
 if as_json:
     json.dump(report, sys.stdout, indent=2, sort_keys=True)
@@ -740,6 +781,14 @@ else:
         print("            a record is waiting in .updates/events.jsonl; no update files this")
     elif report["event_fallback"]:
         print("held      : a record is waiting in .updates/events.jsonl for a newer ledger")
+    if door_supervised is False:
+        print("door      : your home page is not being served by anything that "
+              "restarts it%s" % ("  (%s)" % door_reason if door_reason else ""))
+        print("            it will not come back on its own after this Mac restarts")
+    elif door_supervised is None:
+        print("door      : %s — not askable here" % (door_label or "unknown"))
+    else:
+        print("door      : supervised (%s, %s)" % (door_label, door_launchd))
     print("snapshots : %d" % len(snapshots))
 PYSTATUS
 }
@@ -990,8 +1039,40 @@ restart_dashboard() {
   # yours"; a process that no longer has the descriptor must not be told it
   # still holds the lock, or an updater spawned from the restarted dashboard
   # would trust an fd 9 that belongs to something else entirely.
+  # THE DOOR VERDICT COMES BACK THROUGH A FILE, because the restart runs in a
+  # subshell and a variable set in there is gone by the time this returns. The
+  # record is a HANDOFF, not a channel: it is read once and deleted here, so
+  # the only durable statement about the door is the one `write_state` makes
+  # below and the live read `status` takes. Two files that can disagree about
+  # the same fact is the shape A5.17 spent five rounds removing.
+  local record rc=0
+  record="$UPD/door-last"
+  rm -f "$record" 2>/dev/null || true
+  mkdir -p "$UPD" 2>/dev/null || true
   ( exec 9>&-; unset CABINET_UPDATE_LOCK_HELD
-    cabinet_dash_restart "$ROOT" "taking an update" )
+    CABINET_DASH_DOOR_RECORD="$record" cabinet_dash_restart "$ROOT" "taking an update" ) || rc=$?
+  if [ -f "$record" ]; then
+    case "$(sed -n 's/^supervised=//p' "$record" | head -1)" in
+      1) DOOR_SUPERVISED=true ;;
+      0) DOOR_SUPERVISED=false ;;
+    esac
+    DOOR_REASON="$(sed -n 's/^reason=//p' "$record" | head -1)"
+    rm -f "$record" 2>/dev/null || true
+  fi
+  if [ "$DOOR_SUPERVISED" = "false" ]; then
+    log "the door is UNSUPERVISED after this restart${DOOR_REASON:+: $DOOR_REASON} — it will not come back on its own after a restart of this Mac"
+  fi
+  return "$rc"
+}
+
+# door_state_json — the two door fields for a state write, or nothing at all.
+# Nothing is the honest answer when no restart happened (--skip-restart, the
+# acceptance drill's restart seam): a field that says `true` because nobody
+# looked is worse than an absent one.
+door_state_json() {
+  [ -n "$DOOR_SUPERVISED" ] || return 0
+  printf ',"door_supervised":%s,"door_reason":%s' \
+    "$DOOR_SUPERVISED" "$(json_escape "$DOOR_REASON")"
 }
 
 # ---- restore ----------------------------------------------------------------
@@ -1210,7 +1291,7 @@ roll_back_after() { # <snapshot-dir> <to_sha> <from_sha> <reason> <skip_restart>
   # different bundle, so leaving one here is one whole unpacked export per
   # distinct failed sha, for ever, on the operator's disk.
   drop_stage "$to_sha"
-  write_state "{\"phase\":\"rolled_back\",\"from_sha\":$(json_escape "$to_sha"),\"to_sha\":$(json_escape "$from_sha"),\"snapshot\":$(json_escape "$(basename "$snap")"),\"reason\":$(json_escape "$reason"),\"finished_at\":$(json_escape "$(now_utc)")}"
+  write_state "{\"phase\":\"rolled_back\",\"from_sha\":$(json_escape "$to_sha"),\"to_sha\":$(json_escape "$from_sha"),\"snapshot\":$(json_escape "$(basename "$snap")"),\"reason\":$(json_escape "$reason"),\"finished_at\":$(json_escape "$(now_utc)")$(door_state_json)}"
   emit_event cabinet_update_rolled_back "$(door_actor "$DOOR")" \
     "{\"from_sha\":$(json_escape "$to_sha"),\"to_sha\":$(json_escape "$from_sha"),\"reason\":$(json_escape "$reason"),\"door\":$(json_escape "$DOOR")}"
   drop_refusal_markers "$to_sha" "$from_sha"
@@ -1428,7 +1509,7 @@ import os, sys
 from datetime import datetime, timezone
 print(datetime.fromtimestamp(os.stat(sys.argv[1]).st_mtime, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
 ' "$tarball")"
-  write_state "{\"phase\":\"applied\",\"from_sha\":$(json_escape "$here"),\"to_sha\":$(json_escape "$sha"),\"snapshot\":$(json_escape "$(basename "$snap")"),\"started_at\":$(json_escape "$started"),\"finished_at\":$(json_escape "$(now_utc)"),\"changed\":$changed_n,\"deleted\":$deleted_n,\"skipped_preserved\":$skipped,\"built_at\":$(json_escape "$built_at"),\"door\":$(json_escape "$DOOR")}"
+  write_state "{\"phase\":\"applied\",\"from_sha\":$(json_escape "$here"),\"to_sha\":$(json_escape "$sha"),\"snapshot\":$(json_escape "$(basename "$snap")"),\"started_at\":$(json_escape "$started"),\"finished_at\":$(json_escape "$(now_utc)"),\"changed\":$changed_n,\"deleted\":$deleted_n,\"skipped_preserved\":$skipped,\"built_at\":$(json_escape "$built_at"),\"door\":$(json_escape "$DOOR")$(door_state_json)}"
   emit_event cabinet_update_applied "$(door_actor "$DOOR")" \
     "{\"from_sha\":$(json_escape "$here"),\"to_sha\":$(json_escape "$sha"),\"changed\":$changed_n,\"deleted\":$deleted_n,\"snapshot\":$(json_escape "$(basename "$snap")"),\"door\":$(json_escape "$DOOR"),\"built_at\":$(json_escape "$built_at"),\"inbox_owner\":$(json_escape "$owner"),\"inbox_mtime\":$(json_escape "$mtime"),\"skipped_preserved\":$skipped}"
   drop_refusal_markers "$here" "$sha"

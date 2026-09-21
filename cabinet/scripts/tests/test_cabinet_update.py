@@ -1382,8 +1382,15 @@ def test_no_vendor_noun_and_no_git_in_the_installed_root(tmp_path):
     subcommand runs on a box that has no repository at all."""
     text = _UPDATER.read_text()
     body = text.split("# ---- status", 1)[1]
-    assert "git " not in body.replace("git -C \"$from\"", "")
-    assert " launchctl " not in body  # restarts route through the dashboard library
+    # CODE ONLY (2026-09-21). This arm is about what the updater RUNS, and it
+    # used to read the file's prose too: the comment explaining WHY a door
+    # probe goes through the library — which has to name the tool it is not
+    # calling — tripped the guard against calling it. A sensor that reads
+    # comments is measuring documentation, not control flow.
+    code = "\n".join(line for line in body.splitlines()
+                     if not line.lstrip().startswith("#"))
+    assert "git " not in code.replace("git -C \"$from\"", "")
+    assert " launchctl " not in code  # restarts route through the dashboard library
     for noun in ("docker", "redis", "telegram", "github"):
         assert noun not in text.lower(), noun
         assert noun not in _BUNDLE_PY.read_text().lower(), noun
@@ -2135,6 +2142,20 @@ def test_a_busy_refusal_is_recorded_and_never_erases_an_interrupted_apply(tmp_pa
     assert installed_sha(root) == NEW_SHA
 
 
+def _wait_for_the_next_second() -> None:
+    """Block until the wall clock's second changes.
+
+    The updater stamps every record to the second, and A5.17.5 resolves a
+    same-second refusal-vs-apply tie in the refusal's favour; an arm that
+    asserts "an apply after a refusal silences it" must therefore put the
+    apply in a LATER second, or it races the clock (measured once in CI).
+    """
+    import time as _time
+    start = int(_time.time())
+    while int(_time.time()) == start:
+        _time.sleep(0.05)
+
+
 def test_the_refusal_record_outlives_the_next_state_write(tmp_path):
     """A refused bundle must never read as "ready" again — including after some
     OTHER bundle applied cleanly in between.
@@ -2151,6 +2172,15 @@ def test_the_refusal_record_outlives_the_next_state_write(tmp_path):
     assert update_bundle.read_refusal_marker(root, refused_sha), "no marker was written"
 
     make_bundle(tmp_path, root, NEW_SHA, extra={"cabinet/scripts/hello.sh": "echo hello v2\n"})
+    # Records carry second-resolution stamps (recorded_at, A5.17.3) and a
+    # refusal followed by an apply in the SAME second is a tie, which A5.17.5
+    # rules in the refusal's favour ("equal times: the refusal stands"). On a
+    # real box an apply takes seconds; in this test the two calls ran ~1 s
+    # apart and CI caught the same-second case once (2026-09-21, run
+    # 35631458414: status still spoke the refusal after the apply). The arm
+    # proves the "next thing happened" rule, so the next thing must happen
+    # STRICTLY later than the refusal.
+    _wait_for_the_next_second()
     assert run_updater(root, "apply", "--bundle", NEW_SHA, "--skip-rebuild",
                        "--skip-restart").returncode == 0
     doc = state(root)

@@ -96,8 +96,9 @@ print_errand_notes() {
     errand_line "  bash cabinet/scripts/deploy-mac.sh --officer cos"
     errand_line "  python3.12 cabinet/scripts/generate-plists.py"
     errand_line "  for p in cabinet/launchd/generated/*.plist; do plutil -lint \"\$p\"; done"
-    errand_line "  # bootout-first = idempotent on re-runs (no-op on a fresh box):"
-    errand_line "  for p in cabinet/launchd/generated/*.plist; do launchctl bootout gui/\$(id -u) \"\$p\" 2>/dev/null || true; launchctl bootstrap gui/\$(id -u) \"\$p\"; done"
+    errand_line "  # one command, and it is the one that LASTS: it writes the schedule into"
+    errand_line "  # ~/Library/LaunchAgents, which is the only place a restart reads it from."
+    errand_line "  bash cabinet/scripts/deploy-mac.sh --all"
     errand_line "  bash cabinet/scripts/health-check.sh"
     errand_line "  bash cabinet/scripts/cabinet-doctor.sh   # the final all-clear check"
   fi

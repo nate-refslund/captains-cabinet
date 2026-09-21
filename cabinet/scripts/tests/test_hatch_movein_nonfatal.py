@@ -81,10 +81,14 @@ def _drive(tmp_path: Path, *, deploy_rc: int, with_launchd: str = "1",
            plists: bool = True):
     """Run [step machinery] + [move-in .. EOF] of the real hatch.sh.
 
-    cwd is a scratch tree, never the checkout: the block globs
-    ``cabinet/launchd/generated/*.plist`` relative to cwd, and a drive must
-    neither read the developer's real generated plists nor write anything into
-    the repo. ``plists=False`` reproduces the empty-glob refusal.
+    cwd is a scratch tree, never the checkout: a drive must neither read the
+    developer's real generated plists nor write anything into the repo, and
+    ``HOME`` is a scratch directory so the LaunchAgents the move-in now
+    verifies are the drive's own and never this box's.
+
+    ``plists=False`` is the degenerate end: the deploy exits 0 having installed
+    nothing, which is the state the Captain's Mac was in for three weeks and
+    which the move-in must catch rather than report as green.
     """
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
@@ -100,8 +104,23 @@ def _drive(tmp_path: Path, *, deploy_rc: int, with_launchd: str = "1",
 
     # `bash` fails ONLY for deploy-mac.sh — so the password handover (also a
     # `bash` call) still succeeds and the arm is about the move-in alone.
+    #
+    # A SUCCESSFUL `--all` WRITES A LAUNCHAGENT, because that is the whole
+    # point of routing the move-in through it (2026-09-21): the real script
+    # renders the fleet and installs it where a restart reads it from. A shim
+    # that only exits 0 would model the exact defect — a deploy that claims
+    # success and leaves nothing behind — so the drive models both, and
+    # `plists=False` is that defect on purpose.
+    agents = home / "Library" / "LaunchAgents"
+    agents.mkdir(parents=True, exist_ok=True)
+    installed = "1" if plists else "0"
     _shim(shims, "bash", f'''case "$*" in
-  *deploy-mac.sh*) echo "{_LAUNCHD_EIO}" >&2; exit {deploy_rc} ;;
+  *deploy-mac.sh*)
+    [ {deploy_rc} -eq 0 ] || {{ echo "{_LAUNCHD_EIO}" >&2; exit {deploy_rc}; }}
+    case "$*" in
+      *--all*) [ "{installed}" = "1" ] && printf '<plist/>\\n' > "{agents}/com.cabinet.drive.plist" ;;
+    esac
+    exit 0 ;;
 esac
 exit 0''')
     # "answers immediately" now means answers AS THE CABINET: the probe matches
@@ -247,15 +266,20 @@ def test_green_movein_exits_zero(tmp_path):
     assert _calls(shims, "open") == [_LANDING]
 
 
-def test_empty_plist_dir_is_also_non_fatal(tmp_path):
-    """The degenerate end of the glob: nothing to load. It used to be a hard
-    failure two steps later; it must behave like any other soft failure."""
+def test_a_deploy_that_installed_nothing_is_also_non_fatal(tmp_path):
+    """The degenerate end: the deploy exits 0 and nothing durable landed.
+
+    THIS IS THE DEFECT ITSELF, as a test. The Captain's fleet spent three weeks
+    dark because a load that had "succeeded" left nothing in the place a
+    restart reads from, so the move-in asks the filesystem rather than the exit
+    code — and, like every other move-in failure, says so and carries on to the
+    front door."""
     p, shims, logdir = _drive(tmp_path, deploy_rc=0, plists=False)
     assert p.returncode == 75
     assert "MOVEIN_FAILED [movein-load]" in (logdir / "flight.log").read_text(
         encoding="utf-8")
     assert _calls(shims, "open") == [_LANDING], (
-        "an empty schedule directory must not cost the operator the browser"
+        "a schedule that did not land must not cost the operator the browser"
     )
 
 

@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: e2511f5334c65734a72648820117d3d3e1319b6cefc8ec90f57b277fcbe35c55
+Reviewed-Scope-Digest: 4426746cc44277f022a49b97588b69b1491244e5661db6768c26231afe7294c0
 
 (RE-BIND, 2026-08-25, `feat/app-is-a-launcher`. Two bound paths moved and
 neither is COG-4 behavior: `cabinet/services.yml` (the com.cabinet.dashboard
@@ -2627,3 +2627,87 @@ Previous: `2871e43d3f24cd01d22ef40233abd9f88db2769039e88ea3c5a7d9d46be6e585`
 
 Every note above survives verbatim; none is another's restamp — a re-freeze that
 hides what moved asserts a review that never happened.
+
+
+---
+
+## Re-bind 2026-09-21 — U8, "the runtime stays up": one bound member, one raised maximum
+
+WHY THIS SECTION EXISTS. `cabinet/config/cognitive-architecture-contract.yml`
+is a bound member of the scope set AND it is a living document: every census
+raise writes a dated paragraph into it. So a landing that raises a framework
+budget moves a bound blob without touching a single reviewed COG-4 byte, and
+the binding BLOCKs. That is the binding working as designed; what it requires
+is an attestation of what actually moved, not a restamp.
+
+ONE MEMBER MOVED, `ca9d5ca8` against its parent `24971cee`:
+
+**`cabinet/config/cognitive-architecture-contract.yml`** — **PRESERVES.** Two
+independent proofs rather than a reading:
+
+1. **Parsed-leaf diff** (`yaml.safe_load` on both sides, flattened to leaves):
+   **0 leaves removed, 0 added, 1 changed** —
+   `.budgets.framework_production_noncomment_lines.maximum` **66839 → 66842**.
+   Nothing else in the parsed contract differs by any value anywhere.
+2. **Comment-and-blank-stripped `diff`** of the two blobs prints exactly **two
+   lines**: `-    maximum: 66839` / `+    maximum: 66842`. Every other byte of
+   the delta is the dated paragraph the contract's own rules require beside a
+   raise.
+
+BOUND-PROPERTY CHECKS, each a recomputed value on both sides:
+
+| Property | Old | New | Same |
+|---|---|---|---|
+| `baseline_sha` | `8f9c555d2064d55a…` | `8f9c555d2064d55a…` | yes |
+| `budgets.organ_manifests.maximum` (COG-4's own composable-organ ceiling) | 5 | 5 | yes |
+| the two COG-4 `temporary_allowances` rows (row digest) | `3777c9cbd48221c2` | `3777c9cbd48221c2` | yes |
+| `declared_invariants` (digest) | `16e383fc37c0a83a` | `16e383fc37c0a83a` | yes |
+| `enduring_architecture_gates` (digest) | `cc2e1e7078a76875` | `cc2e1e7078a76875` | yes |
+| `ownership` (digest) | `5858ec843812ab43` | `5858ec843812ab43` | yes |
+| `temporary_allowances` rows | 50 | 50 | yes |
+| `expansions` rows | 14 | 14 | yes |
+
+The three digests above are the SAME values the 2026-09-10 re-bind recorded,
+which is the point of quoting them: the cross-phase spine has not moved across
+either landing.
+
+HONEST CAVEAT, recorded rather than smoothed — the same one the previous
+re-bind made, at a tenth the size. `framework_production_noncomment_lines` is a
+SHARED framework budget, and a raised shared ceiling is a real loosening of a
+shared gate. It is loosened through the channel the contract builds for it
+(raised visibly, dated paragraph, `baseline-set-ratchet.py` unbypassed), it is
+**+3 lines**, and what those three lines buy is one arm in
+`framework/frontdoor/run_briefing.py::_update_notice`: a recorded
+`door_supervised: false` now speaks on the briefing, above every sentence that
+ends in "open the home page". No COG-4 property is stated in terms of this
+maximum, and no COG-4 module, test, fixture, organ, schema or plan is touched
+by the landing at all — the rest of it is `cabinet/scripts` (the updater, the
+dashboard library, hatch and its errand note, the drill's header), four
+runbooks, and tests.
+
+**VERDICT: the one member change PRESERVES every COG-4 property this artifact
+freezes. Nothing is re-reviewed downstream, because no reviewed COG-4 byte
+moved.** The digest below is what `cognitive-phase4-review-scope.py --print`
+recomputes over `ca9d5ca8`; this artifact is excluded from its own scope, so
+writing this section does not move it.
+
+Recorded digest (live, also replacing the single `Reviewed-Scope-Digest:` line at
+the top of this file):
+`4426746cc44277f022a49b97588b69b1491244e5661db6768c26231afe7294c0`
+Previous: `e2511f5334c65734a72648820117d3d3e1319b6cefc8ec90f57b277fcbe35c55`
+(itself preceded by `2871e43d3f24cd01d22ef40233abd9f88db2769039e88ea3c5a7d9d46be6e585`
+and `723f18d1d276a630c61924202d2d0e93d1bd89a6352d384ed5fca5d8aba73be3`).
+
+Every note above survives verbatim; none is another's restamp — a re-freeze that
+hides what moved asserts a review that never happened.
+
+STANDING DEFECT, named here because this is the third landing to pay it and the
+fix is not U8's to make: a frozen-review digest bound to a document that is
+DESIGNED to change turns every legitimate census raise into a red gate plus a
+hand-written attestation. The attestation is worth writing — it is what caught
+that only one leaf moved — but a gate that reds on every correct landing is a
+gate that trains people to re-stamp it. Both candidate fixes (binding the
+contract's PARSED COG-4-relevant subset instead of its bytes, or moving the
+census budgets out of a digest-bound file) edit members of the scope set, so
+neither can be done from inside a landing without breaking the binding it is
+trying to relax. It needs its own unit.

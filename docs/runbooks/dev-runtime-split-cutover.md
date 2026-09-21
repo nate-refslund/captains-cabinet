@@ -418,11 +418,18 @@ files that share a name — see §2's fourth item):
 ```bash
 cd ~/.cabinet/runtime/current
 CABINET_ROOT=~/.cabinet/runtime/current python3.12 cabinet/scripts/generate-plists.py
+# DURABLE, and this is the whole of the difference: launchd re-reads agents at
+# login from ~/Library/LaunchAgents and from nowhere else, so a plist bootstrapped
+# where it was rendered is a job that disappears at the next restart (measured
+# 2026-09-21: one restart took all 50 of them out, for three weeks).
+# `deploy-mac.sh --all` does exactly this for the whole fleet in one verb.
+mkdir -p ~/Library/LaunchAgents
 for p in cabinet/launchd/generated/*.plist; do
   [ -e "$p" ] || continue
   plutil -lint "$p"
-  launchctl bootout "gui/$(id -u)" "$p" 2>/dev/null || true
-  launchctl bootstrap "gui/$(id -u)" "$p"
+  install -m 644 "$p" ~/Library/LaunchAgents/"$(basename "$p")"
+  launchctl bootout "gui/$(id -u)" ~/Library/LaunchAgents/"$(basename "$p")" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/"$(basename "$p")"
 done
 ```
 
@@ -503,10 +510,17 @@ CABINET_SOURCE_REPO=$HOME/captains-cabinet CABINET_ROOT=$HOME/captains-cabinet \
 
 # 3b reversed
 CABINET_ROOT=$HOME/captains-cabinet python3.12 cabinet/scripts/generate-plists.py
+# DURABLE, and this is the whole of the difference: launchd re-reads agents at
+# login from ~/Library/LaunchAgents and from nowhere else, so a plist bootstrapped
+# where it was rendered is a job that disappears at the next restart (measured
+# 2026-09-21: one restart took all 50 of them out, for three weeks).
+# `deploy-mac.sh --all` does exactly this for the whole fleet in one verb.
+mkdir -p ~/Library/LaunchAgents
 for p in cabinet/launchd/generated/*.plist; do
   [ -e "$p" ] || continue
-  launchctl bootout "gui/$(id -u)" "$p" 2>/dev/null || true
-  launchctl bootstrap "gui/$(id -u)" "$p"
+  install -m 644 "$p" ~/Library/LaunchAgents/"$(basename "$p")"
+  launchctl bootout "gui/$(id -u)" ~/Library/LaunchAgents/"$(basename "$p")" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/"$(basename "$p")"
 done
 
 # 3c reversed — a plain copy suffices here: the live tree's own checked-in
@@ -639,11 +653,18 @@ bash "$RELEASE/cabinet/scripts/runtime-provision.sh" promote "$RUNTIME" "$(basen
 ( cd "$RUNTIME/current" && CABINET_SOURCE_REPO="$RUNTIME/current" CABINET_ROOT="$RUNTIME/current" \
     bash cabinet/scripts/deploy-mac.sh --officer all )
 ( cd "$RUNTIME/current" && CABINET_ROOT="$RUNTIME/current" python3.12 cabinet/scripts/generate-plists.py )
+# DURABLE, and this is the whole of the difference: launchd re-reads agents at
+# login from ~/Library/LaunchAgents and from nowhere else, so a plist bootstrapped
+# where it was rendered is a job that disappears at the next restart (measured
+# 2026-09-21: one restart took all 50 of them out, for three weeks).
+# `deploy-mac.sh --all` does exactly this for the whole fleet in one verb.
+mkdir -p ~/Library/LaunchAgents
 for p in "$RUNTIME/current/cabinet/launchd/generated/"*.plist; do
   [ -e "$p" ] || continue
   plutil -lint "$p"
-  launchctl bootout "gui/$(id -u)" "$p" 2>/dev/null || true
-  launchctl bootstrap "gui/$(id -u)" "$p"
+  install -m 644 "$p" ~/Library/LaunchAgents/"$(basename "$p")"
+  launchctl bootout "gui/$(id -u)" ~/Library/LaunchAgents/"$(basename "$p")" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/"$(basename "$p")"
 done
 sed "s|$HOME/captains-cabinet|$RUNTIME/current|g" \
   "$RUNTIME/current/cabinet/launchd/com.cabinet.officer.cos-inbound.plist" \
@@ -661,10 +682,17 @@ bash "$RUNTIME/current/cabinet/scripts/cabinet-doctor.sh"
   CABINET_SOURCE_REPO=$HOME/captains-cabinet CABINET_ROOT=$HOME/captains-cabinet \
     bash cabinet/scripts/deploy-mac.sh --officer all )
 ( cd $HOME/captains-cabinet && CABINET_ROOT=$HOME/captains-cabinet python3.12 cabinet/scripts/generate-plists.py )
+# DURABLE, and this is the whole of the difference: launchd re-reads agents at
+# login from ~/Library/LaunchAgents and from nowhere else, so a plist bootstrapped
+# where it was rendered is a job that disappears at the next restart (measured
+# 2026-09-21: one restart took all 50 of them out, for three weeks).
+# `deploy-mac.sh --all` does exactly this for the whole fleet in one verb.
+mkdir -p ~/Library/LaunchAgents
 for p in $HOME/captains-cabinet/cabinet/launchd/generated/*.plist; do
   [ -e "$p" ] || continue
-  launchctl bootout "gui/$(id -u)" "$p" 2>/dev/null || true
-  launchctl bootstrap "gui/$(id -u)" "$p"
+  install -m 644 "$p" ~/Library/LaunchAgents/"$(basename "$p")"
+  launchctl bootout "gui/$(id -u)" ~/Library/LaunchAgents/"$(basename "$p")" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/"$(basename "$p")"
 done
 cp $HOME/captains-cabinet/cabinet/launchd/com.cabinet.officer.cos-inbound.plist ~/Library/LaunchAgents/
 launchctl bootout "gui/$(id -u)" ~/Library/LaunchAgents/com.cabinet.officer.cos-inbound.plist 2>/dev/null || true
