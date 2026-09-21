@@ -1228,7 +1228,12 @@ jobs:
           python3.12 - "$RUNNER_TEMP/drill-tree.json" "$rc_tree" \
                       "$RUNNER_TEMP/drill-egg.json" "$rc_egg" <<'PY'
           import json, sys
-          legs = (("git tree", "tree:", sys.argv[1], int(sys.argv[2])),
+          # The prefixes are the drill's own tree_source vocabulary, MEASURED
+          # rather than guessed: leg 1 takes no --tree, so a checkout answers
+          # "git archive HEAD @ <sha>" and never "tree:" (which is what a
+          # directory handed to --tree answers). The first cut of this reader
+          # asserted "tree:" here and would have red every run.
+          legs = (("git tree", "git archive HEAD", sys.argv[1], int(sys.argv[2])),
                   ("exported egg", "egg:", sys.argv[3], int(sys.argv[4])))
           required = ["hatch", "seed", "P1", "P2", "P2b", "P3", "P4", "P2h",
                       "P5", "P6", "P7", "hermeticity"]
