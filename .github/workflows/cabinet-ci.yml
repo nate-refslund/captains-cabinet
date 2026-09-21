@@ -1159,9 +1159,16 @@ jobs:
     runs-on: ubuntu-latest
     # Measured on the reference box: the drill itself is ~30 s and the two
     # suites are ~2 m, plus two real dashboard builds inside P7 (the gate-red
-    # leg and the gate-green one) at ~1 m each on this hardware. 30 is a
-    # runaway guard with room for a slow runner, not a performance claim.
-    timeout-minutes: 30
+    # leg and the gate-green one) at ~1 m each on this hardware.
+    #
+    # 30 -> 50 (2026-09-21): the job now runs the drill TWICE — once on the
+    # committed tree and once on an exported egg — and each full run carries
+    # its own pair of real builds. Measured end to end on the development box:
+    # 6 m 37 s for the egg leg with both builds REAL, and the tree leg is the
+    # same shape. Doubling a ~20 m ceiling that was already mostly headroom
+    # would be an unbounded guard; 50 is the old headroom plus one more
+    # measured run. Still a runaway guard, not a performance claim.
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
         with:
@@ -1193,38 +1200,82 @@ jobs:
       # run three of its twelve stages would pass an exit-code check; the
       # stages array is where "every stage was reached, and none of them
       # failed" is written down (contract §4).
-      - name: "One responsibility, carried end to end"
+      #
+      # AND IT IS READ FOR BOTH SUBJECT SHAPES (2026-09-21). Leg 1 is the
+      # committed tree. Leg 2 is an EXPORTED EGG, which is what an installed
+      # Cabinet is — and until this leg existed the acceptance drill had never
+      # once been taken against that shape: it exited 64 at hatch, because the
+      # packaging pass deletes the export manifest the hatch was reading, so
+      # "the drill passes on the installed Cabinet" had only ever been shown on
+      # the identical git tree in a clone and here. An egg carries no exporter,
+      # so leg 2 hands the publish leg this checkout as its bundle source while
+      # the apply legs run the egg's own updater; without it the drill records
+      # P7 as THIN and the reader below reds on that.
+      #
+      # ONE READER, TWO REPORTS, on purpose: a second copy of these assertions
+      # is a second thing to keep in step, and the copy is always the one that
+      # goes stale.
+      - name: "One responsibility, carried end to end — on both subject shapes"
         run: |
           set -uo pipefail
-          bash cabinet/scripts/drills/one-responsibility.sh --json > "$RUNNER_TEMP/drill.json"
-          rc=$?
-          python3.12 - "$RUNNER_TEMP/drill.json" "$rc" <<'PY'
+          bash cabinet/scripts/drills/one-responsibility.sh --json > "$RUNNER_TEMP/drill-tree.json"
+          rc_tree=$?
+          bash cabinet/scripts/egg-export.sh --out "$RUNNER_TEMP/egg"
+          CABINET_DRILL_BUNDLE_SOURCE="$GITHUB_WORKSPACE" \
+            bash cabinet/scripts/drills/one-responsibility.sh --tree "$RUNNER_TEMP/egg" --json \
+            > "$RUNNER_TEMP/drill-egg.json"
+          rc_egg=$?
+          python3.12 - "$RUNNER_TEMP/drill-tree.json" "$rc_tree" \
+                      "$RUNNER_TEMP/drill-egg.json" "$rc_egg" <<'PY'
           import json, sys
-          report = json.load(open(sys.argv[1]))
-          rc = int(sys.argv[2])
-          stages = {}
-          for row in report["stages"]:
-              stages.setdefault(row["stage"], []).append(row["verdict"])
-          print(json.dumps(stages, indent=2, sort_keys=True))
+          # The prefixes are the drill's own tree_source vocabulary, MEASURED
+          # rather than guessed: leg 1 takes no --tree, so a checkout answers
+          # "git archive HEAD @ <sha>" and never "tree:" (which is what a
+          # directory handed to --tree answers). The first cut of this reader
+          # asserted "tree:" here and would have red every run.
+          legs = (("git tree", "git archive HEAD", sys.argv[1], int(sys.argv[2])),
+                  ("exported egg", "egg:", sys.argv[3], int(sys.argv[4])))
           required = ["hatch", "seed", "P1", "P2", "P2b", "P3", "P4", "P2h",
                       "P5", "P6", "P7", "hermeticity"]
-          missing = [s for s in required if s not in stages]
-          failed = sorted(s for s, v in stages.items() if "fail" in v)
-          if rc != 0 or report.get("verdict") != "pass" or missing or failed:
-              raise SystemExit(
-                  "the drill did not carry one responsibility end to end: "
-                  "exit=%d verdict=%r stages-never-reached=%s stages-failed=%s"
-                  % (rc, report.get("verdict"), missing, failed))
-          # A5.18: and it ran the REAL staged build. THIN is a legitimate
-          # answer on a box with no toolchain and a lie on this one, where the
-          # step above installed the dependencies the drill looks for.
-          if report.get("p7_rebuild") != "REAL":
-              raise SystemExit(
-                  "P7 reported the rebuild as %r, and this runner installs the "
-                  "dashboard's dependencies precisely so it is REAL. A THIN run "
-                  "here means the staged build — the leg that failed on the "
-                  "Captain's own box — was skipped again."
-                  % (report.get("p7_rebuild"),))
+          problems = []
+          for label, prefix, path, rc in legs:
+              try:
+                  report = json.load(open(path))
+              except (OSError, ValueError) as exc:
+                  problems.append("%s: no readable report (%s)" % (label, exc))
+                  continue
+              stages = {}
+              for row in report["stages"]:
+                  stages.setdefault(row["stage"], []).append(row["verdict"])
+              print("--- %s ---" % label)
+              print(json.dumps(stages, indent=2, sort_keys=True))
+              missing = [s for s in required if s not in stages]
+              failed = sorted(s for s, v in stages.items() if "fail" in v)
+              if rc != 0 or report.get("verdict") != "pass" or missing or failed:
+                  problems.append(
+                      "%s: the drill did not carry one responsibility end to end: "
+                      "exit=%d verdict=%r stages-never-reached=%s stages-failed=%s"
+                      % (label, rc, report.get("verdict"), missing, failed))
+              # THE LEG RAN AGAINST THE SHAPE IT SAYS IT DID. Two green runs of
+              # the same subject would read exactly like one of each.
+              source = report.get("tree_source") or ""
+              if not source.startswith(prefix):
+                  problems.append(
+                      "%s: the drill reports tree_source=%r, which is not a %s subject — "
+                      "this leg measured something other than what it claims"
+                      % (label, source, label))
+              # A5.18: and it ran the REAL staged build. THIN is a legitimate
+              # answer on a box with no toolchain and a lie on this one, where the
+              # step above installed the dependencies the drill looks for.
+              if report.get("p7_rebuild") != "REAL":
+                  problems.append(
+                      "%s: P7 reported the rebuild as %r, and this runner installs the "
+                      "dashboard's dependencies precisely so it is REAL. A THIN run "
+                      "here means the staged build — the leg that failed on the "
+                      "Captain's own box — was skipped again."
+                      % (label, report.get("p7_rebuild")))
+          if problems:
+              raise SystemExit("\n".join(problems))
           PY
 
   # THE 3.9 FLOOR (2026-09-07, phase-1 claim). The prompt hook that pulls work

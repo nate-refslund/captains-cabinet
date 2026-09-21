@@ -50,7 +50,60 @@
 # (drill-<8hex>) so it can never collide with a running officer's sentinel, and
 # removes its own on the way out.
 #
-# SEAMS — all three exist for the tests that prove this drill is alive
+# THREE SUBJECT SHAPES, and the drill READS which one it was handed
+# (2026-09-21). The thing that runs is not a repository. An installed Cabinet
+# IS an export: the packaging pass deletes cabinet/scripts/egg-export-manifest.txt
+# out of it BY DESIGN, so the manifest scrub below had nothing to read and this
+# drill exited 64 at hatch against the one tree the whole phase is about —
+# measured on the Captain's own install, 2026-09-10, after the acceptance gate
+# had been satisfied only on the identical git tree in a clone and in CI.
+#
+#   a git tree   carries cabinet/scripts/egg-export-manifest.txt. Staged from
+#                `git archive HEAD` (or copied from --tree), then scrubbed by
+#                that manifest. PROVES: the committed tree hatches and carries
+#                one responsibility end to end, update leg included.
+#   an egg       carries egg-manifest.json and NO export manifest — a fresh cut,
+#                or a deployment somebody is running. Copied MINUS the operator's
+#                own data, which the egg declares itself. PROVES: the framework
+#                bytes that are actually INSTALLED do all of the above, and P7
+#                runs that deployment's own updater rather than a clone's.
+#   neither      still exits 64 at hatch with the sentence it always had. A tree
+#                that can declare neither its packaging nor its preserved paths
+#                cannot be told apart from the framework, and guessing is the
+#                one thing this stage may not do.
+#
+# The shape is read off the tree, never asked for on the command line: an
+# operator pointing --tree at a deployment gets the right hatch without knowing
+# there are two, and a tree that grew an egg-manifest.json while KEEPING its
+# export manifest stays on the old path instead of silently changing shape.
+#
+# WHAT AN EGG SUBJECT DROPS, and the egg is what says so. An export ships
+# cabinet/config/egg-preserve-set.txt (the paths an update must never write or
+# delete) precisely BECAUSE the export manifest deletes itself, and
+# cabinet/scripts/shipped-ignored-paths.txt (force-tracked content a fresh
+# clone's .gitignore would call ignorable). The first is read THROUGH the
+# shipped parser the updater itself uses — update_bundle.preserve_set(), which
+# unions it with `runtime-provision.sh lists` and RAISES rather than returning
+# an empty set — and everything it names comes out of the scratch copy. The
+# second is the keep-list that stops a preserved DIRECTORY taking shipped
+# structure out with it (memory/tier3 is both). Then the artefacts an install
+# grows by running and no export ships: .updates/, node_modules, build output,
+# bytecode. A hand-written list here would rot away from the export the first
+# time the export changed; these two files cannot, because the exporter
+# generates them.
+#
+# P7 ON AN EGG SUBJECT IS HONEST ABOUT WHAT IT CANNOT DO. A bundle is a cut of
+# a checkout, and an egg carries no exporter — cabinet/scripts/egg-export.sh is
+# not shipped content, measured on a fresh cut. So the update leg takes its
+# bundle source from CABINET_DRILL_BUNDLE_SOURCE (a checkout, normally of the
+# commit the egg names in egg-manifest.json); the scratch install is exported
+# from THAT tree, while the publish and apply legs run the egg's own
+# cabinet-update.sh, the egg's dashboard library and the egg's node_modules —
+# which is the part an egg subject actually adds. Without a bundle source the
+# leg records THIN and names what would make it REAL. Never a silent skip, and
+# never a pass that implies a bundle was cut.
+#
+# SEAMS — all four exist for the tests that prove this drill is alive
 #   --tree DIR (or CABINET_DRILL_TREE)
 #       stage the scratch root from DIR instead of `git archive HEAD`. This is
 #       the mutated-tree red arm: a copy whose claim() skips the lock must make
@@ -77,6 +130,9 @@
 #       cabinet/scripts/tests/test_runtime_stays_up.py::test_the_restart_seam_returns_before_any_launchd_work.
 #   CABINET_DRILL_DASH_PORT
 #       pin the stub server's port instead of picking a free one.
+#   CABINET_DRILL_BUNDLE_SOURCE
+#       the checkout P7 cuts its bundles from when the subject is an egg. Read
+#       before the environment scrub, like every other CABINET_* input here.
 #
 # P7'S REBUILD IS REAL WHENEVER IT CAN BE (A5.18, 2026-09-10). This drill used
 # to pass --skip-rebuild on every apply, so the staged build — the step that
@@ -171,6 +227,9 @@ BOX_PY="python3"
 # Read every CABINET_* input the drill takes BEFORE the environment is scrubbed
 # — the scrub is what makes the run hermetic, and it would eat these too.
 DASH_PORT_PIN="${CABINET_DRILL_DASH_PORT:-}"
+# The checkout P7 cuts its bundles from when the subject is an egg. Same rule,
+# same reason: a CABINET_* name read after the scrub is a name read as empty.
+BUNDLE_SOURCE_ARG="${CABINET_DRILL_BUNDLE_SOURCE:-}"
 
 # THE BOX INTERPRETER'S LIBRARIES, resolved while the operator's own HOME is
 # still in place. `pip install --user` puts them under a directory DERIVED FROM
@@ -410,67 +469,253 @@ say "root=$ROOT slug=$SLUG"
 # Stage the tree. `git archive HEAD` reads the COMMITTED tree, which is the
 # only tree an export, a hatch or a stranger ever sees; a working-tree copy
 # would let uncommitted bytes pass a proof about committed ones.
+#
+# Which of the three subject shapes this is, is decided HERE and from the tree
+# itself — see THREE SUBJECT SHAPES at the top of this file for what each one
+# proves and why the shape is read rather than asked for.
 # ---------------------------------------------------------------------------
 TREE_SOURCE=""
+SUBJECT_SHAPE="tree"
+SUBJECT_DIR=""
+EGG_SRC_COMMIT=""
+P7_THIN_REASON=""
+SHIPPED=""
+# WHICH DIRECTORY IS THE SUBJECT. A checkout answers `git archive HEAD` and is
+# never a shape question; --tree and a gitless REPO_ROOT both hand over a
+# directory whose shape has to be read — and the gitless case is the one that
+# matters, because an installed Cabinet running its OWN copy of this drill with
+# no arguments lands exactly there.
 if [ -n "$TREE_ARG" ]; then
   [ -d "$TREE_ARG" ] || fail 64 hatch "--tree is not a directory: $TREE_ARG"
-  TREE_SOURCE="tree:$TREE_ARG"
-  tar -cf - -C "$TREE_ARG" --exclude='./.git' . | tar -xf - -C "$ROOT" \
-    || fail 64 hatch "could not stage --tree $TREE_ARG"
+  # Absolute from here on: the subject path goes into the report, into the
+  # hermeticity watch and into the dependency-tree lookup, and a relative one
+  # would mean three different directories once the legs change cwd.
+  TREE_ARG="$(cd "$TREE_ARG" && pwd)"
+  SUBJECT_DIR="$TREE_ARG"
 elif git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  SUBJECT_DIR=""
+else
+  SUBJECT_DIR="$REPO_ROOT"
+fi
+
+if [ -n "$SUBJECT_DIR" ] \
+   && [ -f "$SUBJECT_DIR/egg-manifest.json" ] \
+   && [ ! -f "$SUBJECT_DIR/cabinet/scripts/egg-export-manifest.txt" ]; then
+  SUBJECT_SHAPE="egg"
+  EGG_SRC_COMMIT="$(EGGDIR="$SUBJECT_DIR" "$PY" - <<'PY'
+import json, os
+from pathlib import Path
+try:
+    data = json.loads((Path(os.environ["EGGDIR"]) / "egg-manifest.json").read_text(encoding="utf-8"))
+    print(str(data.get("source_commit") or "")[:8])
+except Exception:
+    print("")
+PY
+)"
+  [ -n "$EGG_SRC_COMMIT" ] \
+    || fail 64 hatch "the egg at $SUBJECT_DIR has an egg-manifest.json with no readable source_commit — the drill will not report a subject it cannot name"
+  TREE_SOURCE="egg:$SUBJECT_DIR @ $EGG_SRC_COMMIT"
+elif [ -n "$TREE_ARG" ]; then
+  TREE_SOURCE="tree:$TREE_ARG"
+elif [ -n "$SUBJECT_DIR" ]; then
+  TREE_SOURCE="tar copy (gitless tree)"
+else
   TREE_SOURCE="git archive HEAD @ $(git -C "$REPO_ROOT" rev-parse --short HEAD)"
+fi
+
+if [ -n "$SUBJECT_DIR" ]; then
+  tar -cf - -C "$SUBJECT_DIR" --exclude='./.git' . | tar -xf - -C "$ROOT" \
+    || fail 64 hatch "could not stage $SUBJECT_DIR"
+else
   git -C "$REPO_ROOT" archive --format=tar HEAD | tar -xf - -C "$ROOT" \
     || fail 64 hatch "git archive HEAD failed"
-else
-  TREE_SOURCE="tar copy (gitless tree)"
-  tar -cf - -C "$REPO_ROOT" --exclude='./.git' . | tar -xf - -C "$ROOT" \
-    || fail 64 hatch "could not copy the gitless tree"
 fi
 note_stage hatch "staged from $TREE_SOURCE"
 
-# THE SHIPPED TREE, kept before anything runs in it. P7 cuts its bundles from
-# HERE and never from $ROOT: $ROOT becomes a RUNNING cabinet a few lines below
-# (the hatch writes instance/config/cabinet-init.answers.yml, a lock file, a
-# roster), and the exporter refuses a source that still carries live instance
-# state — "LIVE INSTANCE FILE SURVIVED THE PASS", measured. That refusal is the
-# exporter being right: a bundle is a cut of a checkout, not a copy of somebody
-# running deployment. This copy is taken before the manifest scrub too, so the
-# exporter does its own deleting exactly as it does on a real cut.
-SHIPPED="$SCRATCH/shipped"
-mkdir -p "$SHIPPED"
-tar -cf - -C "$ROOT" . | tar -xf - -C "$SHIPPED" \
-  || fail 64 hatch "could not keep a copy of the shipped tree for the update leg"
+if [ "$SUBJECT_SHAPE" = "egg" ]; then
+  # AN EGG DECLARES ITS OWN OPERATOR DATA, because the export manifest is not
+  # there to be read. Everything cabinet/config/egg-preserve-set.txt names (via
+  # the shipped parser, unioned with `runtime-provision.sh lists`) comes out of
+  # the scratch copy; the shipped-ignored keep-list stops a preserved directory
+  # taking force-tracked SHIPPED structure with it; and the artefacts an install
+  # grows by running come out too. This is the egg-subject equivalent of the
+  # manifest scrub below, and it fails closed for the same reason: an empty
+  # declaration must never read as "this deployment has nothing of its own".
+  ROOTDIR="$ROOT" "$PY" - > "$SCRATCH/egg-prune.log" 2>&1 <<'PY' || fail 64 hatch "could not drop this deployment's own data out of the staged egg: $(tr '\n' ' ' < "$SCRATCH/egg-prune.log" | tail -c 400)"
+import os, shutil, sys
+from pathlib import Path
 
-# A fresh hatch is what a STRANGER gets, and the export's own manifest is the
-# authoritative answer to what a stranger does not get: every `delete
-# instance/...` line names a path that belongs to THIS deployment and is
-# scrubbed out of the egg. Staging the committed tree without applying that
-# list hatches the Captain's own state and calls it fresh — his
-# instance/config/outcomes.yml is pinned to his deployment id, so the compiler
-# skips the whole file and every stage after the tap measures nothing while
-# reporting a clean run. Derived from the manifest, never hand-listed, so it
-# cannot rot away from the export.
-MANIFEST="$ROOT/cabinet/scripts/egg-export-manifest.txt"
-[ -f "$MANIFEST" ] || fail 64 hatch "no export manifest at cabinet/scripts/egg-export-manifest.txt — the drill cannot tell this deployment's state from the framework's"
-SCRUBBED=0
-while IFS= read -r _line || [ -n "$_line" ]; do
-  case "$_line" in
-    "delete instance/"*)
-      _rel="${_line#delete }"
-      case "$_rel" in *..*) continue ;; esac
-      if [ -e "$ROOT/$_rel" ]; then
-        rm -rf "${ROOT:?}/$_rel" || fail 64 hatch "could not scrub $_rel out of the scratch tree"
-        SCRUBBED=$((SCRUBBED + 1))
-      fi
-      ;;
-  esac
-done < "$MANIFEST"
-[ "$SCRUBBED" -gt 0 ] || fail 64 hatch "the export manifest named no instance path to scrub — either the manifest moved or its grammar changed, and the drill would silently hatch this deployment's own state"
-note_stage hatch "scrubbed $SCRUBBED deployment-local instance path(s) named by the export manifest"
+root = Path(os.environ["ROOTDIR"])
+sys.path.insert(0, str(root / "cabinet" / "scripts" / "lib"))
+import update_bundle as ub
+
+
+def remove(path):
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+        return 1
+    if path.is_dir():
+        shutil.rmtree(path)
+        return 1
+    return 0
+
+
+# RUNTIME ARTEFACTS FIRST, so nothing below walks a dependency tree. None of
+# these is shipped content and none of them is declared anywhere: an install
+# grows them by running. The update ledger is the one that matters most — a
+# scratch that inherited .updates/ would replay another run history into this
+# one and every P7 delta would be taken around somebody else events.
+artefacts = 0
+updates = root / ".updates"
+if updates.is_dir() or updates.is_file():
+    artefacts += remove(updates)
+for name in ("node_modules", ".next", "__pycache__"):
+    for path in sorted(root.rglob(name), key=lambda q: len(q.parts)):
+        if path.exists() or path.is_symlink():
+            artefacts += remove(path)
+
+# THE DECLARATION, through the parser the updater itself calls. A second copy
+# of this rule here would be a second thing to keep in step, and the copy is
+# always the one that goes stale.
+preserve = ub.preserve_set(root)
+if not preserve:
+    raise SystemExit(
+        "the staged egg declares an EMPTY preserve set, so the drill cannot tell "
+        "this deployment data from shipped content and refuses to guess")
+
+keep = set()
+keepfile = root / "cabinet" / "scripts" / "shipped-ignored-paths.txt"
+if keepfile.is_file():
+    for line in keepfile.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            keep.add(line)
+
+
+def drop(rel):
+    rel = rel.strip("/")
+    if not rel or ".." in rel.split("/"):
+        return 0
+    target = root / rel
+    under = [k for k in keep if k == rel or k.startswith(rel + "/")]
+    if not under:
+        if target.is_symlink() or target.exists():
+            return remove(target)
+        return 0
+    if target.is_symlink() or not target.is_dir():
+        return 0          # the declared path IS shipped content; keep it whole
+    dropped = 0
+    for path in sorted(target.rglob("*"), key=lambda q: len(q.parts), reverse=True):
+        if path.relative_to(root).as_posix() in keep:
+            continue
+        if path.is_dir() and not path.is_symlink():
+            if any(path.iterdir()):
+                continue
+            path.rmdir()
+            dropped += 1
+        elif path.is_symlink() or path.exists():
+            path.unlink()
+            dropped += 1
+    return dropped
+
+
+dropped = 0
+for entry in preserve:
+    entry = entry.strip()
+    if not entry:
+        continue
+    if any(ch in entry for ch in "*?["):
+        for match in sorted(root.glob(entry)):
+            dropped += drop(match.relative_to(root).as_posix())
+    else:
+        dropped += drop(entry)
+
+# MEASURED, not reported: how many of the keep-list paths are still there.
+kept = sum(1 for k in keep if (root / k).exists())
+print("dropped %d path(s) the egg declares as this deployment own, %d runtime "
+      "artefact(s); %d of %d shipped-ignored path(s) survived the prune"
+      % (dropped, artefacts, kept, len(keep)))
+PY
+  note_stage hatch "$(tail -1 "$SCRATCH/egg-prune.log")"
+
+  # THE BUNDLE SOURCE. An egg carries no exporter and a bundle is a cut of a
+  # checkout, so the update leg needs one handed to it or it does not run. What
+  # an egg subject still proves when it does run is the part that matters: the
+  # publish and apply legs below take the updater, the dashboard library and
+  # the dependency tree out of the EGG, and only the bundle comes from the
+  # checkout.
+  if [ -n "$BUNDLE_SOURCE_ARG" ] && [ "$SKIP_UPDATE" != "1" ]; then
+    [ -d "$BUNDLE_SOURCE_ARG" ] \
+      || fail 64 hatch "CABINET_DRILL_BUNDLE_SOURCE is not a directory: $BUNDLE_SOURCE_ARG"
+    git -C "$BUNDLE_SOURCE_ARG" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+      || fail 64 hatch "CABINET_DRILL_BUNDLE_SOURCE is not a checkout: $BUNDLE_SOURCE_ARG — a bundle is a cut of HEAD and needs a HEAD"
+    SHIPPED="$SCRATCH/shipped"
+    mkdir -p "$SHIPPED"
+    git -C "$BUNDLE_SOURCE_ARG" archive --format=tar HEAD | tar -xf - -C "$SHIPPED" \
+      || fail 64 hatch "git archive HEAD failed in the bundle source $BUNDLE_SOURCE_ARG"
+    [ -f "$SHIPPED/cabinet/scripts/egg-export.sh" ] \
+      || fail 64 hatch "the bundle source $BUNDLE_SOURCE_ARG ships no cabinet/scripts/egg-export.sh, so it cannot cut a bundle either"
+    note_stage hatch "P7 cuts its bundles from CABINET_DRILL_BUNDLE_SOURCE ($BUNDLE_SOURCE_ARG @ $(git -C "$BUNDLE_SOURCE_ARG" rev-parse --short HEAD)); the egg names source_commit $EGG_SRC_COMMIT"
+  elif [ "$SKIP_UPDATE" != "1" ]; then
+    P7_THIN_REASON="an egg cannot cut its own bundle: cabinet/scripts/egg-export.sh is not shipped content and there is no cabinet/scripts/egg-export-manifest.txt to cut against. Nothing about the update path is proved by this run. What would make it REAL: CABINET_DRILL_BUNDLE_SOURCE pointing at a checkout (normally of $EGG_SRC_COMMIT, the commit this egg names), which the publish leg cuts its bundles from while the apply legs still run this egg's own updater"
+  fi
+else
+  # THE SHIPPED TREE, kept before anything runs in it. P7 cuts its bundles from
+  # HERE and never from $ROOT: $ROOT becomes a RUNNING cabinet a few lines below
+  # (the hatch writes instance/config/cabinet-init.answers.yml, a lock file, a
+  # roster), and the exporter refuses a source that still carries live instance
+  # state — "LIVE INSTANCE FILE SURVIVED THE PASS", measured. That refusal is the
+  # exporter being right: a bundle is a cut of a checkout, not a copy of somebody
+  # running deployment. This copy is taken before the manifest scrub too, so the
+  # exporter does its own deleting exactly as it does on a real cut.
+  SHIPPED="$SCRATCH/shipped"
+  mkdir -p "$SHIPPED"
+  tar -cf - -C "$ROOT" . | tar -xf - -C "$SHIPPED" \
+    || fail 64 hatch "could not keep a copy of the shipped tree for the update leg"
+
+  # A fresh hatch is what a STRANGER gets, and the export's own manifest is the
+  # authoritative answer to what a stranger does not get: every `delete
+  # instance/...` line names a path that belongs to THIS deployment and is
+  # scrubbed out of the egg. Staging the committed tree without applying that
+  # list hatches the Captain's own state and calls it fresh — his
+  # instance/config/outcomes.yml is pinned to his deployment id, so the compiler
+  # skips the whole file and every stage after the tap measures nothing while
+  # reporting a clean run. Derived from the manifest, never hand-listed, so it
+  # cannot rot away from the export.
+  MANIFEST="$ROOT/cabinet/scripts/egg-export-manifest.txt"
+  [ -f "$MANIFEST" ] || fail 64 hatch "no export manifest at cabinet/scripts/egg-export-manifest.txt — the drill cannot tell this deployment's state from the framework's"
+  SCRUBBED=0
+  while IFS= read -r _line || [ -n "$_line" ]; do
+    case "$_line" in
+      "delete instance/"*)
+        _rel="${_line#delete }"
+        case "$_rel" in *..*) continue ;; esac
+        if [ -e "$ROOT/$_rel" ]; then
+          rm -rf "${ROOT:?}/$_rel" || fail 64 hatch "could not scrub $_rel out of the scratch tree"
+          SCRUBBED=$((SCRUBBED + 1))
+        fi
+        ;;
+    esac
+  done < "$MANIFEST"
+  [ "$SCRUBBED" -gt 0 ] || fail 64 hatch "the export manifest named no instance path to scrub — either the manifest moved or its grammar changed, and the drill would silently hatch this deployment's own state"
+  note_stage hatch "scrubbed $SCRUBBED deployment-local instance path(s) named by the export manifest"
+fi
 
 # --- hermeticity: the before picture ---------------------------------------
 find "$HOME_DIR" 2>/dev/null | LC_ALL=C sort > "$SCRATCH/home.before"
 ( cd "$REPO_ROOT" && find . -not -path './.git/*' 2>/dev/null | LC_ALL=C sort ) > "$SCRATCH/repo.before"
+# AND THE SUBJECT, when the subject is somebody's deployment (2026-09-21). An
+# egg subject is the one shape where --tree points at a tree a person is
+# running, and "the drill cannot damage your install" is a claim worth a sensor
+# rather than an assurance. This compares the file LIST, so it catches a
+# creation or a deletion and not an in-place overwrite; the drill never opens
+# the subject for writing (it is tar-copied once and hardlinked from), and that
+# is the residual this line does not close.
+SUBJECT_WATCH=""
+if [ "$SUBJECT_SHAPE" = "egg" ] && [ "$SUBJECT_DIR" != "$REPO_ROOT" ]; then
+  SUBJECT_WATCH="$SUBJECT_DIR"
+  ( cd "$SUBJECT_WATCH" && find . 2>/dev/null | LC_ALL=C sort ) > "$SCRATCH/subject.before"
+fi
 
 # --- hatch: the real primitives --------------------------------------------
 ( cd "$ROOT" && "$PY" cabinet/scripts/generate-instance.py --defaults --root "$ROOT" ) \
@@ -1336,6 +1581,11 @@ pass_stage P6 "1 ratified, 2 completed with readable evidence, the released row,
 # ---------------------------------------------------------------------------
 if [ "$SKIP_UPDATE" = "1" ]; then
   thin_stage P7 "skipped by --skip-update: the update leg was not run and nothing about it is proved"
+elif [ -n "$P7_THIN_REASON" ]; then
+  # A THIN that names what would make it REAL, decided at hatch where the
+  # subject shape is known. Not a skip: the stage is recorded, the reason is
+  # the whole sentence, and a caller that requires REAL reds on it.
+  thin_stage P7 "$P7_THIN_REASON"
 else
   UPDATER="$ROOT/cabinet/scripts/cabinet-update.sh"
   [ -f "$UPDATER" ] || fail 50 P7 "no update path at cabinet/scripts/cabinet-update.sh — the result cannot reach an installed Cabinet"
@@ -1355,6 +1605,15 @@ else
   # build on a box that cannot do it and the drill reds instead of quietly
   # giving you the smaller run.
   DRILL_NODE_MODULES="$REPO_ROOT/cabinet/dashboard/node_modules"
+  # AN INSTALLED CABINET BRINGS ITS OWN (2026-09-21). On an egg subject the
+  # dependency tree the staged build must reuse is the one the DEPLOYMENT
+  # hatched, not a clone's — that is the tree the Captain's first real apply
+  # died on. Hardlinked through the shipped mechanism below, so the deployment
+  # copy is read and never written. A fresh cut of an egg has none, and the
+  # clone's tree is the honest fallback rather than a red.
+  if [ "$SUBJECT_SHAPE" = "egg" ] && [ -d "$SUBJECT_DIR/cabinet/dashboard/node_modules" ]; then
+    DRILL_NODE_MODULES="$SUBJECT_DIR/cabinet/dashboard/node_modules"
+  fi
   REBUILD_MODE="THIN"
   REBUILD_ARG="--skip-rebuild"
   if command -v npm >/dev/null 2>&1 && [ -d "$DRILL_NODE_MODULES" ]; then
@@ -1787,12 +2046,24 @@ find "$HOME_DIR" 2>/dev/null | LC_ALL=C sort > "$SCRATCH/home.after"
   || fail 64 hermeticity "the before picture of HOME or of the repo was never taken, so 'nothing was written outside the root' cannot be claimed"
 HOME_DIFF="$(diff "$SCRATCH/home.before" "$SCRATCH/home.after" | grep -c '^[<>]' | tr -d ' ')"
 REPO_DIFF="$(diff "$SCRATCH/repo.before" "$SCRATCH/repo.after" | grep -c '^[<>]' | tr -d ' ')"
-if [ "$HOME_DIFF" != "0" ] || [ "$REPO_DIFF" != "0" ]; then
+SUBJECT_DIFF=0
+if [ -n "$SUBJECT_WATCH" ]; then
+  ( cd "$SUBJECT_WATCH" && find . 2>/dev/null | LC_ALL=C sort ) > "$SCRATCH/subject.after"
+  [ -s "$SCRATCH/subject.before" ] \
+    || fail 64 hermeticity "the before picture of the egg subject was never taken, so nothing can be claimed about the deployment this run read"
+  SUBJECT_DIFF="$(diff "$SCRATCH/subject.before" "$SCRATCH/subject.after" | grep -c '^[<>]' | tr -d ' ')"
+fi
+if [ "$HOME_DIFF" != "0" ] || [ "$REPO_DIFF" != "0" ] || [ "$SUBJECT_DIFF" != "0" ]; then
   diff "$SCRATCH/home.before" "$SCRATCH/home.after" > "$SCRATCH/home.diff" 2>&1
   diff "$SCRATCH/repo.before" "$SCRATCH/repo.after" > "$SCRATCH/repo.diff" 2>&1
-  fail 64 hermeticity "the drill wrote outside its root: $HOME_DIFF path(s) under HOME, $REPO_DIFF under the repo (see $SCRATCH/*.diff — re-run with --keep-scratch)"
+  [ -n "$SUBJECT_WATCH" ] && diff "$SCRATCH/subject.before" "$SCRATCH/subject.after" > "$SCRATCH/subject.diff" 2>&1
+  fail 64 hermeticity "the drill wrote outside its root: $HOME_DIFF path(s) under HOME, $REPO_DIFF under the repo, $SUBJECT_DIFF under the egg subject (see $SCRATCH/*.diff — re-run with --keep-scratch)"
 fi
-pass_stage hermeticity "nothing was written outside $ROOT"
+if [ -n "$SUBJECT_WATCH" ]; then
+  pass_stage hermeticity "nothing was written outside $ROOT, and the egg subject at $SUBJECT_WATCH gained and lost no path"
+else
+  pass_stage hermeticity "nothing was written outside $ROOT"
+fi
 
 DRILL_EXIT=0
 say "PASS — one responsibility carried end to end"
