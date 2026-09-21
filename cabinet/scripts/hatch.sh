@@ -352,7 +352,7 @@ composite_cmd_hint() {
     do_bootstrap_roles) echo 'bash cabinet/scripts/bootstrap-roles.sh [--roster instance/config/roster.yml]' ;;
     do_drill)           echo 'bash cabinet/scripts/kill-switch.sh activate|status|deactivate   # REDIS_URL=${REDIS_URL:-redis://localhost:6379}' ;;
     do_first_receipt)   echo 'bash cabinet/scripts/first-briefing.sh --local' ;;
-    do_movein_load)     echo 'for p in cabinet/launchd/generated/*.plist; do plutil -lint "$p"; launchctl bootout gui/$(id -u) "$p" 2>/dev/null || true; launchctl bootstrap gui/$(id -u) "$p"; done' ;;
+    do_movein_load)     echo 'bash cabinet/scripts/deploy-mac.sh --all   # renders the fleet, writes ~/Library/LaunchAgents, reconciles launchd to exactly that set' ;;
     *) return 1 ;;
   esac
 }
@@ -889,22 +889,32 @@ if [ "$WITH_LAUNCHD" = "1" ]; then
     bash cabinet/scripts/deploy-mac.sh --officer cos
   movein_step movein-plists "write the background schedule" \
     "$PY" cabinet/scripts/generate-plists.py
+  # DURABLE OR IT DID NOT HAPPEN (2026-09-21, measured on the Captain's Mac).
+  # This step used to walk cabinet/launchd/generated/*.plist and bootstrap each
+  # file WHERE IT LAY. launchd re-reads agents at login from the user's own
+  # LaunchAgents directory and from nowhere else, so every one of those jobs
+  # existed only until the next restart: one restart (~2026-08-29) cleared all
+  # fifty of them and the whole background fleet was dark for three weeks,
+  # silently, on a box whose owner had no reason to look.
+  #
+  # deploy-mac.sh --all is the verb that was already right: it renders the
+  # fleet from services.yml plus the roster, WRITES ~/Library/LaunchAgents and
+  # reconciles launchd to exactly that set (it put 51 jobs back on 2026-09-21).
+  # It re-renders on its way through, so the movein-plists step above is the
+  # render's own failure surface rather than an input this one depends on.
   do_movein_load() {
-    local p found=0
-    for p in cabinet/launchd/generated/*.plist; do
-      [ -e "$p" ] || continue
-      found=1
-      plutil -lint "$p"
-      # Bootout-first = idempotent re-run (deploy-mac.sh's own proven idiom):
-      # a raw bootstrap hard-fails "Bootstrap failed: 5" (EEXIST) when the
-      # plist is already loaded — e.g. on the advised re-run after a
-      # movein-health failure. Bootout errors harmlessly when not loaded.
-      launchctl bootout "gui/$(id -u)" "$p" 2>/dev/null || true
-      launchctl bootstrap "gui/$(id -u)" "$p"
-    done
-    [ "$found" = "1" ] || { echo "no plists under cabinet/launchd/generated/"; return 1; }
+    bash cabinet/scripts/deploy-mac.sh --all || return 1
+    # REPORTED IS NOT MEASURED. A deploy that exits 0 having written nothing
+    # durable is exactly the state this box was in for three weeks, so ask the
+    # filesystem where a restart will look, not the exit code.
+    local installed
+    installed="$(ls "$HOME/Library/LaunchAgents"/com.cabinet.*.plist 2>/dev/null | head -1)"
+    [ -n "$installed" ] || {
+      echo "the schedule is not in $HOME/Library/LaunchAgents, so it would not survive a restart"
+      return 1
+    }
   }
-  movein_step movein-load "put the background schedule in place" \
+  movein_step movein-load "put the background schedule where a restart finds it" \
     do_movein_load
   movein_step movein-health "check the background helpers answered" \
     bash cabinet/scripts/health-check.sh

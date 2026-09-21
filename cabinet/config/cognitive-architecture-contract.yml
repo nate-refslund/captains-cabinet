@@ -1524,7 +1524,32 @@ budgets:
     # `updates.ts` re-exports it; both files are under cabinet/ and outside this
     # budget. The sensor is the drill's real P7 build in CI, plus a
     # millisecond-scale arm in the card's own suite.
-    maximum: 66839
+    #
+    # 66839 -> 66842 (+3 measured 2026-09-21 via cognitive-architecture-census.py,
+    # 81577 -> 81580 against the effective ceiling): U8, THE DOOR AFTER AN
+    # APPLY. On-box measurement of the Captain's installed Cabinet, eleven days
+    # after the first real apply: that apply could not put the dashboard under
+    # launchd, so it started a DETACHED one; the orphan died with its terminal
+    # and the web door — his only no-terminal door — had been gone for days
+    # with nothing saying so, `status` included. (The same measurement found
+    # the fleet's own load was never durable either: hatch bootstrapped plists
+    # out of `cabinet/launchd/generated/`, so one restart ~2026-08-29 cleared
+    # all fifty scheduled jobs and the fleet was dark for three weeks. That
+    # half is entirely in cabinet/scripts and outside this budget.)
+    #
+    # THE THREE LINES. The briefing's `_update_notice` gains one arm — a
+    # recorded `door_supervised: false` speaks below an apply in flight and
+    # above every "open the home page" sentence, because "tap Apply" over a
+    # home page nothing is serving is an instruction the Captain cannot
+    # follow. It reads the updater's own state document, which this function
+    # already has open: not a new channel (A5.17.6), and not a subprocess,
+    # because a briefing pass may never be able to hang on one. Everything
+    # else in the unit — the launchd installer, `cabinet_dash_restart`'s
+    # supervised path, the door fields on `status --json`, hatch's move-in and
+    # every arm — is under cabinet/ or is a test file, outside this budget by
+    # construction. RAISED VISIBLY, same reason as every row above.
+    # observed == maximum, zero headroom.
+    maximum: 66842
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

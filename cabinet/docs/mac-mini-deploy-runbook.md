@@ -272,6 +272,17 @@ job cannot bootstrap, the previous plist/job is restored and the deploy exits
 non-zero. `cabinet/launchd/generated/` is also pruned to exactly the current
 enabled manifest outputs.
 
+**`--all` is the durable verb, and nothing else is.** It installs each rendered
+plist into `~/Library/LaunchAgents` and bootstraps the **installed copy**;
+launchd re-reads agents at login from that directory and from nowhere else.
+Bootstrapping a plist where `generate-plists.py` rendered it loads a job that
+exists only until the next restart — measured 2026-09-21 on the Captain's Mac,
+where one restart (~2026-08-29) cleared all fifty scheduled jobs and the fleet
+was dark for three weeks with nothing saying so. `hatch.sh`'s move-in goes
+through this verb for that reason, and it verifies afterwards that a
+`com.cabinet.*.plist` actually landed in `~/Library/LaunchAgents` rather than
+trusting the exit code.
+
 `com.cabinet.dashboard.plist` is the control panel + office-display server on
 `:3100`. Port/bind config (Wave D app-feel): `CABINET_DASHBOARD_PORT` (default
 3100) and `CABINET_DASHBOARD_HOST` (default `127.0.0.1` — loopback-only since

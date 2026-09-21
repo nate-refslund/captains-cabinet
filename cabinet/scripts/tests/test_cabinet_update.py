@@ -1382,8 +1382,15 @@ def test_no_vendor_noun_and_no_git_in_the_installed_root(tmp_path):
     subcommand runs on a box that has no repository at all."""
     text = _UPDATER.read_text()
     body = text.split("# ---- status", 1)[1]
-    assert "git " not in body.replace("git -C \"$from\"", "")
-    assert " launchctl " not in body  # restarts route through the dashboard library
+    # CODE ONLY (2026-09-21). This arm is about what the updater RUNS, and it
+    # used to read the file's prose too: the comment explaining WHY a door
+    # probe goes through the library — which has to name the tool it is not
+    # calling — tripped the guard against calling it. A sensor that reads
+    # comments is measuring documentation, not control flow.
+    code = "\n".join(line for line in body.splitlines()
+                     if not line.lstrip().startswith("#"))
+    assert "git " not in code.replace("git -C \"$from\"", "")
+    assert " launchctl " not in code  # restarts route through the dashboard library
     for noun in ("docker", "redis", "telegram", "github"):
         assert noun not in text.lower(), noun
         assert noun not in _BUNDLE_PY.read_text().lower(), noun

@@ -152,6 +152,33 @@ different from how it found it is not a rollback.** The decision is in
 `.updates/update.log` either way ("restart after rollback: ... put back" or
 "... NOT started").
 
+### Supervised, or it says it is not
+
+A restart puts the dashboard back under **launchd** whenever it can: if no job
+is answering and the dashboard's plist has been rendered into
+`cabinet/launchd/generated/` (a machine-specific directory, written by
+`generate-plists.py`, never tracked), that plist is installed into
+`~/Library/LaunchAgents` and the **installed copy** is bootstrapped into
+`gui/<uid>`. That directory is the only place a restart of the Mac reads
+agents from.
+
+Where launchd will not take it — a non-GUI launchd manager answers a bootstrap
+with `Bootstrap failed: 5: Input/output error`, which is the officer's measured
+case — the detached start still happens, because a door nobody supervises beats
+no door. What changed is that it is never silent:
+
+* the update log says `door is UNSUPERVISED (bootstrap into gui/<uid> failed: <reason>)`;
+* the state write carries `door_supervised: false` and `door_reason`;
+* `cabinet-update.sh status` reads the door's launchd state **at read time**
+  and says so, every time it is asked;
+* the briefing says *Your home page is not being served by anything that
+  restarts it*, above any waiting bundle — "tap Apply" over a home page nothing
+  is serving is an instruction nobody can follow.
+
+Measured 2026-09-21, eleven days after the first real apply: that apply left an
+unsupervised dashboard, the orphan was dead within days, the Captain's only
+no-terminal door was gone, and `status` said nothing about it across all eleven.
+
 ## The refusals, and what each one means
 
 | Exit | Meaning |
@@ -241,8 +268,20 @@ the same sha are ever compared.
     "ts": "2026-09-08T18:58:00Z", "door": "terminal" },
   "waiting_rollback": null,
   "last_busy": { "bundle": "", "ts": "2026-09-09T10:00:30Z", "door": "web" },
-  "state_error": "" }
+  "state_error": "",
+  "door_label": "com.cabinet.dashboard",
+  "door_launchd": "not-loaded",
+  "door_supervised": false,
+  "door_reason": "Bootstrap failed: 5: Input/output error" }
 ```
+
+`door_launchd` is `running`, `loaded`, `not-loaded` or `unknown`, read from
+launchd when the report is produced. `door_supervised` is that same fact as a
+tri-state, and it is `null` only where launchd cannot be asked at all (a box
+with no `launchctl`), in which case it falls back to whatever the last restart
+recorded. `door_reason` is the recorded WHY from that last restart — a
+different fact from the live one, and both are needed: the live read says the
+door is unsupervised now, the record says what stopped it being supervised.
 
 `last_refusal` is `current(W)` for the bundle W that is waiting: the newest
 verdict about W — from its marker, from the ledger, or (only on an install with
@@ -271,6 +310,10 @@ briefing line:
    records.
 6. Nothing waiting → the resolved verdict if any, else the existing applied /
    rolled-back / quiet ladder.
+
+The briefing carries one rule the card does not yet: a recorded
+`door_supervised: false` speaks **below** `applying` and **above** rules 2-6,
+because every one of those sentences ends in "open the home page".
 
 `busy` is never a headline anywhere; `cabinet-update.sh status` and `last_busy`
 carry it.

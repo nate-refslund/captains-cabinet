@@ -27,11 +27,15 @@
 # cabinet_dash_port — a hardcoded 3100 in a probe is how a moved dashboard
 # becomes invisible to its own tooling.
 #
-# WRITES: exactly one, cabinet_dash_record_port, and it only ever APPENDS.
-# cabinet/.env holds the deployment's secrets; a rewrite is how you lose them.
-# A later CABINET_DASHBOARD_PORT= line wins for both readers (`set -a; .` takes
-# the last assignment, and the sed reader below takes `tail -1`), so appending
-# is a complete change.
+# WRITES: three, all of them named. `cabinet_dash_record_port` only ever
+# APPENDS to cabinet/.env — that file holds the deployment's secrets and a
+# rewrite is how you lose them; a later CABINET_DASHBOARD_PORT= line wins for
+# both readers (`set -a; .` takes the last assignment, and the sed reader below
+# takes `tail -1`), so appending is a complete change. `cabinet_launchd_install`
+# writes ONE plist into the user's LaunchAgents directory, which is the whole
+# point of it. `cabinet_dash_record_door` writes the door verdict to the path
+# the caller names in CABINET_DASH_DOOR_RECORD, and to nothing when that is
+# unset. Everything else here reads.
 #
 # Source it: . "$SCRIPT_DIR/lib/dashboard.sh"   (no side effects on source)
 
@@ -145,6 +149,113 @@ cabinet_dash_record_port() {
 # probe and every restarter needs about the same process.
 CABINET_DASH_LABEL="${CABINET_DASH_LABEL:-com.cabinet.dashboard}"
 
+# cabinet_launchd_install <plist> [label] — put a launchd job where it SURVIVES
+# A RESTART, then load THAT copy.
+#
+# WHY THIS EXISTS, and it is a measured three-week outage rather than a tidiness
+# argument. hatch's move-in used to walk `cabinet/launchd/generated/*.plist` and
+# bootstrap each file WHERE IT LAY. launchd re-reads agents at login from the
+# user's own LaunchAgents directory and from nowhere else, so a job bootstrapped
+# out of the checkout exists only until the next restart. On the Captain's Mac
+# one restart (~2026-08-29) cleared all fifty scheduled jobs; the fleet was dark
+# until 2026-09-15 and nothing on the box said so. `deploy-mac.sh` has always
+# done it the durable way (render -> write LaunchAgents -> bootstrap the
+# installed copy); this is that same order, in the one function every other
+# caller can reach.
+#
+# It lives in THIS lib, next to CABINET_DASH_LABEL, deliberately: the label is
+# already a launchd fact stated here, hatch and the updater both source this
+# file already, and a separate library would be one more thing the updater's
+# run-copy, the fixtures and the drill each have to remember to carry — the
+# silent-degradation shape this tree has paid for more than once.
+#
+# rc 0 = the job is loaded from its installed copy. 2 = there was nothing to
+# install, or it is not a plist. 1 = it could not be written. 3 = it was
+# installed and launchd would not take it. In every non-zero case the reason is
+# left in CABINET_LAUNCHD_INSTALL_ERROR, because the caller's job is to SAY why,
+# not to guess.
+cabinet_launchd_install() {
+  local src label dir dest staged lc uid out
+  src="${1:-}"
+  lc="${CABINET_LAUNCHCTL:-launchctl}"
+  CABINET_LAUNCHD_INSTALL_ERROR=""
+  if [ -z "$src" ] || [ ! -f "$src" ]; then
+    CABINET_LAUNCHD_INSTALL_ERROR="no plist at ${src:-(nothing named)}"
+    return 2
+  fi
+  label="${2:-}"
+  [ -n "$label" ] || label="$(basename "$src" .plist)"
+  if command -v plutil >/dev/null 2>&1 && ! plutil -lint "$src" >/dev/null 2>&1; then
+    CABINET_LAUNCHD_INSTALL_ERROR="$src is not a readable plist"
+    return 2
+  fi
+  dir="$HOME/Library/LaunchAgents"
+  dest="$dir/$label.plist"
+  mkdir -p "$dir" 2>/dev/null || {
+    CABINET_LAUNCHD_INSTALL_ERROR="$dir could not be created"
+    return 1
+  }
+  # Stage and rename: the target may be the file launchd is reading, and a
+  # truncating copy is a window in which the job has no definition at all.
+  staged="$dest.tmp.$$"
+  cp "$src" "$staged" 2>/dev/null || { rm -f "$staged" 2>/dev/null; CABINET_LAUNCHD_INSTALL_ERROR="could not write $dest"; return 1; }
+  chmod 644 "$staged" 2>/dev/null || true
+  mv -f "$staged" "$dest" 2>/dev/null || { rm -f "$staged" 2>/dev/null; CABINET_LAUNCHD_INSTALL_ERROR="could not replace $dest"; return 1; }
+  uid="$(id -u)"
+  # Bootout first, unconditionally: launchd answers an already-loaded label
+  # with its catch-all "Bootstrap failed: 5: Input/output error", and a `print`
+  # probe does not always agree that it is loaded (deploy-mac.sh pays for the
+  # same lesson on the officer leg). Bootout errors harmlessly when it is not.
+  "$lc" bootout "gui/$uid" "$dest" >/dev/null 2>&1 || true
+  if out="$("$lc" bootstrap "gui/$uid" "$dest" 2>&1)"; then
+    return 0
+  fi
+  CABINET_LAUNCHD_INSTALL_ERROR="$(printf '%s' "$out" | tr '\n' ' ' | sed 's/  */ /g')"
+  [ -n "$CABINET_LAUNCHD_INSTALL_ERROR" ] || CABINET_LAUNCHD_INSTALL_ERROR="launchd would not take $label"
+  return 3
+}
+
+# cabinet_launchd_state [label] — running | loaded | not-loaded | unknown.
+#
+# READ-ONLY, and `unknown` is a real answer: a box with no launchctl (every
+# Linux CI runner this tree also runs on) cannot be asked, and answering
+# "not-loaded" there would be a confident wrong negative — the exact shape of
+# the bare-200 probe this library was written to replace.
+cabinet_launchd_state() {
+  local label lc out
+  label="${1:-$CABINET_DASH_LABEL}"
+  lc="${CABINET_LAUNCHCTL:-launchctl}"
+  command -v "$lc" >/dev/null 2>&1 || { printf 'unknown\n'; return 0; }
+  if out="$("$lc" print "gui/$(id -u)/$label" 2>/dev/null)"; then
+    case "$out" in
+      *"state = running"*) printf 'running\n' ;;
+      *) printf 'loaded\n' ;;
+    esac
+    return 0
+  fi
+  printf 'not-loaded\n'
+}
+
+# cabinet_dash_record_door <supervised:0|1> <reason> — leave the door verdict
+# where the CALLER asked for it, and nowhere else.
+#
+# The path comes from CABINET_DASH_DOOR_RECORD because the restart happens in a
+# subshell (the updater closes its lock descriptor before restarting), so a
+# variable cannot carry the answer back out. Unset means "nobody asked": this
+# function then writes nothing at all rather than inventing a file under a root
+# that may have no `.updates` directory. Two plain lines, not JSON — the reason
+# is launchd's own text and a hand-rolled JSON escape is a bug waiting for the
+# first quote in it.
+cabinet_dash_record_door() {
+  local path="${CABINET_DASH_DOOR_RECORD:-}" reason
+  [ -n "$path" ] || return 0
+  reason="$(printf '%s' "${2:-}" | tr '\n' ' ')"
+  mkdir -p "$(dirname "$path")" 2>/dev/null || return 0
+  { printf 'supervised=%s\n' "${1:-0}"
+    printf 'reason=%s\n' "$reason"
+  } > "$path" 2>/dev/null || return 0
+}
+
 # cabinet_dash_restart <root> [why] — put a NEW dashboard process on the port.
 #
 # WHY THIS IS A FUNCTION AND NOT THREE LINES AT THE CALL SITE. There are two
@@ -167,15 +278,19 @@ cabinet_dash_restart() {
   why="${2:-a restart was requested}"
   port="$(cabinet_dash_port "$root")"
 
-  if command -v launchctl >/dev/null 2>&1 \
-     && launchctl print "gui/$(id -u)/$CABINET_DASH_LABEL" >/dev/null 2>&1; then
+  local lc
+  lc="${CABINET_LAUNCHCTL:-launchctl}"
+  if command -v "$lc" >/dev/null 2>&1 \
+     && "$lc" print "gui/$(id -u)/$CABINET_DASH_LABEL" >/dev/null 2>&1; then
     # Loaded: kickstart -k is the supervised restart. A kill here would be
     # undone by KeepAlive with the pre-update process arguments.
-    if launchctl kickstart -k "gui/$(id -u)/$CABINET_DASH_LABEL" >/dev/null 2>&1; then
+    if "$lc" kickstart -k "gui/$(id -u)/$CABINET_DASH_LABEL" >/dev/null 2>&1; then
       printf 'cabinet_dash_restart: restarted the supervised dashboard (%s)\n' "$why" >&2
+      cabinet_dash_record_door 1 ""
       return 0
     fi
     printf 'cabinet_dash_restart: the supervised job would not restart\n' >&2
+    cabinet_dash_record_door 1 "the supervised job would not restart"
     return 1
   fi
 
@@ -187,6 +302,7 @@ cabinet_dash_restart() {
   state="$(cabinet_dash_state "$(cabinet_dash_url "$root")")"
   if [ "$state" = "other" ]; then
     printf 'cabinet_dash_restart: port %s is held by something that is not this cabinet — not killing it\n' "$port" >&2
+    cabinet_dash_record_door 0 "port $port is held by something that is not this cabinet"
     return 1
   fi
   if [ "$state" = "mine" ]; then
@@ -200,6 +316,36 @@ cabinet_dash_restart() {
       [ -z "$pids" ] || kill -9 $pids 2>/dev/null || true
     fi
   fi
+  # PUT IT BACK UNDER SUPERVISION IF THIS BOX WILL LET US, and only then fall
+  # back. An unsupervised dashboard is an orphan: it dies with the terminal
+  # that spawned it and it does not come back after a restart. Measured — the
+  # dashboard the 2026-09-10 apply started on the Captain's Mac was dead by
+  # 2026-09-21, and the web door, which is his ONLY no-terminal door, had been
+  # gone for days with nothing saying so.
+  #
+  # After the kill above, never before it: the new job has to bind the port,
+  # and an orphan still holding it would make the supervised start fail while
+  # the old bytes kept answering — the worst outcome this function has.
+  local plist door_reason=""
+  plist="$root/cabinet/launchd/generated/$CABINET_DASH_LABEL.plist"
+  if [ -f "$plist" ]; then
+    if cabinet_launchd_install "$plist" "$CABINET_DASH_LABEL"; then
+      printf 'cabinet_dash_restart: the door is SUPERVISED again on %s (%s)\n' "$port" "$why" >&2
+      cabinet_dash_record_door 1 ""
+      return 0
+    fi
+    door_reason="${CABINET_LAUNCHD_INSTALL_ERROR:-launchd would not take the job}"
+  else
+    door_reason="no $CABINET_DASH_LABEL.plist under cabinet/launchd/generated/ — the schedule has not been rendered on this box"
+  fi
+  # A non-GUI launchd manager answers a bootstrap with an I/O error; that is
+  # the officer's measured case and it is not recoverable from here. A door
+  # nobody supervises beats no door at all, so the detached start still
+  # happens — it is being UNSUPERVISED SILENTLY that cost three weeks.
+  printf 'cabinet_dash_restart: door is UNSUPERVISED (bootstrap into gui/%s failed: %s)\n' \
+    "$(id -u)" "$door_reason" >&2
+  cabinet_dash_record_door 0 "$door_reason"
+
   [ -x "$root/cabinet/scripts/start-dashboard.sh" ] || [ -f "$root/cabinet/scripts/start-dashboard.sh" ] || {
     printf 'cabinet_dash_restart: no start-dashboard.sh under %s\n' "$root" >&2
     return 1

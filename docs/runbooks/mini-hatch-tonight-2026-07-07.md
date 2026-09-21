@@ -187,8 +187,13 @@ bash cabinet/scripts/deploy-mac.sh --officer cos
 # graduation-transitions) — rendered from cabinet/services.yml:
 python3.12 cabinet/scripts/generate-plists.py
 for p in cabinet/launchd/generated/*.plist; do plutil -lint "$p"; done   # all OK
-# bootout-first = idempotent on re-runs (no-op on a fresh box):
-for p in cabinet/launchd/generated/*.plist; do launchctl bootout gui/$(id -u) "$p" 2>/dev/null || true; launchctl bootstrap gui/$(id -u) "$p"; done
+# ONE VERB, and it is the one that LASTS: deploy-mac.sh --all renders the fleet,
+# writes ~/Library/LaunchAgents and reconciles launchd to exactly that set.
+# launchd re-reads agents at login from that directory and from nowhere else, so
+# bootstrapping a plist where it was rendered is a job that disappears at the
+# next restart — measured 2026-09-21, one restart took all 50 of them out and
+# the fleet was dark for three weeks.
+bash cabinet/scripts/deploy-mac.sh --all
 launchctl print gui/$(id -u) | grep com.cabinet | head    # loaded + last-exit 0
 ```
 

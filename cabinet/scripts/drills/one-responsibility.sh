@@ -68,6 +68,13 @@
 #       guard below refused the leg rather than measuring a dashboard that
 #       restarted perfectly well, and the reconciliation kept the update
 #       path's naming law and changed the side that was wrong — this one.
+#       IT IS ALSO WHAT KEEPS THIS DRILL OFF THE BOX'S LAUNCHD (2026-09-21).
+#       The real restart now installs the dashboard's launchd job into the
+#       user's LaunchAgents directory and loads it, because an unsupervised
+#       dashboard is an orphan that dies with its terminal. `restart_dashboard`
+#       takes this seam and RETURNS before any of that, so a drill run on a
+#       developer's Mac still touches no launchd job at all — pinned by
+#       cabinet/scripts/tests/test_runtime_stays_up.py::test_the_restart_seam_returns_before_any_launchd_work.
 #   CABINET_DRILL_DASH_PORT
 #       pin the stub server's port instead of picking a free one.
 #

@@ -572,6 +572,21 @@ def _update_notice(root: "str | None" = None) -> str:
         # whatever its headline says.
         if state.get("phase") == "applying":
             return "An update is being taken right now"
+        # THE DOOR, and it sits here for a reason. Below the apply in flight,
+        # because that is the live state; ABOVE the waiting bundle, because
+        # "open the home page and tap Apply" over a home page nothing is
+        # serving is an instruction the Captain cannot follow. Measured: the
+        # dashboard the 2026-09-10 apply started was an unsupervised orphan,
+        # it was dead by 2026-09-21, and the door he reads every day — this
+        # one — never mentioned it across eleven days.
+        #
+        # SAME READER, NOT A NEW CHANNEL (A5.17.6). This is the updater's own
+        # state document, which this function already has open; the live
+        # launchd read belongs to `cabinet-update.sh status`, which may spend a
+        # subprocess, and a briefing pass may not.
+        if state.get("door_supervised") is False:
+            return ("Your home page is not being served by anything that restarts it "
+                    "— it will be gone the next time this Mac restarts")
         if waiting:
             _, sha, count = max(waiting)
             # A bundle this box already took and PUT BACK is not a bundle
