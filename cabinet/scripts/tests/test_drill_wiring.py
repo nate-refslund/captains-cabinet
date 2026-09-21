@@ -639,6 +639,6 @@ def test_the_drill_job_runs_both_subject_shapes():
     assert "drill-tree.json" in body and "drill-egg.json" in body, (
         f"the {_JOB} job does not keep the two legs' reports apart, so one of them "
         "could be read twice and the other never")
-    assert 'startswith(prefix)' in body or 'tree_source' in body, (
+    assert 'startswith(prefix)' in body, (
         f"the {_JOB} job does not check WHICH subject each leg measured; two runs "
         "of the same shape read exactly like one of each")
