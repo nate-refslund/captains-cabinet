@@ -22,6 +22,18 @@ and this file is those two questions.
                       the red the claim invariant names, so it gets its own
                       code and this file proves the two do not collapse).
 
+  IS IT RUN ON THE    Added 2026-09-21. A drill that only ever measures a
+  THING THAT RUNS?    repository proves nothing about a deployment, and an
+                      installed Cabinet is not a repository — it is an EXPORT,
+                      whose packaging pass deletes the export manifest the
+                      hatch was reading. Measured on the Captain's own install:
+                      exit 64 at hatch, so "the drill passes on the installed
+                      Cabinet" had only ever been shown on the identical git
+                      tree. The arms below take the drill against a real cut
+                      from `egg-export.sh`, prove the operator's own data does
+                      not come along, prove the git-tree path is unchanged, and
+                      prove a tree that declares NEITHER is still refused.
+
 The mutated tree is cut with `git archive HEAD`, never copied from the working
 tree: the drill measures a committed tree because that is the only tree an
 export, a hatch or a stranger ever sees, and a red arm built on uncommitted
@@ -32,11 +44,15 @@ the drill.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
+import shutil
 import subprocess
+import uuid
 from pathlib import Path
 
+import pytest
 import yaml
 
 _REPO = Path(__file__).resolve().parents[3]
@@ -212,6 +228,21 @@ def _tree_from_head(tmp_path: Path) -> Path:
     return tree
 
 
+def _run_drill_args(args: list[str], tmp_path: Path,
+                    env_extra: dict | None = None) -> subprocess.CompletedProcess:
+    """The drill, with whatever seams this arm is exercising.
+
+    The drill scrubs its own environment, so `env_extra` only reaches the
+    inputs it reads BEFORE the scrub (`CABINET_DRILL_*`) — which is exactly
+    the set these arms drive."""
+    env = dict(os.environ)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env.update(env_extra or {})
+    return subprocess.run(["bash", str(_DRILL), *args, "--json"],
+                          capture_output=True, text=True, timeout=_ARM_TIMEOUT,
+                          env=env, cwd=str(tmp_path))
+
+
 def _run_drill(tree: Path, tmp_path: Path) -> subprocess.CompletedProcess:
     env = dict(os.environ)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -275,8 +306,6 @@ def test_the_drill_passes_on_the_committed_tree(tmp_path):
     UNMUTATED cut of HEAD, and it asserts the stage list — every stage present
     with a pass or a thin verdict — never `exit 0` alone (§4: the drill's
     top-level json is asserted on the stages array)."""
-    import json
-
     tree = _tree_from_head(tmp_path)
     result = _run_drill(tree, tmp_path)
     assert result.returncode == 0, (
@@ -374,7 +403,6 @@ def test_the_stub_reads_its_build_stamp_off_the_build(tmp_path):
     the disabled-sensor shape this whole unit exists to remove. So the stub
     reads it out of the artifact `next build` leaves behind, and this arm walks
     both ends: no artifact, no stamp; an artifact, the stamp that is in it."""
-    import json
     stub = _REPO / "cabinet" / "scripts" / "drills" / "lib" / "stub_dashboard.py"
     src = stub.read_text(encoding="utf-8")
     assert "--build-stamp-from" in src and "required-server-files.json" in src, (
@@ -400,3 +428,217 @@ def test_the_stub_reads_its_build_stamp_off_the_build(tmp_path):
          "print(s._built_stamp(%r))" % (str(stub.parent), str(dash))],
         capture_output=True, text=True, timeout=_ARM_TIMEOUT)
     assert out.stdout.strip() == "c0ffee1234", (out.stdout, out.stderr)
+
+
+# ---------------------------------------------------------------------------
+# is it run on the thing that RUNS? (2026-09-21)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def egg_from_head(tmp_path_factory) -> Path:
+    """A real cut of HEAD through the real exporter, once for this module.
+
+    Never a hand-built lookalike: the whole defect was that an EXPORT does not
+    look like a checkout at the paths the hatch reads, so an arm that assembled
+    its own "egg" would be asserting against this file's idea of one. Cut once
+    because the exporter is the expensive part and every arm wants the same
+    bytes."""
+    proc = subprocess.run(["git", "-C", str(_REPO), "rev-parse", "--is-inside-work-tree"],
+                          capture_output=True, text=True)
+    assert proc.returncode == 0 and proc.stdout.strip() == "true", (
+        "cutting an egg needs a git checkout; this is not one, and skipping "
+        "would retire the only arms that measure the shape a deployment has "
+        "(%s)" % (proc.stderr.strip() or proc.stdout.strip()))
+    out = tmp_path_factory.mktemp("egg-cut") / "egg"
+    cut = subprocess.run(["bash", str(_REPO / "cabinet" / "scripts" / "egg-export.sh"),
+                          "--out", str(out)],
+                         capture_output=True, text=True, timeout=_ARM_TIMEOUT)
+    assert cut.returncode == 0, (cut.stdout[-2000:], cut.stderr[-2000:])
+    assert (out / "egg-manifest.json").is_file(), "the cut carries no egg identity"
+    assert not (out / "cabinet" / "scripts" / "egg-export-manifest.txt").exists(), (
+        "the export manifest survived the cut — this arm would then be measuring "
+        "a git tree wearing an egg's name, and the defect it exists for could "
+        "not occur")
+    return out
+
+
+def test_the_drill_takes_an_exported_egg_as_its_subject(egg_from_head, tmp_path):
+    """The shape the Captain actually runs, and until 2026-09-21 it exited 64.
+
+    `egg-export.sh` deletes cabinet/scripts/egg-export-manifest.txt out of the
+    egg by design, and the hatch read that file to tell this deployment's state
+    from the framework's — so the acceptance drill could not be pointed at an
+    installed Cabinet at all. It hatched fine on the identical git tree in a
+    clone, which is how the gate came to be marked satisfied without the claim
+    ever being taken against a deployment."""
+    result = _run_drill_args(["--tree", str(egg_from_head), "--skip-update"], tmp_path)
+    assert result.returncode == 0, (
+        "the drill does not pass on an exported egg; exit %d\nSTDERR: %s"
+        % (result.returncode, result.stderr[-2500:]))
+    report = json.loads(result.stdout)
+    assert report["verdict"] == "pass", report
+    source = report.get("tree_source") or ""
+    assert source.startswith("egg:"), (
+        "the drill staged an egg and reported tree_source=%r — a run that cannot "
+        "name its own subject shape cannot be told from one that took the other "
+        "path" % (source,))
+    assert re.search(r"@ [0-9a-f]{7,}$", source), (
+        "the egg subject line names no source commit: %r" % (source,))
+    stages = {row["stage"]: row["verdict"] for row in report["stages"]}
+    for stage in ("hatch", "seed", "P1", "P2", "P2b", "P3", "P4", "P2h", "P5", "P6",
+                  "hermeticity"):
+        assert stages.get(stage) in ("pass", "thin", "note"), (
+            "stage %s came back %r on an egg subject" % (stage, stages.get(stage)))
+    assert not [row for row in report["stages"] if row["verdict"] == "fail"], report
+
+
+def test_the_egg_subject_leaves_the_operator_data_behind(egg_from_head, tmp_path):
+    """A hatch that carried the operator's own rows would measure nothing.
+
+    This is the manifest scrub's whole purpose, restated for the shape that has
+    no manifest: the Captain's outcomes.yml is pinned to his deployment id, so
+    a scratch that inherited it compiles to an empty mission set and every stage
+    after the tap reports a clean run over no subjects. The egg declares its own
+    preserved paths (that is what cabinet/config/egg-preserve-set.txt is for),
+    and the drill drops every one of them.
+
+    The other half is the keep-list: an export SHIPS force-tracked content that
+    sits under preserved directories, and dropping the directory whole would
+    delete shipped structure and call it operator data. Both directions are
+    asserted here, because a prune that took everything would pass the first
+    half on its own."""
+    subject = tmp_path / "lived-in"
+    shutil.copytree(egg_from_head, subject, symlinks=True)
+    # GENERATED, never a literal. A constant here would be committed, so the
+    # egg cut from HEAD would SHIP this file carrying the marker and the scan
+    # below would find its own source in the scratch and call it a leak —
+    # measured, once the first version of this arm was committed. The arm
+    # passed in the working tree and failed on the committed one, which is the
+    # same class of defect it exists to catch.
+    marker = "operator-data-" + uuid.uuid4().hex
+    planted = [
+        Path("instance/tools/operator-only.txt"),      # a declared preserved dir
+        Path("instance/config/outcomes.yml"),          # the file that broke it
+        Path("shared/interfaces/captain-vetoes.yml"),  # a header-only ledger
+        Path(".updates/state.json"),                   # an artefact of running
+    ]
+    for rel in planted:
+        (subject / rel).parent.mkdir(parents=True, exist_ok=True)
+        (subject / rel).write_text("# %s\n" % marker, encoding="utf-8")
+
+    root = tmp_path / "root"
+    result = _run_drill_args(
+        ["--tree", str(subject), "--root", str(root), "--skip-update"], tmp_path)
+    assert result.returncode == 0, (
+        "the drill did not pass on a lived-in egg; exit %d\nSTDERR: %s"
+        % (result.returncode, result.stderr[-2500:]))
+
+    leaked = [str(path.relative_to(root))
+              for path in root.rglob("*") if path.is_file()
+              and marker in path.read_text(encoding="utf-8", errors="replace")]
+    assert not leaked, (
+        "the scratch hatch carries this deployment's own data at %s — every "
+        "stage after the tap would be measuring the operator's rows and "
+        "reporting a clean run" % (leaked,))
+
+    keepfile = subject / "cabinet" / "scripts" / "shipped-ignored-paths.txt"
+    kept = [line.strip() for line in keepfile.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.startswith("#")]
+    assert kept, "the egg ships an empty shipped-ignored keep-list; this arm cannot measure"
+    lost = [rel for rel in kept if (subject / rel).exists() and not (root / rel).exists()]
+    assert not lost, (
+        "the prune took shipped content with it at %s — force-tracked paths are "
+        "shipped, not deployment-local, and an over-prune is the same defect "
+        "pointed the other way" % (lost,))
+
+
+def test_a_git_tree_subject_still_takes_the_export_manifest_path(tmp_path):
+    """The old path is unchanged, and it is a DIFFERENT path.
+
+    Adding a second subject shape is only safe if the first one still behaves;
+    an implementation that quietly routed every --tree through the new staging
+    would pass every arm above and silently stop applying the export manifest
+    to a checkout."""
+    tree = _tree_from_head(tmp_path)
+    result = _run_drill_args(["--tree", str(tree), "--skip-update"], tmp_path)
+    assert result.returncode == 0, (result.returncode, result.stderr[-2000:])
+    report = json.loads(result.stdout)
+    source = report.get("tree_source") or ""
+    assert source.startswith("tree:"), (
+        "a git tree handed to --tree reported tree_source=%r" % (source,))
+    scrubs = [row["note"] for row in report["stages"]
+              if row["stage"] == "hatch" and "scrubbed" in row["note"]]
+    assert scrubs, (
+        "the git-tree path no longer records the export-manifest scrub, so the "
+        "one thing that keeps a checkout hatch honest is not being done: %s"
+        % (report["stages"],))
+
+
+def test_a_tree_that_declares_neither_is_still_refused(tmp_path):
+    """The degenerate end, which is where a permissive hatch would show up.
+
+    Recognising an egg by "no export manifest" alone would turn every tree with
+    a missing manifest into an egg subject and hatch it with nothing dropped.
+    The shape is read from BOTH files, and a tree carrying neither still exits
+    64 at hatch with the sentence it has always had."""
+    tree = _tree_from_head(tmp_path)
+    (tree / "cabinet" / "scripts" / "egg-export-manifest.txt").unlink()
+    assert not (tree / "egg-manifest.json").exists()
+    result = _run_drill_args(["--tree", str(tree), "--skip-update"], tmp_path)
+    assert result.returncode == 64, (
+        "a tree with neither manifest must still be refused at hatch (64); got "
+        "%d\nSTDERR: %s" % (result.returncode, result.stderr[-1500:]))
+    report = json.loads(result.stdout)
+    assert report["failed_stage"] == "hatch", report
+    assert "no export manifest" in (report.get("reason") or ""), report
+
+
+def test_p7_is_thin_and_names_what_would_make_it_real_on_an_egg(egg_from_head, tmp_path):
+    """An egg cannot cut its own bundle, and the drill says so rather than passing.
+
+    `cabinet/scripts/egg-export.sh` is not shipped content — measured on the cut
+    above — and a bundle is a cut of a checkout. The honest answers are a REAL
+    leg with a bundle source handed in, or a THIN that names the missing input.
+    A silent skip would be the third, and it is the one this programme keeps
+    finding: a leg nobody walks reported as a leg that passed."""
+    assert not (egg_from_head / "cabinet" / "scripts" / "egg-export.sh").exists(), (
+        "the egg ships an exporter after all — then it CAN cut its own bundle and "
+        "this THIN rule is wrong rather than merely untested")
+    result = _run_drill_args(["--tree", str(egg_from_head)], tmp_path)
+    assert result.returncode == 0, (result.returncode, result.stderr[-2500:])
+    report = json.loads(result.stdout)
+    p7 = [row for row in report["stages"] if row["stage"] == "P7"]
+    assert len(p7) == 1 and p7[0]["verdict"] == "thin", (
+        "P7 on an egg with no bundle source must be recorded THIN, not absent "
+        "and not passed: %r" % (p7,))
+    assert "CABINET_DRILL_BUNDLE_SOURCE" in p7[0]["note"], (
+        "the THIN line does not name what would make the leg REAL, which is the "
+        "difference between a stated gap and a silent one: %r" % (p7[0]["note"],))
+    assert report.get("p7_rebuild") is None, (
+        "P7 never ran, so the report must not claim a rebuild mode: %r"
+        % (report.get("p7_rebuild"),))
+
+
+def test_the_drill_job_runs_both_subject_shapes():
+    """And CI takes both, or the egg path is a file nobody runs.
+
+    The tree leg and the egg leg are separate claims: the first is about the
+    committed tree, the second about the bytes a deployment has. One reader over
+    both reports, because a second copy of those assertions is a second thing to
+    keep in step."""
+    job = _jobs()[_JOB]
+    body = _run_bodies(job)
+    assert "egg-export.sh" in body, (
+        f"the {_JOB} job never cuts an egg, so the drill is still only ever taken "
+        "against a repository — the shape that is NOT what runs")
+    assert "CABINET_DRILL_BUNDLE_SOURCE" in body, (
+        f"the {_JOB} job runs the egg leg without a bundle source, so its P7 can "
+        "only be THIN and the update path goes unmeasured on that shape")
+    assert body.count("one-responsibility.sh") >= 2, (
+        f"the {_JOB} job runs the drill once; two subject shapes need two runs")
+    assert "drill-tree.json" in body and "drill-egg.json" in body, (
+        f"the {_JOB} job does not keep the two legs' reports apart, so one of them "
+        "could be read twice and the other never")
+    assert 'startswith(prefix)' in body, (
+        f"the {_JOB} job does not check WHICH subject each leg measured; two runs "
+        "of the same shape read exactly like one of each")

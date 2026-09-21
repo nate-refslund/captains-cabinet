@@ -132,6 +132,59 @@ If the install has no `node_modules`, or its lockfile differs from the
 bundle's, there is nothing to reuse and the staged build runs its own `npm ci`
 — unchanged.
 
+### Running the acceptance drill against this install
+
+`cabinet/scripts/drills/one-responsibility.sh` is the acceptance drill for the
+whole of phase 1, and until 2026-09-21 it could not be pointed at an installed
+Cabinet at all. It hatched by staging its source tree and then applying
+`cabinet/scripts/egg-export-manifest.txt` — the list of paths that belong to
+this deployment rather than to the framework. An install is an **export**, and
+the packaging pass deletes that manifest out of it by design, so the drill
+exited 64 at hatch with "no export manifest ... the drill cannot tell this
+deployment's state from the framework's". The gate that says the drill passes
+on the installed Cabinet had therefore only ever been taken against the
+identical git tree in a clone, and in CI.
+
+The drill now reads which of three shapes it was handed:
+
+| Subject | How it is recognised | What the run proves |
+|---|---|---|
+| a git checkout | carries `cabinet/scripts/egg-export-manifest.txt` | the committed tree hatches and carries one responsibility end to end |
+| an egg or an install | carries `egg-manifest.json` and no export manifest | the framework bytes that are actually installed do the same, and the update leg runs *this* deployment's updater |
+| neither | both files absent | refused at hatch, exit 64, with the sentence above |
+
+On an install:
+
+```
+bash cabinet/scripts/drills/one-responsibility.sh \
+     --tree /path/to/your/cabinet --json
+```
+
+The drill never writes into the subject. It tar-copies it into a throwaway
+root, drops everything the install declares as **yours** — every path in
+`cabinet/config/egg-preserve-set.txt` and in `runtime-provision.sh lists`,
+keeping the force-tracked content that `cabinet/scripts/shipped-ignored-paths.txt`
+names as shipped — then drops `.updates/`, `node_modules` and build output, and
+hatches the result the way a stranger would. Your own rows never reach the run,
+which is the point: a scratch that inherited them would compile to an empty
+mission set and report a clean pass over no subjects. The run also takes a file
+list of the subject before and after and reds if anything appeared or
+disappeared.
+
+**The update leg needs a checkout.** A bundle is a cut of `HEAD`, and an egg
+ships no exporter — so on an install the drill either takes one:
+
+```
+CABINET_DRILL_BUNDLE_SOURCE=/path/to/a/checkout \
+  bash cabinet/scripts/drills/one-responsibility.sh --tree /path/to/your/cabinet --json
+```
+
+or records that leg as **THIN**, saying in the report exactly what would make
+it real. It is never silently skipped. With a bundle source the publish leg
+cuts from the checkout while the apply legs run the install's own
+`cabinet/scripts/cabinet-update.sh`, its own dashboard library and its own
+dependency tree — which is the part an install subject actually adds.
+
 ### What an update does to the process on the door
 
 An apply reads the door **before its first write** and records what was there:

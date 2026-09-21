@@ -295,3 +295,14 @@ instance/config/liveness.yml
 # other way to tell its own data from shipped content. Both runbooks name it by
 # the path an operator actually finds on their install.
 cabinet/config/egg-preserve-set.txt
+
+# The export's shipped-ignored keep-list (2026-09-21). GENERATED at export time
+# by egg-export.sh from `git ls-files -c -i --exclude-standard`, filtered to
+# what survived the packaging pass — so, like the preserve set above, it exists
+# in every EGG and in no checkout. It answers the one question a .gitignore
+# cannot: is this ignored path force-tracked, i.e. shipped? null-hatch.sh reads
+# it so its gitless staging keeps shipped content, and the acceptance drill
+# reads it so an egg subject does not prune shipped structure along with the
+# operator's data. The update runbook names it by the path an operator finds on
+# their install.
+cabinet/scripts/shipped-ignored-paths.txt
