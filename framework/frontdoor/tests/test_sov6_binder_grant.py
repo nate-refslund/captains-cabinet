@@ -41,17 +41,21 @@ def wired_root(tmp_path, monkeypatch):
 
 
 def _far_future_date() -> str:
-    """An expiry that is always in the future.
+    """An expiry that is in the future AND inside the FI-2 horizon.
 
-    This arm proves the SCOPE check (exit 4), and the binder checks expiry
-    BEFORE scope. A literal expiry date turned this test into a calendar
+    This arm proves the SCOPE check (exit 4), and the binder validates the
+    grant row BEFORE scope: an expiry in the past is exit 3 ("already
+    expired"), and so is one more than 90 days out ("expiry horizon exceeds
+    90d (FI-2)"). A literal expiry date turned this test into a calendar
     time-bomb: it went red on the scheduled run the day after the literal
-    passed (2026-09-20 -> exit 3 'expired', measured 2026-09-21), on a commit
-    that had been green the day before. Time is an input; seed it relative to
-    now (cabinet-meta doctrine, evidence class 10).
+    passed (2026-09-20 -> exit 3, measured 2026-09-21) on a commit that had
+    been green the day before; a first fix at +365 d tripped the horizon
+    instead. Time is an input: seed it relative to now, 30 days out — well
+    past today, well inside the horizon (cabinet-meta doctrine, evidence
+    class 10).
     """
     import datetime as _dt
-    return (_dt.date.today() + _dt.timedelta(days=365)).isoformat()
+    return (_dt.date.today() + _dt.timedelta(days=30)).isoformat()
 
 
 def _file_need(**over):
