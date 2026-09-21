@@ -40,6 +40,35 @@ def wired_root(tmp_path, monkeypatch):
     return tmp_path
 
 
+def _granted_now() -> str:
+    """granted_at for the scope-mismatch arm: now, not a literal.
+
+    See _expires_soon: the FI-2 horizon is measured from granted_at, so a
+    literal granted_at with a relative expiry is the same time-bomb in a
+    second place.
+    """
+    import datetime as _dt
+    return _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _expires_soon() -> str:
+    """An expiry in the future AND inside the FI-2 horizon from granted_at.
+
+    This arm proves the SCOPE check (exit 4), and the binder validates the
+    grant row BEFORE scope: an expiry in the past is exit 3 ("already
+    expired"), and so is one more than 90 days after granted_at ("expiry
+    horizon exceeds 90d (FI-2)"). Literal dates turned this test into a
+    calendar time-bomb: it went red on the scheduled run the day after the
+    literal expiry passed (2026-09-20 -> exit 3, measured 2026-09-21) on a
+    commit that had been green the day before; a first fix that moved only
+    the expiry tripped the horizon against the literal granted_at instead.
+    Time is an input: both stamps are seeded relative to now — granted now,
+    expiring 30 days out (cabinet-meta doctrine, evidence class 10).
+    """
+    import datetime as _dt
+    return (_dt.date.today() + _dt.timedelta(days=30)).isoformat()
+
+
 def _file_need(**over):
     kw = dict(risk_class="spend", action_type="purchase", lane="bakery",
               why="pay the Voyage invoice", filed_by="test",
@@ -407,9 +436,9 @@ def test_apply_refuses_scope_mismatch(wired_root):
             'action_types: ["purchase"], lanes: ["bakery", "newsletter"], '
             'scope: {recipient_allowlist: [], max_eur_per_day: 25, '
             'vendor_allowlist: []}, rate: {max_per_day: 1}, '
-            'expires: 2026-09-20, granted_by: "Captain", '
-            'granted_at: "2026-07-04T00:00:00Z", basis: "%s", revoked: false}'
-            % (nid[len("NEED-"):], nid))
+            'expires: %s, granted_by: "Captain", '
+            'granted_at: "%s", basis: "%s", revoked: false}'
+            % (nid[len("NEED-"):], _expires_soon(), _granted_now(), nid))
     _file_need(proposed_grant_line=wide)
     needs.mark(nid, "approved_pending_apply", by="captain:binder")
     res = _run_apply(wired_root, nid, "--ceiling-ack")
