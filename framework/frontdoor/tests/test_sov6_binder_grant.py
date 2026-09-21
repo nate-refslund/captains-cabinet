@@ -40,6 +40,20 @@ def wired_root(tmp_path, monkeypatch):
     return tmp_path
 
 
+def _far_future_date() -> str:
+    """An expiry that is always in the future.
+
+    This arm proves the SCOPE check (exit 4), and the binder checks expiry
+    BEFORE scope. A literal expiry date turned this test into a calendar
+    time-bomb: it went red on the scheduled run the day after the literal
+    passed (2026-09-20 -> exit 3 'expired', measured 2026-09-21), on a commit
+    that had been green the day before. Time is an input; seed it relative to
+    now (cabinet-meta doctrine, evidence class 10).
+    """
+    import datetime as _dt
+    return (_dt.date.today() + _dt.timedelta(days=365)).isoformat()
+
+
 def _file_need(**over):
     kw = dict(risk_class="spend", action_type="purchase", lane="bakery",
               why="pay the Voyage invoice", filed_by="test",
@@ -407,9 +421,9 @@ def test_apply_refuses_scope_mismatch(wired_root):
             'action_types: ["purchase"], lanes: ["bakery", "newsletter"], '
             'scope: {recipient_allowlist: [], max_eur_per_day: 25, '
             'vendor_allowlist: []}, rate: {max_per_day: 1}, '
-            'expires: 2026-09-20, granted_by: "Captain", '
+            'expires: %s, granted_by: "Captain", '
             'granted_at: "2026-07-04T00:00:00Z", basis: "%s", revoked: false}'
-            % (nid[len("NEED-"):], nid))
+            % (nid[len("NEED-"):], _far_future_date(), nid))
     _file_need(proposed_grant_line=wide)
     needs.mark(nid, "approved_pending_apply", by="captain:binder")
     res = _run_apply(wired_root, nid, "--ceiling-ack")
